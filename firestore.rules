@@ -3,33 +3,100 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
+    // Global Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
     // Helper function to check if user is an admin
     function isAdmin() {
       return request.auth != null && 
+             request.auth.token.email_verified == true &&
              (request.auth.token.email == "sipencil@gmail.com" || 
               request.auth.token.email == "ngerjaindiri@gmail.com" || 
               request.auth.token.email == "abiemputra.asn@gmail.com");
     }
 
+    // Basic Primitives
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    
+    function isValidString(val, minSize, maxSize) {
+      return val is string && val.size() >= minSize && val.size() <= maxSize;
+    }
+
+    function isValidEmployee(data) {
+      // Basic required checks
+      return data is map
+        && data.keys().hasAll(['nik', 'nama', 'status'])
+        && isValidString(data.nik, 1, 50)
+        && isValidString(data.nama, 1, 200)
+        && isValidString(data.status, 1, 50)
+        && (data.status in ["PNS", "PPPK", "Honorer", "Lainnya"])
+        
+        // Size limit on optional fields if present
+        && (!('nip' in data) || isValidString(data.nip, 0, 50))
+        && (!('pangkatGolongan' in data) || isValidString(data.pangkatGolongan, 0, 100))
+        && (!('jabatan' in data) || isValidString(data.jabatan, 0, 200))
+        && (!('bidang' in data) || isValidString(data.bidang, 0, 200))
+        && (!('tmtKerja' in data) || (data.tmtKerja is string && data.tmtKerja.size() <= 60))
+        && (!('masaKerja' in data) || isValidString(data.masaKerja, 0, 50))
+        && (!('pendidikan' in data) || isValidString(data.pendidikan, 0, 100))
+        && (!('agama' in data) || isValidString(data.agama, 0, 50))
+        && (!('alamatLengkap' in data) || isValidString(data.alamatLengkap, 0, 1000))
+        && (!('nomorHp' in data) || isValidString(data.nomorHp, 0, 50))
+        
+        // Timestamps
+        && (!('createdAt' in data) || data.createdAt is number)
+        && (!('updatedAt' in data) || data.updatedAt is number)
+        
+        // Array validation (dataKeluarga)
+        && (!('dataKeluarga' in data) || (
+            data.dataKeluarga is list &&
+            data.dataKeluarga.size() <= 20
+        ));
+    }
+
+    function isValidAppSettings(data) {
+      return data is map
+        && (!('sekdaNama' in data) || isValidString(data.sekdaNama, 0, 200))
+        && (!('sekdaNip' in data) || isValidString(data.sekdaNip, 0, 50))
+        && (!('bupatiNama' in data) || isValidString(data.bupatiNama, 0, 200));
+    }
+
     // Rules for the employees collection
     match /shared/data/employees/{employeeId} {
-      // Allow PUBLIC access to read so other apps can fetch without auth
-      allow read: if true;
+      allow read: if isAdmin();
       
-      // Only designated admins can create, update, or delete
-      allow write: if isAdmin();
+      allow create: if isAdmin() 
+                    && isValidEmployee(incoming());
+                    
+      allow update: if isAdmin() 
+                    && isValidEmployee(incoming())
+                    && incoming().diff(existing()).affectedKeys().hasOnly([
+                         'nik', 'nama', 'status', 'nip', 'pangkatGolongan',
+                         'jabatan', 'bidang', 'tmtKerja', 'masaKerja',
+                         'pendidikan', 'agama', 'alamatLengkap', 'nomorHp',
+                         'dataKeluarga', 'updatedAt'
+                       ]);
+                       
+      allow delete: if isAdmin();
     }
 
     // Rules for the settings collection
     match /shared/data/settings/{settingId} {
-      // Allow PUBLIC access to read
-      allow read: if true;
-      allow write: if isAdmin();
-    }
-
-    // Default deny for all other paths
-    match /{document=**} {
-      allow read, write: if false;
+      allow read: if isAdmin();
+      
+      allow create: if isAdmin() 
+                    && isValidAppSettings(incoming());
+                    
+      allow update: if isAdmin() 
+                    && isValidAppSettings(incoming())
+                    && incoming().diff(existing()).affectedKeys().hasOnly([
+                         'sekdaNama', 'sekdaNip', 'bupatiNama'
+                       ]);
+                       
+      allow delete: if isAdmin();
     }
   }
 }
