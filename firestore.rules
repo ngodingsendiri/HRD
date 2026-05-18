@@ -69,8 +69,8 @@ service cloud.firestore {
 
     // Rules for the employees collection (MASTER HR)
     match /shared/data/employees/{employeeId} {
-      // Relaxed read agar aplikasi Cabang (Dokumen UP) bisa memvalidasi profil
-      allow read: if request.auth != null;
+      // Izinkan akses baca publik agar aplikasi Cabang (DMS/Dokumen UP) bisa memvalidasi profil
+      allow read: if true;
       
       allow create: if isAdmin() && isValidEmployee(incoming());
       allow update: if isAdmin() && isValidEmployee(incoming())
@@ -85,29 +85,39 @@ service cloud.firestore {
 
     // Rules for Administrasi App (Cabang 1 - Arsip & Disposisi)
     match /shared/data/disposisi/{documentId} {
-      allow read, write: if isAdmin();
+      allow read: if true; // Izinkan read publik untuk listing bersama
+      allow write: if isAdmin();
     }
     match /shared/data/history/{documentId} {
-      allow read, write: if isAdmin();
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
     // Rules for Dokumen UP / DMS App (Cabang 2 - Metadata Berkas)
     match /employee_documents/{nip} {
-      allow read, write: if isAdmin();
+      allow read: if true; // Metadata berkas bisa dibaca publik/kolega
+      allow write: if isAdmin();
     }
     match /doc_requirements/{reqId} {
-      allow read, write: if isAdmin();
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
     // Rules for Settings (Global Config)
     match /shared/data/settings/{settingId} {
-      allow read: if isAdmin();
+      allow read: if true; // Pengaturan aplikasi bersama bersifat publik
       allow create: if isAdmin() && isValidAppSettings(incoming());
       allow update: if isAdmin() && isValidAppSettings(incoming())
                     && incoming().diff(existing()).affectedKeys().hasOnly([
                          'sekdaNama', 'sekdaNip', 'bupatiNama'
                        ]);
       allow delete: if isAdmin();
+    }
+
+    // Fallback untuk semua data di namespace shared (Public Read)
+    match /shared/{allData=**} {
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
     // --- LEGACY FALLBACK (Untuk Kompatibilitas Code Lama) ---
