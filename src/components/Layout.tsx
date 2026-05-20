@@ -10,6 +10,7 @@ import {
   Settings,
   Printer,
   MessageSquare,
+  Network
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../lib/utils";
@@ -26,6 +27,7 @@ export default function Layout() {
     { name: "Dasbor", href: "/", icon: LayoutDashboard },
     { name: "Direktori Pegawai", href: "/employees", icon: Users },
     { name: "Pencetakan Dokumen", href: "/print", icon: Printer },
+    { name: "Ekosistem & Integrasi", href: "/ecosystem", icon: Network },
     { name: "Pengaturan Sistem", href: "/settings", icon: Settings },
     { name: "Fitur AI", href: "/chat", icon: MessageSquare },
   ];
