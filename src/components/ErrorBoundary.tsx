@@ -11,13 +11,10 @@ interface State {
 }
 
 export class ErrorBoundary extends React.Component<Props, State> {
-  constructor(props: Props) {
-    super(props);
-    (this as any).state = {
-      hasError: false,
-      error: null,
-    };
-  }
+  public state: State = {
+    hasError: false,
+    error: null,
+  };
 
   public static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error };
@@ -28,14 +25,14 @@ export class ErrorBoundary extends React.Component<Props, State> {
   }
 
   public render() {
-    const state = (this as any).state;
-    if (state.hasError) {
+    const { hasError, error } = this.state;
+    if (hasError) {
       let errorMessage = "Terjadi kesalahan yang tidak terduga.";
       let isPermissionError = false;
 
       try {
-        if (state.error?.message) {
-          const parsedError = JSON.parse(state.error.message);
+        if (error?.message) {
+          const parsedError = JSON.parse(error.message);
           if (
             parsedError.error &&
             parsedError.error.includes("permission-denied")
@@ -49,7 +46,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
         }
       } catch (e) {
         // Not a JSON error string, use default message or error message
-        errorMessage = state.error?.message || errorMessage;
+        errorMessage = error?.message || errorMessage;
       }
 
       return (

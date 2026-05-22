@@ -4,7 +4,12 @@ import { motion } from "motion/react";
 
 export default function Ecosystem() {
   return (
-    <div className="max-w-5xl mx-auto space-y-6 md:space-y-8 p-4 sm:p-0 sm:py-8 pb-12 antialiased">
+    <motion.div 
+      initial={{ opacity: 0, y: 15 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4 }}
+      className="max-w-5xl mx-auto space-y-6 md:space-y-8 p-4 sm:p-0 sm:py-8 pb-12 antialiased"
+    >
       <div className="flex flex-col border-b border-slate-100 pb-4 md:pb-6 gap-4">
         <h1 className="text-2xl font-bold tracking-tight text-slate-900">
           Ekosistem & Integrasi
@@ -102,6 +107,6 @@ export default function Ecosystem() {
           </div>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
