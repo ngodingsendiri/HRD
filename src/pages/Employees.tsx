@@ -338,11 +338,10 @@ export default function Employees() {
   const handleExport = () => {
     const exportData = employees.map(
       ({ id, dataKeluarga, createdAt, updatedAt, ...rest }) => {
-        const hierarchy = getHierarchy(rest as Employee);
         return {
+          Nama: rest.nama,
           "N I P": rest.nip,
           "N I K": rest.nik,
-          Nama: rest.nama,
           JK: rest.jk,
           "Tempat Lahir": rest.tempatLahir,
           "Tanggal Lahir": rest.tanggalLahir,
@@ -358,11 +357,15 @@ export default function Employees() {
           "Masa Kerja": rest.masaKerja,
           Pensiun: rest.pensiun,
           "TMT Golongan Ruang": rest.tmtGolonganRuang,
+          "Masa Kerja Golongan Ruang": rest.masaKerjaGolonganRuang,
+          "No. Rekening Bank": rest.noRekeningBank,
+          NPWP: rest.npwp,
           Pangkat: rest.pangkat,
           Gol: rest.gol,
           "Tanggal Berkala Terakhir": rest.tanggalBerkalaTerakhir,
           "Gaji Pokok": rest.gajiPokok,
           "Besaran Gaji Kotor": rest.besaranGajiKotor,
+          "Digaji Menurut PP/SK": rest.digajiMenurut,
           Jabatan: rest.jabatan,
           Bidang: rest.bidang,
           Status: rest.status,
@@ -377,10 +380,6 @@ export default function Employees() {
           "Sisa Cuti Tahunan N": rest.sisaCutiN,
           "Sisa Cuti Tahunan N1": rest.sisaCutiN1,
           "Sisa Cuti Tahunan N2": rest.sisaCutiN2,
-          "Atasan Langsung": hierarchy.atasan,
-          "NIP Atasan Langsung": hierarchy.nipAtasan,
-          "Pejabat Wewenang": hierarchy.pejabat,
-          "NIP Pejabat Wewenang": hierarchy.nipPejabat,
           "SK Terakhir Yang Dimiliki": rest.skTerakhir,
           "Nama Istri/Suami":
             dataKeluarga?.find(
@@ -489,9 +488,9 @@ export default function Employees() {
 
   const handleDownloadTemplate = () => {
     const headers = [
+      "Nama",
       "N I P",
       "N I K",
-      "Nama",
       "JK",
       "Tempat Lahir",
       "Tanggal Lahir",
@@ -507,11 +506,15 @@ export default function Employees() {
       "Masa Kerja",
       "Pensiun",
       "TMT Golongan Ruang",
+      "Masa Kerja Golongan Ruang",
+      "No. Rekening Bank",
+      "NPWP",
       "Pangkat",
       "Gol",
       "Tanggal Berkala Terakhir",
       "Gaji Pokok",
       "Besaran Gaji Kotor",
+      "Digaji Menurut PP/SK",
       "Jabatan",
       "Bidang",
       "Status",
@@ -526,10 +529,6 @@ export default function Employees() {
       "Sisa Cuti Tahunan N",
       "Sisa Cuti Tahunan N1",
       "Sisa Cuti Tahunan N2",
-      "Atasan Langsung",
-      "NIP Atasan Langsung",
-      "Pejabat Wewenang",
-      "NIP Pejabat Wewenang",
       "SK Terakhir Yang Dimiliki",
       "Nama Istri/Suami",
       "Tanggal Lahir Pasangan",
@@ -566,9 +565,9 @@ export default function Employees() {
 
     const exampleData = [
       [
+        "Regar Jeane Dealen Nangka, S.STP., M.Si.",
         "198301112001121002",
         "3509191101830005",
-        "Regar Jeane Dealen Nangka, S.STP., M.Si.",
         "L",
         "Bondowoso",
         "11 Januari 1983",
@@ -797,9 +796,9 @@ export default function Employees() {
             }
 
             let rawStatus = String(
-              getVal(row, ["Status"]) || "Lainnya",
+              getVal(row, ["Status"]) || "PNS",
             ).toUpperCase();
-            let status: Employee["status"] = "Lainnya";
+            let status: Employee["status"] = "PNS";
             if (rawStatus.includes("CPNS")) status = "CPNS";
             else if (rawStatus.includes("PPPKPW")) status = "PPPKPW";
             else if (rawStatus.includes("PPPK")) status = "PPPK";
@@ -837,6 +836,13 @@ export default function Employees() {
               tmtGolonganRuang: excelDateToJSDate(
                 getVal(row, ["TMT Golongan Ruang"]),
               ),
+              masaKerjaGolonganRuang: String(
+                getVal(row, ["Masa Kerja Golongan Ruang"]) || "",
+              ).trim(),
+              noRekeningBank: String(
+                getVal(row, ["No. Rekening Bank", "Rekening"]) || "",
+              ).trim(),
+              npwp: String(getVal(row, ["NPWP"]) || "").trim(),
               pangkat: String(getVal(row, ["Pangkat"]) || "").trim(),
               gol: String(getVal(row, ["Gol"]) || "").trim(),
               pangkatGolongan:
@@ -847,6 +853,9 @@ export default function Employees() {
               gajiPokok: String(getVal(row, ["Gaji Pokok"]) || "").trim(),
               besaranGajiKotor: String(
                 getVal(row, ["Besaran Gaji Kotor"]) || "",
+              ).trim(),
+              digajiMenurut: String(
+                getVal(row, ["Digaji Menurut PP/SK"]) || "",
               ).trim(),
               jabatan: String(getVal(row, ["Jabatan"]) || "").trim(),
               bidang: String(
@@ -1136,7 +1145,6 @@ export default function Employees() {
           CPNS: 2,
           PPPK: 3,
           PPPKPW: 4,
-          Lainnya: 5,
         };
         const statusA = statusOrder[a.status || ""] || 99;
         const statusB = statusOrder[b.status || ""] || 99;
@@ -1309,7 +1317,7 @@ export default function Employees() {
             {selectedIds.size > 0 && (
               <button
                 onClick={() => setIsBulkDeleteModalOpen(true)}
-                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 py-2.5 text-[12px] font-bold text-white bg-red-600 hover:bg-red-700 transition-colors border-r border-red-700"
+                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 py-2.5 text-[12px] font-bold text-white bg-red-600 hover:bg-red-700 transition-all active:scale-95 border-r border-red-700"
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>Hapus {selectedIds.size}</span>
@@ -1320,12 +1328,12 @@ export default function Employees() {
                 setEditingEmployee(undefined);
                 setIsModalOpen(true);
               }}
-              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 py-2.5 text-[12px] font-bold text-white bg-slate-900 hover:bg-slate-800 transition-colors"
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 py-2.5 text-[12px] font-bold text-white bg-slate-900 hover:bg-slate-800 transition-all active:scale-95"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Tambah Data</span>
             </button>
-            <label className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2.5 text-[12px] font-bold text-slate-700 hover:bg-slate-50 border-r border-slate-100 transition-colors cursor-pointer order-first">
+            <label className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2.5 text-[12px] font-bold text-slate-700 hover:bg-slate-50 border-r border-slate-100 transition-all active:scale-95 cursor-pointer order-first">
               <Upload className="w-3.5 h-3.5" />
               <span>Impor Excel</span>
               <input
@@ -1337,7 +1345,7 @@ export default function Employees() {
             </label>
             <button
               onClick={handleExport}
-              className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2.5 text-[12px] font-bold text-slate-700 hover:bg-slate-50 transition-colors"
+              className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2.5 text-[12px] font-bold text-slate-700 hover:bg-slate-50 transition-all active:scale-95"
             >
               <Download className="w-3.5 h-3.5" />
               <span>Ekspor Data</span>

@@ -178,12 +178,12 @@ export default function Settings() {
               onClick={() => setActiveTab("identitas")}
               className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all whitespace-nowrap ${
                 activeTab === "identitas"
-                  ? "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-100"
+                  ? "bg-slate-100 text-slate-900 ring-1 ring-slate-200"
                   : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
               }`}
             >
               <User
-                className={`w-4 h-4 ${activeTab === "identitas" ? "text-indigo-600" : "text-slate-400"}`}
+                className={`w-4 h-4 ${activeTab === "identitas" ? "text-slate-900" : "text-slate-400"}`}
               />
               Otoritas Penandatangan
             </button>
@@ -191,12 +191,12 @@ export default function Settings() {
               onClick={() => setActiveTab("cetak")}
               className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all whitespace-nowrap ${
                 activeTab === "cetak"
-                  ? "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-100"
+                  ? "bg-slate-100 text-slate-900 ring-1 ring-slate-200"
                   : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
               }`}
             >
               <Printer
-                className={`w-4 h-4 ${activeTab === "cetak" ? "text-indigo-600" : "text-slate-400"}`}
+                className={`w-4 h-4 ${activeTab === "cetak" ? "text-slate-900" : "text-slate-400"}`}
               />
               Tata Naskah & Identitas
             </button>
@@ -204,12 +204,12 @@ export default function Settings() {
               onClick={() => setActiveTab("kamus")}
               className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all whitespace-nowrap ${
                 activeTab === "kamus"
-                  ? "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-100"
+                  ? "bg-slate-100 text-slate-900 ring-1 ring-slate-200"
                   : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
               }`}
             >
               <Database
-                className={`w-4 h-4 ${activeTab === "kamus" ? "text-indigo-600" : "text-slate-400"}`}
+                className={`w-4 h-4 ${activeTab === "kamus" ? "text-slate-900" : "text-slate-400"}`}
               />
               Data Acuan
             </button>
@@ -395,7 +395,7 @@ export default function Settings() {
                           <button
                             type="button"
                             onClick={removeLogo}
-                            className="absolute top-4 right-4 p-2 bg-white text-red-600 rounded-lg drop-shadow hover:bg-slate-100 transition-all opacity-0 group-hover:opacity-100"
+                            className="absolute top-4 right-4 p-2 bg-white text-red-600 rounded-lg border border-slate-200 hover:bg-slate-100 transition-all opacity-0 group-hover:opacity-100"
                           >
                             <X className="w-5 h-5" />
                           </button>

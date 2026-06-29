@@ -1,7 +1,8 @@
 import { useForm, useFieldArray } from "react-hook-form";
 import { Employee, AppSettings } from "../types";
 import { Plus, Trash2 } from "lucide-react";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { validateAndExtractNIP, calculateBUP, calculateMasaKerja } from "../lib/employeeUtils";
 
 interface EmployeeFormProps {
   initialData?: Employee;
@@ -16,12 +17,14 @@ export function EmployeeForm({
   onSubmit,
   onCancel,
 }: EmployeeFormProps) {
+  const [activeTab, setActiveTab] = useState(1);
   const {
     register,
     control,
     handleSubmit,
     watch,
     setValue,
+    getValues,
     formState: { errors },
   } = useForm<Employee>({
     defaultValues: initialData || {
@@ -43,12 +46,16 @@ export function EmployeeForm({
       masaKerja: "",
       pensiun: "",
       tmtGolonganRuang: "",
+      masaKerjaGolonganRuang: "",
+      noRekeningBank: "",
+      npwp: "",
       pangkat: "",
       gol: "",
       pangkatGolongan: "",
       tanggalBerkalaTerakhir: "",
       gajiPokok: "",
       besaranGajiKotor: "",
+      digajiMenurut: "",
       jabatan: "",
       bidang: "",
       status: "PNS",
@@ -77,6 +84,8 @@ export function EmployeeForm({
   const jabatan = watch("jabatan");
   const nip = watch("nip");
   const status = watch("status");
+  const tanggalLahir = watch("tanggalLahir");
+  const tmtKerja = watch("tmtKerja");
 
   const kamusJabatanList = useMemo(() => {
     if (!settings?.jabatanKamusCsv) return [];
@@ -105,10 +114,8 @@ export function EmployeeForm({
 
     for (const row of rows) {
       if (!row || row.trim() === "") continue;
-      // split by ; or tab
       const cols = row.split(/;|\t/);
       if (cols.length >= 4) {
-        // Assume format: No;Jabatan;Kelas;Beban Kerja
         const kamusJabatan = cols[1]?.trim().toLowerCase() || "";
         if (kamusJabatan === jabatan.trim().toLowerCase()) {
           matchedKelas = cols[2]?.trim() || "";
@@ -129,579 +136,588 @@ export function EmployeeForm({
   useEffect(() => {
     if (!nip) return;
     
-    // Hapus karakter non-digit jika ada (termasuk spasi)
-    const cleanNip = nip.replace(/\D/g, '');
+    const currentStatus = getValues("status");
+    const extractResult = validateAndExtractNIP(nip, currentStatus);
     
-    if (cleanNip.length === 18) {
-      // 1. Ekstrak Jenis Kelamin (Digit ke-15)
-      const jkCode = cleanNip.charAt(14);
-      if (jkCode === '1') {
-        setValue("jk", "L", { shouldDirty: true });
-      } else if (jkCode === '2') {
-        setValue("jk", "P", { shouldDirty: true });
-      }
+    if (extractResult.jk) {
+      setValue("jk", extractResult.jk, { shouldDirty: true });
+    }
+    if (extractResult.tanggalLahir) {
+      setValue("tanggalLahir", extractResult.tanggalLahir, { shouldDirty: true });
+    }
+    if (extractResult.tmtKerja) {
+      setValue("tmtKerja", extractResult.tmtKerja, { shouldDirty: true });
+    }
+  }, [nip, setValue, getValues]);
 
-      // 2. Ekstrak Tanggal Lahir (Digit 1-8)
-      const lahirYear = cleanNip.substring(0, 4);
-      const lahirMonth = cleanNip.substring(4, 6);
-      const lahirDay = cleanNip.substring(6, 8);
-      if (!isNaN(Number(lahirYear)) && !isNaN(Number(lahirMonth)) && !isNaN(Number(lahirDay))) {
-        setValue("tanggalLahir", `${lahirYear}-${lahirMonth}-${lahirDay}`, { shouldDirty: true });
-      }
-
-      // 3. Ekstrak TMT Kerja (TMT CPNS) khusus untuk PNS
-      if (status === "PNS" || status === "CPNS") {
-        const year = cleanNip.substring(8, 12);
-        const month = cleanNip.substring(12, 14);
-        
-        if (!isNaN(Number(year)) && !isNaN(Number(month))) {
-          // Format standar YYYY-MM-DD
-          setValue("tmtKerja", `${year}-${month}-01`, { shouldDirty: true });
-        }
+  useEffect(() => {
+    if (tanggalLahir && jabatan) {
+      const calculatedPensiun = calculateBUP(tanggalLahir, jabatan);
+      if (calculatedPensiun) {
+        setValue("pensiun", calculatedPensiun, { shouldDirty: true });
       }
     }
-  }, [nip, status, setValue]);
+  }, [tanggalLahir, jabatan, setValue]);
+
+  useEffect(() => {
+    if (tmtKerja) {
+      const calculatedMasaKerja = calculateMasaKerja(tmtKerja);
+      if (calculatedMasaKerja) {
+        setValue("masaKerja", calculatedMasaKerja, { shouldDirty: true });
+      }
+    }
+  }, [tmtKerja, setValue]);
+
+  useEffect(() => {
+    if (Object.keys(errors).length > 0) {
+      if (errors.nik || errors.nama) {
+        setActiveTab(1);
+      } else if (errors.dataKeluarga) {
+        setActiveTab(4);
+      }
+    }
+  }, [errors]);
+
+  const tabs = [
+    { id: 1, label: "Identitas Pribadi" },
+    { id: 2, label: "Jabatan & Penempatan" },
+    { id: 3, label: "Kepangkatan & Gaji" },
+    { id: 4, label: "Keluarga & Lainnya" },
+  ];
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
-      {/* Section 1: Identitas Pribadi */}
-      <div className="space-y-4">
-        <h3 className="text-lg font-semibold text-slate-900 border-b border-slate-100 pb-2">
-          Data Diri Aparatur
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">NIP</label>
-            <input
-              {...register("nip")}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">NIK *</label>
-            <input
-              {...register("nik", { required: true })}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">
-              Nama Lengkap (Sesuai KTP) *
-            </label>
-            <input
-              {...register("nama", { required: true })}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">
-              Jenis Kelamin
-            </label>
-            <select
-              {...register("jk")}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-            >
-              <option value="L">Laki-laki</option>
-              <option value="P">Perempuan</option>
-            </select>
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">
-              Kota / Kab. Kelahiran
-            </label>
-            <input
-              {...register("tempatLahir")}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">
-              Tanggal Lahir
-            </label>
-            <input
-              type="date"
-              {...register("tanggalLahir")}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">Agama</label>
-            <input
-              {...register("agama")}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">
-              Status Kawin
-            </label>
-            <input
-              {...register("statusKawin")}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">
-              Nomor HP
-            </label>
-            <input
-              {...register("nomorHp")}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Section 2: Alamat */}
-      <div className="space-y-4">
-        <h3 className="text-lg font-semibold text-slate-900 border-b border-slate-100 pb-2">
-          Informasi Alamat & Domisili
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          <div className="space-y-1.5 md:col-span-2">
-            <label className="text-sm font-medium text-slate-700">
-              Alamat Lengkap (Jalan/Dusun)
-            </label>
-            <input
-              {...register("jalanDusun")}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-slate-700">RT</label>
-              <input
-                {...register("rt")}
-                className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-slate-700">RW</label>
-              <input
-                {...register("rw")}
-                className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-              />
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">
-              Desa / Kelurahan
-            </label>
-            <input
-              {...register("desaKelurahan")}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">
-              Kecamatan
-            </label>
-            <input
-              {...register("kecamatan")}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">
-              Kabupaten
-            </label>
-            <input
-              {...register("kabupaten")}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Section 3: Kepegawaian */}
-      <div className="space-y-4">
-        <h3 className="text-lg font-semibold text-slate-900 border-b border-slate-100 pb-2">
-          Informasi Jabatan & Penempatan
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">
-              Status Hubungan Kerja
-            </label>
-            <select
-              {...register("status")}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-            >
-              <option value="PNS">PNS</option>
-              <option value="PPPK">PPPK</option>
-              <option value="Honorer">Honorer</option>
-              <option value="Lainnya">Lainnya</option>
-            </select>
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">
-              Jabatan
-            </label>
-            <select
-              {...register("jabatan")}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all cursor-pointer"
-            >
-              <option value="">Pilih Jabatan...</option>
-              {kamusJabatanList.map((jab) => (
-                <option key={jab} value={jab}>
-                  {jab}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">
-              Unit Kerja / Bidang
-            </label>
-            <select
-              {...register("bidang")}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all cursor-pointer"
-            >
-              <option value="">Pilih Unit Kerja / Bidang...</option>
-              <option value="Sekretariat">Sekretariat</option>
-              <option value="Infrastruktur Teknologi Informasi Komunikasi">Infrastruktur Teknologi Informasi Komunikasi</option>
-              <option value="Pengembangan Smart City dan Statistik">Pengembangan Smart City dan Statistik</option>
-              <option value="Aspirasi dan Layanan Informasi Publik">Aspirasi dan Layanan Informasi Publik</option>
-              <option value="Layanan Media Komunikasi Publik">Layanan Media Komunikasi Publik</option>
-            </select>
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">
-              Kelas Jabatan
-            </label>
-            <input
-              {...register("kelasJabatan")}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all cursor-not-allowed text-slate-500"
-              placeholder="Otomatis dari Kamus"
-              readOnly
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">
-              Beban Kerja
-            </label>
-            <input
-              {...register("bebanKerja")}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all cursor-not-allowed text-slate-500"
-              placeholder="Otomatis dari Kamus"
-              readOnly
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">
-              Pangkat
-            </label>
-            <input
-              {...register("pangkat")}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">
-              Golongan
-            </label>
-            <input
-              {...register("gol")}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">
-              TMT Golongan
-            </label>
-            <input
-              type="date"
-              {...register("tmtGolonganRuang")}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">
-              TMT Kerja
-            </label>
-            <input
-              type="date"
-              {...register("tmtKerja")}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">
-              Masa Kerja
-            </label>
-            <input
-              {...register("masaKerja")}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">
-              Pensiun
-            </label>
-            <input
-              {...register("pensiun")}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">
-              Gaji Pokok
-            </label>
-            <input
-              {...register("gajiPokok")}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">
-              Besaran Gaji Kotor
-            </label>
-            <input
-              {...register("besaranGajiKotor")}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">
-              Nomor Karpeg
-            </label>
-            <input
-              {...register("nomorKarpeg")}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Section 4: Pendidikan & Diklat */}
-      <div className="space-y-4">
-        <h3 className="text-lg font-semibold text-slate-900 border-b border-slate-100 pb-2">
-          Riwayat Pendidikan & Pelatihan
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">
-              Pendidikan Terakhir
-            </label>
-            <input
-              {...register("pendidikan")}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">
-              Jurusan
-            </label>
-            <input
-              {...register("jurusan")}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">
-              Diklat Jenjang
-            </label>
-            <input
-              {...register("diklatJenjang")}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">
-              Tahun Diklat
-            </label>
-            <input
-              {...register("tahunDiklat")}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Section 6: Lain-lain */}
-      <div className="space-y-4">
-        <h3 className="text-lg font-semibold text-slate-900 border-b border-slate-100 pb-2">
-          Rekam Jejak & Administrasi
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">
-              Sisa Cuti N
-            </label>
-            <input
-              {...register("sisaCutiN")}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">
-              Sisa Cuti N-1
-            </label>
-            <input
-              {...register("sisaCutiN1")}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">
-              Sisa Cuti N-2
-            </label>
-            <input
-              {...register("sisaCutiN2")}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-            />
-          </div>
-          <div className="space-y-1.5 md:col-span-2">
-            <label className="text-sm font-medium text-slate-700">
-              SK Terakhir
-            </label>
-            <input
-              {...register("skTerakhir")}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">
-              Jumlah Tertanggung
-            </label>
-            <input
-              type="number"
-              {...register("jumlahTertanggung")}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Section 7: Data Keluarga */}
-      <div className="border-t border-slate-100 pt-6 mt-6">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg font-semibold text-slate-900">
-            Susunan Anggota Keluarga
-          </h3>
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+      
+      {/* Navigation Tabs */}
+      <div className="flex space-x-1 border-b border-slate-200">
+        {tabs.map((tab) => (
           <button
+            key={tab.id}
             type="button"
-            onClick={() =>
-              append({
-                name: "",
-                relation: "Istri",
-                birthDate: "",
-                marriageDate: "",
-                occupation: "",
-                description: "",
-              })
-            }
-            className="flex items-center text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
+            onClick={() => setActiveTab(tab.id)}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === tab.id
+                ? "border-slate-900 text-slate-900"
+                : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
+            }`}
           >
-            <Plus className="w-4 h-4 mr-1" /> Tambah Anggota
+            {tab.label}
           </button>
-        </div>
+        ))}
+      </div>
 
-        <div className="space-y-4">
-          {fields.map((field, index) => (
-            <div
-              key={field.id}
-              className="p-4 sm:p-5 border border-slate-200 rounded-xl bg-slate-50/50 space-y-4"
-            >
-              <div className="flex justify-between items-start">
-                <span className="text-sm font-semibold text-slate-500 uppercase tracking-wider">
-                  Anggota #{index + 1}
-                </span>
+      <div className="min-h-[400px]">
+        {/* Tab 1: Identitas Pribadi */}
+        <div className={activeTab === 1 ? "space-y-6 animate-in fade-in duration-300 block" : "hidden"}>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">NIP</label>
+                <input
+                  {...register("nip")}
+                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">NIK *</label>
+                <input
+                  {...register("nik", { required: true })}
+                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">Nama Lengkap (Sesuai KTP) *</label>
+                <input
+                  {...register("nama", { required: true })}
+                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">Jenis Kelamin</label>
+                <select
+                  {...register("jk")}
+                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all cursor-pointer"
+                >
+                  <option value="L">Laki-laki</option>
+                  <option value="P">Perempuan</option>
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">Kota / Kab. Kelahiran</label>
+                <input
+                  {...register("tempatLahir")}
+                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">Tanggal Lahir</label>
+                <input
+                  type="date"
+                  {...register("tanggalLahir")}
+                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">Agama</label>
+                <input
+                  {...register("agama")}
+                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">Status Kawin</label>
+                <input
+                  {...register("statusKawin")}
+                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">Nomor HP</label>
+                <input
+                  {...register("nomorHp")}
+                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                />
+              </div>
+            </div>
+
+            <div className="border-t border-slate-100 pt-4 mt-4">
+              <h4 className="text-sm font-semibold text-slate-800 mb-4">Informasi Alamat & Domisili</h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                <div className="space-y-1.5 md:col-span-2">
+                  <label className="text-sm font-medium text-slate-700">Alamat Lengkap (Jalan/Dusun)</label>
+                  <input
+                    {...register("jalanDusun")}
+                    className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-slate-700">RT</label>
+                    <input
+                      {...register("rt")}
+                      className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-slate-700">RW</label>
+                    <input
+                      {...register("rw")}
+                      className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-slate-700">Desa / Kelurahan</label>
+                  <input
+                    {...register("desaKelurahan")}
+                    className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-slate-700">Kecamatan</label>
+                  <input
+                    {...register("kecamatan")}
+                    className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-slate-700">Kabupaten</label>
+                  <input
+                    {...register("kabupaten")}
+                    className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+        {/* Tab 2: Jabatan & Penempatan */}
+        <div className={activeTab === 2 ? "space-y-6 animate-in fade-in duration-300 block" : "hidden"}>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">Status Hubungan Kerja</label>
+                <select
+                  {...register("status")}
+                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all cursor-pointer"
+                >
+                  <option value="PNS">PNS</option>
+                  <option value="CPNS">CPNS</option>
+                  <option value="PPPK">PPPK</option>
+                  <option value="PPPKPW">PPPKPW</option>
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">Jabatan</label>
+                <select
+                  {...register("jabatan")}
+                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all cursor-pointer"
+                >
+                  <option value="">Pilih Jabatan...</option>
+                  {kamusJabatanList.map((jab) => (
+                    <option key={jab} value={jab}>
+                      {jab}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">Unit Kerja / Bidang</label>
+                <select
+                  {...register("bidang")}
+                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all cursor-pointer"
+                >
+                  <option value="">Pilih Unit Kerja / Bidang...</option>
+                  <option value="Sekretariat">Sekretariat</option>
+                  <option value="Infrastruktur Teknologi Informasi Komunikasi">Infrastruktur Teknologi Informasi Komunikasi</option>
+                  <option value="Pengembangan Smart City dan Statistik">Pengembangan Smart City dan Statistik</option>
+                  <option value="Aspirasi dan Layanan Informasi Publik">Aspirasi dan Layanan Informasi Publik</option>
+                  <option value="Layanan Media Komunikasi Publik">Layanan Media Komunikasi Publik</option>
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">Kelas Jabatan</label>
+                <input
+                  {...register("kelasJabatan")}
+                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all cursor-not-allowed text-slate-500"
+                  placeholder="Otomatis dari Kamus"
+                  readOnly
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">Beban Kerja</label>
+                <input
+                  {...register("bebanKerja")}
+                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all cursor-not-allowed text-slate-500"
+                  placeholder="Otomatis dari Kamus"
+                  readOnly
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">SK Terakhir</label>
+                <input
+                  {...register("skTerakhir")}
+                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                />
+              </div>
+            </div>
+
+            <div className="border-t border-slate-100 pt-4 mt-4">
+              <h4 className="text-sm font-semibold text-slate-800 mb-4">Riwayat Pendidikan & Pelatihan</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-slate-700">Pendidikan Terakhir</label>
+                  <input
+                    {...register("pendidikan")}
+                    className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-slate-700">Jurusan</label>
+                  <input
+                    {...register("jurusan")}
+                    className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-slate-700">Diklat Jenjang</label>
+                  <input
+                    {...register("diklatJenjang")}
+                    className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-slate-700">Tahun Diklat</label>
+                  <input
+                    {...register("tahunDiklat")}
+                    className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+        {/* Tab 3: Kepangkatan & Gaji */}
+        <div className={activeTab === 3 ? "space-y-6 animate-in fade-in duration-300 block" : "hidden"}>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">Pangkat</label>
+                <input
+                  {...register("pangkat")}
+                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">Golongan</label>
+                <input
+                  {...register("gol")}
+                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">TMT Golongan Ruang</label>
+                <input
+                  type="date"
+                  {...register("tmtGolonganRuang")}
+                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">Masa Kerja Golongan Ruang (MKG)</label>
+                <input
+                  {...register("masaKerjaGolonganRuang")}
+                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">TMT Kerja</label>
+                <input
+                  type="date"
+                  {...register("tmtKerja")}
+                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">Masa Kerja</label>
+                <input
+                  {...register("masaKerja")}
+                  placeholder="Terhitung otomatis"
+                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">Tanggal Berkala Terakhir</label>
+                <input
+                  type="date"
+                  {...register("tanggalBerkalaTerakhir")}
+                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">Gaji Pokok</label>
+                <input
+                  {...register("gajiPokok")}
+                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">Besaran Gaji Kotor</label>
+                <input
+                  {...register("besaranGajiKotor")}
+                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">Digaji Menurut PP/SK</label>
+                <input
+                  {...register("digajiMenurut")}
+                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">No. Rekening Bank</label>
+                <input
+                  {...register("noRekeningBank")}
+                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">NPWP</label>
+                <input
+                  {...register("npwp")}
+                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">Nomor Karpeg</label>
+                <input
+                  {...register("nomorKarpeg")}
+                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">TMT Pensiun (BUP)</label>
+                <input
+                  {...register("pensiun")}
+                  placeholder="Terhitung otomatis"
+                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                />
+              </div>
+            </div>
+          </div>
+
+        {/* Tab 4: Keluarga & Cuti */}
+        <div className={activeTab === 4 ? "space-y-6 animate-in fade-in duration-300 block" : "hidden"}>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">Sisa Cuti N</label>
+                <input
+                  {...register("sisaCutiN")}
+                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">Sisa Cuti N-1</label>
+                <input
+                  {...register("sisaCutiN1")}
+                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">Sisa Cuti N-2</label>
+                <input
+                  {...register("sisaCutiN2")}
+                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">Jumlah Tertanggung</label>
+                <input
+                  type="number"
+                  {...register("jumlahTertanggung")}
+                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                />
+              </div>
+            </div>
+
+            <div className="border-t border-slate-100 pt-6 mt-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-semibold text-slate-900">Susunan Anggota Keluarga</h3>
                 <button
                   type="button"
-                  onClick={() => remove(index)}
-                  className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                  onClick={() =>
+                    append({
+                      name: "",
+                      relation: "Istri",
+                      birthDate: "",
+                      marriageDate: "",
+                      occupation: "",
+                      description: "",
+                    })
+                  }
+                  className="flex items-center text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
                 >
-                  <Trash2 className="w-5 h-5" />
+                  <Plus className="w-4 h-4 mr-1" /> Tambah Anggota
                 </button>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-slate-500">
-                    Nama
-                  </label>
-                  <input
-                    {...register(`dataKeluarga.${index}.name` as const, {
-                      required: true,
-                    })}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-slate-500">
-                    Hubungan
-                  </label>
-                  <select
-                    {...register(`dataKeluarga.${index}.relation` as const)}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+
+              <div className="space-y-4">
+                {fields.map((field, index) => (
+                  <div
+                    key={field.id}
+                    className="p-4 sm:p-5 border border-slate-200 rounded-xl bg-slate-50/50 space-y-4"
                   >
-                    <option value="Istri">Istri</option>
-                    <option value="Suami">Suami</option>
-                    <option value="Anak">Anak</option>
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-slate-500">
-                    Tanggal Lahir
-                  </label>
-                  <input
-                    {...register(`dataKeluarga.${index}.birthDate` as const)}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-slate-500">
-                    Tanggal Perkawinan (Jika Ada)
-                  </label>
-                  <input
-                    {...register(`dataKeluarga.${index}.marriageDate` as const)}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-slate-500">
-                    Pekerjaan
-                  </label>
-                  <input
-                    {...register(`dataKeluarga.${index}.occupation` as const)}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-slate-500">
-                    Keterangan
-                  </label>
-                  <input
-                    {...register(`dataKeluarga.${index}.description` as const)}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-                  />
-                </div>
+                    <div className="flex justify-between items-start">
+                      <span className="text-sm font-semibold text-slate-500 uppercase tracking-wider">
+                        Anggota #{index + 1}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => remove(index)}
+                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      >
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium text-slate-500">Nama</label>
+                        <input
+                          {...register(`dataKeluarga.${index}.name` as const, { required: true })}
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium text-slate-500">Hubungan</label>
+                        <select
+                          {...register(`dataKeluarga.${index}.relation` as const)}
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                        >
+                          <option value="Istri">Istri</option>
+                          <option value="Suami">Suami</option>
+                          <option value="Anak">Anak</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium text-slate-500">Tanggal Lahir</label>
+                        <input
+                          type="date"
+                          {...register(`dataKeluarga.${index}.birthDate` as const)}
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium text-slate-500">Tanggal Perkawinan (Jika Ada)</label>
+                        <input
+                          type="date"
+                          {...register(`dataKeluarga.${index}.marriageDate` as const)}
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium text-slate-500">Pekerjaan</label>
+                        <input
+                          {...register(`dataKeluarga.${index}.occupation` as const)}
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium text-slate-500">Keterangan</label>
+                        <input
+                          {...register(`dataKeluarga.${index}.description` as const)}
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {fields.length === 0 && (
+                  <div className="text-center py-8 border-2 border-dashed border-slate-100 rounded-xl text-sm text-slate-400">
+                    Belum ada data keluarga yang ditambahkan.
+                  </div>
+                )}
               </div>
             </div>
-          ))}
-          {fields.length === 0 && (
-            <div className="text-center py-8 border-2 border-dashed border-slate-100 rounded-xl text-sm text-slate-400">
-              Belum ada data keluarga yang ditambahkan.
-            </div>
-          )}
-        </div>
+          </div>
       </div>
 
-      <div className="flex justify-end gap-3 pt-6 border-t border-slate-100">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="px-6 py-2.5 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-all "
-        >
-          Batal
-        </button>
-        <button
-          type="submit"
-          className="px-6 py-2.5 text-sm font-medium text-white bg-slate-900 rounded-xl hover:bg-slate-800 transition-all "
-        >
-          Simpan Rekam Data
-        </button>
+      <div className="flex justify-between pt-6 border-t border-slate-100">
+        <div>
+          {activeTab > 1 && (
+            <button
+              type="button"
+              onClick={() => setActiveTab(activeTab - 1)}
+              className="px-6 py-2.5 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-all"
+            >
+              Kembali
+            </button>
+          )}
+        </div>
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="px-6 py-2.5 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-all"
+          >
+            Batal
+          </button>
+          {activeTab < 4 ? (
+            <button
+              type="button"
+              onClick={() => setActiveTab(activeTab + 1)}
+              className="px-6 py-2.5 text-sm font-medium text-slate-900 bg-slate-100 border border-slate-200 rounded-xl hover:bg-slate-200 transition-all"
+            >
+              Selanjutnya
+            </button>
+          ) : (
+            <button
+              type="submit"
+              className="px-6 py-2.5 text-sm font-medium text-white bg-slate-900 rounded-xl hover:bg-slate-800 transition-all"
+            >
+              Simpan Rekam Data
+            </button>
+          )}
+        </div>
       </div>
     </form>
   );
 }
+

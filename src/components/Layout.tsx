@@ -35,12 +35,18 @@ export default function Layout() {
   return (
     <div className="h-screen w-full bg-transparent flex overflow-hidden font-sans antialiased text-slate-900 print:block print:h-auto print:overflow-visible">
       {/* Mobile sidebar backdrop */}
-      {isSidebarOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-slate-900/10 backdrop-blur-[2px] lg:hidden"
-          onClick={() => setIsSidebarOpen(false)}
-        />
-      )}
+      <AnimatePresence>
+        {isSidebarOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 z-40 bg-slate-900/10 backdrop-blur-[2px] lg:hidden"
+            onClick={() => setIsSidebarOpen(false)}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Sidebar */}
       <aside
@@ -160,7 +166,7 @@ export default function Layout() {
             <span className="font-bold text-slate-900 text-sm">HRCube</span>
           </div>
           <button
-            className="p-2 -mr-2 text-slate-500"
+            className="p-2 -mr-2 text-slate-500 hover:text-slate-900 active:scale-95 transition-all"
             onClick={() => setIsSidebarOpen(true)}
           >
             <Menu className="w-5 h-5" />
@@ -191,8 +197,8 @@ export default function Layout() {
                 key={item.name}
                 to={item.href}
                 className={cn(
-                  "flex flex-col items-center gap-1.5 p-2 transition-colors",
-                  isActive ? "text-slate-900" : "text-slate-400",
+                  "flex flex-col items-center gap-1.5 p-2 transition-all active:scale-95",
+                  isActive ? "text-slate-900" : "text-slate-400 hover:text-slate-600",
                 )}
               >
                 <item.icon

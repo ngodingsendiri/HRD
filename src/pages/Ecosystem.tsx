@@ -105,17 +105,17 @@ const db = getFirestore(app); // Database ai-studio-...`;
         {/* Architecture Visualization */}
         <div className="bg-slate-50/50 rounded-xl border border-slate-100 p-4 sm:p-6 md:p-8 flex flex-col items-center justify-center relative min-h-[300px]">
           {/* HR Master */}
-          <div className="z-10 w-36 sm:w-40 bg-white rounded-lg border border-slate-200 p-3 flex flex-col items-center shadow-sm">
-             <LayoutTemplate className="w-5 h-5 text-indigo-600 mb-1.5 sm:mb-2" />
+          <div className="z-10 w-36 sm:w-40 bg-white rounded-lg border border-slate-200 p-3 flex flex-col items-center">
+             <LayoutTemplate className="w-5 h-5 text-slate-900 mb-1.5 sm:mb-2" />
              <span className="text-[10px] sm:text-xs font-bold text-slate-800 text-center">Pusat HR (Master)</span>
-             <span className="text-[8px] sm:text-[9px] text-slate-500 mt-1 px-1.5 sm:px-2 py-0.5 bg-slate-100 rounded-full">/shared/data/employees</span>
+             <span className="text-[8px] sm:text-[9px] text-slate-500 mt-1 px-1.5 sm:px-2 py-0.5 bg-slate-100 rounded-lg">/shared/data/employees</span>
           </div>
 
           {/* Connection line down */}
           <div className="h-6 sm:h-8 w-px bg-slate-200 border-l-2 border-dashed border-slate-300"></div>
 
           {/* Central DB */}
-          <div className="z-10 w-20 h-20 sm:w-24 sm:h-24 bg-white rounded-xl border-2 border-slate-900 flex flex-col items-center justify-center shadow-[0_4px_20px_rgb(0,0,0,0.06)] scale-95 sm:scale-100">
+          <div className="z-10 w-20 h-20 sm:w-24 sm:h-24 bg-white rounded-xl border-2 border-slate-900 flex flex-col items-center justify-center scale-95 sm:scale-100">
             <Database className="w-6 h-6 sm:w-8 sm:h-8 text-slate-900 mb-1" />
             <span className="text-[9px] sm:text-[10px] font-bold">PUSAT HR</span>
           </div>
@@ -130,16 +130,16 @@ const db = getFirestore(app); // Database ai-studio-...`;
 
           {/* Bottom Nodes */}
           <div className="flex w-full sm:w-[80%] lg:w-[60%] justify-between gap-2 sm:gap-4 mt-0">
-            <div className="z-10 flex-1 bg-white rounded-lg border border-slate-200 p-2 sm:p-3 flex flex-col items-center shadow-sm overflow-hidden">
-               <Layers className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-600 mb-1.5 sm:mb-2" />
+            <div className="z-10 flex-1 bg-white rounded-lg border border-slate-200 p-2 sm:p-3 flex flex-col items-center overflow-hidden">
+               <Layers className="w-4 h-4 sm:w-5 sm:h-5 text-slate-900 mb-1.5 sm:mb-2" />
                <span className="text-[10px] sm:text-xs font-bold text-slate-800 text-center truncate w-full">Administrasi</span>
-               <span className="text-[8px] sm:text-[9px] text-slate-500 mt-1 px-1.5 py-0.5 bg-slate-100 rounded-full truncate max-w-full text-center">/disposisi</span>
+               <span className="text-[8px] sm:text-[9px] text-slate-500 mt-1 px-1.5 py-0.5 bg-slate-100 rounded-lg truncate max-w-full text-center">/disposisi</span>
             </div>
             
-            <div className="z-10 flex-1 bg-white rounded-lg border border-slate-200 p-2 sm:p-3 flex flex-col items-center shadow-sm overflow-hidden">
-               <FolderOpen className="w-4 h-4 sm:w-5 sm:h-5 text-amber-600 mb-1.5 sm:mb-2" />
+            <div className="z-10 flex-1 bg-white rounded-lg border border-slate-200 p-2 sm:p-3 flex flex-col items-center overflow-hidden">
+               <FolderOpen className="w-4 h-4 sm:w-5 sm:h-5 text-slate-900 mb-1.5 sm:mb-2" />
                <span className="text-[10px] sm:text-xs font-bold text-slate-800 text-center truncate w-full">Dokumen UP</span>
-               <span className="text-[8px] sm:text-[9px] text-slate-500 mt-1 px-1.5 py-0.5 bg-slate-100 rounded-full truncate max-w-full text-center">/employee_documents</span>
+               <span className="text-[8px] sm:text-[9px] text-slate-500 mt-1 px-1.5 py-0.5 bg-slate-100 rounded-lg truncate max-w-full text-center">/employee_documents</span>
             </div>
           </div>
         </div>
@@ -193,8 +193,8 @@ const db = getFirestore(app); // Database ai-studio-...`;
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
         <div className="p-4 sm:p-6 border-b border-slate-100 bg-slate-50">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-indigo-50 flex items-center justify-center shrink-0">
-              <TerminalSquare className="w-5 h-5 text-indigo-600" />
+            <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
+              <TerminalSquare className="w-5 h-5 text-slate-900" />
             </div>
             <div>
               <h2 className="text-base sm:text-lg font-bold text-slate-900 leading-tight">Developer API: Akses Data</h2>
@@ -263,7 +263,7 @@ const db = getFirestore(app); // Database ai-studio-...`;
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input type="checkbox" className="sr-only peer" checked={isRealtime} onChange={(e) => setIsRealtime(e.target.checked)} />
-                    <div className="w-8 h-4.5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-indigo-600"></div>
+                    <div className="w-8 h-4.5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-slate-900"></div>
                   </label>
                 </div>
 
@@ -275,7 +275,7 @@ const db = getFirestore(app); // Database ai-studio-...`;
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input type="checkbox" className="sr-only peer" disabled={isRealtime} checked={enableCache && !isRealtime} onChange={(e) => setEnableCache(e.target.checked)} />
-                    <div className={`w-8 h-4.5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all ${isRealtime ? 'opacity-50 cursor-not-allowed' : 'peer-checked:bg-indigo-600'}`}></div>
+                    <div className={`w-8 h-4.5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all ${isRealtime ? 'opacity-50 cursor-not-allowed' : 'peer-checked:bg-slate-900'}`}></div>
                   </label>
                 </div>
               </div>
@@ -283,10 +283,10 @@ const db = getFirestore(app); // Database ai-studio-...`;
               {/* Code Views */}
               <div className="lg:col-span-8 flex flex-col gap-4">
                 {/* Snippet 1 */}
-                <div className="rounded-xl border border-slate-800 overflow-hidden bg-slate-900 shadow-sm flex flex-col">
+                <div className="rounded-xl border border-slate-800 overflow-hidden bg-slate-900 flex flex-col">
                   <div className="flex items-center justify-between px-3 sm:px-4 py-2 sm:py-2.5 border-b border-slate-800 bg-slate-800/40">
                     <span className="text-[9px] sm:text-[10px] text-slate-400 font-mono tracking-wider">init.ts</span>
-                    <button onClick={() => copyToClipboard(initCode, true)} className="p-1 sm:p-1.5 rounded-md bg-slate-700/50 hover:bg-slate-600 text-white transition-colors" aria-label="Copy code">
+                    <button onClick={() => copyToClipboard(initCode, true)} className="p-1 sm:p-1.5 rounded-md bg-slate-700/50 hover:bg-slate-600 text-white transition-all active:scale-95" aria-label="Copy code">
                       {copiedContext ? <Check className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-400" /> : <Copy className="w-3 h-3 sm:w-3.5 sm:h-3.5" />}
                     </button>
                   </div>
@@ -296,10 +296,10 @@ const db = getFirestore(app); // Database ai-studio-...`;
                 </div>
 
                 {/* Snippet 2 */}
-                <div className="rounded-xl border border-slate-800 overflow-hidden bg-slate-900 shadow-sm flex flex-col">
+                <div className="rounded-xl border border-slate-800 overflow-hidden bg-slate-900 flex flex-col">
                   <div className="flex items-center justify-between px-3 sm:px-4 py-2 sm:py-2.5 border-b border-slate-800 bg-slate-800/40">
                     <span className="text-[9px] sm:text-[10px] text-slate-400 font-mono tracking-wider">query.ts</span>
-                    <button onClick={() => copyToClipboard(queryCode, false)} className="p-1 sm:p-1.5 rounded-md bg-slate-700/50 hover:bg-slate-600 text-white transition-colors" aria-label="Copy code">
+                    <button onClick={() => copyToClipboard(queryCode, false)} className="p-1 sm:p-1.5 rounded-md bg-slate-700/50 hover:bg-slate-600 text-white transition-all active:scale-95" aria-label="Copy code">
                       {copiedQuery ? <Check className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-400" /> : <Copy className="w-3 h-3 sm:w-3.5 sm:h-3.5" />}
                     </button>
                   </div>

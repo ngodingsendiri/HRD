@@ -532,7 +532,7 @@ export default function Dashboard() {
           {kgbList.length > 5 && (
             <button
               onClick={() => setShowAllKgb(!showAllKgb)}
-              className="text-xs font-semibold text-slate-600 hover:text-slate-900 border border-slate-200 bg-white hover:bg-slate-50 rounded-lg px-4 py-2 flex items-center justify-center gap-2 transition-colors"
+              className="text-xs font-semibold text-slate-600 hover:text-slate-900 border border-slate-200 bg-white hover:bg-slate-50 rounded-lg px-4 py-2 flex items-center justify-center gap-2 transition-all active:scale-95"
             >
               {showAllKgb ? (
                 <>
@@ -679,7 +679,7 @@ export default function Dashboard() {
           {kpList.length > 5 && (
             <button
               onClick={() => setShowAllKp(!showAllKp)}
-              className="text-xs font-semibold text-slate-600 hover:text-slate-900 border border-slate-200 bg-white hover:bg-slate-50 rounded-lg px-4 py-2 flex items-center justify-center gap-2 transition-colors"
+              className="text-xs font-semibold text-slate-600 hover:text-slate-900 border border-slate-200 bg-white hover:bg-slate-50 rounded-lg px-4 py-2 flex items-center justify-center gap-2 transition-all active:scale-95"
             >
               {showAllKp ? (
                 <>
@@ -822,7 +822,7 @@ export default function Dashboard() {
             {pensiunList.length > 5 && (
               <button
                 onClick={() => setShowAllPensiun(!showAllPensiun)}
-                className="text-xs font-bold text-amber-600 hover:text-amber-700 transition-colors flex items-center gap-1 bg-amber-50 px-3 py-1.5 rounded-full"
+                className="text-xs font-bold text-amber-600 hover:text-amber-700 transition-all active:scale-95 flex items-center gap-1 bg-amber-50 px-3 py-1.5 rounded-lg"
               >
                 {showAllPensiun ? (
                   <>
