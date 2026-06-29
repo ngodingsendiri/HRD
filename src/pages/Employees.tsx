@@ -1376,7 +1376,7 @@ export default function Employees() {
             <select
               value={rowsPerPage}
               onChange={(e) => setRowsPerPage(Number(e.target.value))}
-              className="bg-white border border-slate-200 rounded px-2 py-1.5 text-[11px] font-bold text-slate-700 focus:outline-none focus:ring-1 focus:ring-slate-900/10 active:scale-95 transition-all cursor-pointer "
+              className="bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-[11px] font-bold text-slate-700 focus:outline-none focus:ring-1 focus:ring-slate-900/10 active:scale-95 transition-all cursor-pointer "
             >
               <option value={10}>10 Baris</option>
               <option value={20}>20 Baris</option>
@@ -1386,7 +1386,7 @@ export default function Employees() {
           </div>
         </div>
 
-        <div className="bg-white rounded-lg border border-slate-100 overflow-hidden flex flex-col h-[600px] ">
+        <div className="bg-white rounded-xl border border-slate-100 overflow-hidden flex flex-col h-[600px] ">
           {/* Desktop Table View */}
           <div className="hidden lg:block flex-1 overflow-auto bg-slate-50">
             <table className="min-w-[1500px] w-full border-collapse bg-white">
@@ -1396,7 +1396,7 @@ export default function Employees() {
                     <div className="flex items-center gap-2">
                       <input
                         type="checkbox"
-                        className="rounded border-slate-300 text-slate-900 focus:ring-slate-900/20 cursor-pointer"
+                        className="rounded-lg border-slate-300 text-slate-900 focus:ring-slate-900/20 cursor-pointer"
                         onChange={handleSelectAll}
                         checked={
                           displayedEmployees.length > 0 &&
@@ -1528,7 +1528,7 @@ export default function Employees() {
                         <div className="flex items-center gap-2">
                           <input
                             type="checkbox"
-                            className="rounded border-slate-300 text-slate-900 focus:ring-slate-900/20 cursor-pointer transition-all"
+                            className="rounded-lg border-slate-300 text-slate-900 focus:ring-slate-900/20 cursor-pointer transition-all"
                             onChange={() => handleSelectOne(emp.id!)}
                             checked={emp.id ? selectedIds.has(emp.id) : false}
                           />
@@ -1580,7 +1580,7 @@ export default function Employees() {
                       </td>
                       <td className="px-4 py-3 border-b border-slate-100 whitespace-nowrap">
                         <span
-                          className={`px-2 py-0.5 inline-flex text-[9px] font-bold uppercase tracking-wider rounded border
+                          className={`px-2 py-0.5 inline-flex text-[9px] font-bold uppercase tracking-wider rounded-lg border
  ${
    emp.status === "PNS"
      ? "bg-slate-900 text-white border-slate-900"
@@ -1650,7 +1650,7 @@ export default function Employees() {
                         </div>
                       </div>
                       <span
-                        className={`px-2 py-1 inline-flex text-[10px] font-bold uppercase tracking-wider rounded border shrink-0
+                        className={`px-2 py-1 inline-flex text-[10px] font-bold uppercase tracking-wider rounded-lg border shrink-0
  ${
    emp.status === "PNS"
      ? "bg-emerald-50 text-emerald-700 border-emerald-100"

@@ -518,7 +518,7 @@ export default function Print() {
               setCustomTitle("DAFTAR HADIR / ABSENSI PEGAWAI");
               setSelectedBidang("Semua");
             }}
-            className={`flex-1 sm:flex-none px-6 py-2 font-bold text-[12px] rounded-md transition-colors ${printCategory === "laporan" ? "bg-white text-slate-900 " : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"}`}
+            className={`flex-1 sm:flex-none px-6 py-2 font-bold text-[12px] rounded-lg transition-colors ${printCategory === "laporan" ? "bg-white text-slate-900 " : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"}`}
           >
             Laporan Umum
           </button>
@@ -528,7 +528,7 @@ export default function Print() {
               setPrintType("surat_cuti");
               setCustomTitle("SURAT IZIN CUTI PEGAWAI");
             }}
-            className={`flex-1 sm:flex-none px-6 py-2 font-bold text-[12px] rounded-md transition-colors ${printCategory === "layanan" ? "bg-white text-slate-900 " : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"}`}
+            className={`flex-1 sm:flex-none px-6 py-2 font-bold text-[12px] rounded-lg transition-colors ${printCategory === "layanan" ? "bg-white text-slate-900 " : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"}`}
           >
             Layanan Kepegawaian
           </button>

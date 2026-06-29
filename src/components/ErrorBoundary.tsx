@@ -58,7 +58,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
             </h2>
             <p className="text-sm text-red-600 mb-4">{errorMessage}</p>
             {isPermissionError && (
-              <div className="text-xs text-red-500 bg-red-100 p-3 rounded text-left w-full">
+              <div className="text-xs text-red-500 bg-red-100 p-3 rounded-lg text-left w-full">
                 <p className="font-semibold mb-1">Cara Mengatasi:</p>
                 <ol className="list-decimal pl-4 space-y-1">
                   <li>Buka Firebase Console</li>
@@ -74,7 +74,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
             )}
             <button
               onClick={() => window.location.reload()}
-              className="mt-6 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm font-medium"
+              className="mt-6 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium"
             >
               Muat Ulang Halaman
             </button>

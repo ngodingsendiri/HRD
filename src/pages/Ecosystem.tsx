@@ -174,7 +174,7 @@ const db = getFirestore(app); // Database ai-studio-...`;
                 <Layers className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
                 <div className="text-sm">
                   <span className="font-semibold text-slate-800 block">Cabang 1 (Administrasi)</span>
-                  <span className="text-slate-500 text-xs">Memiliki namespace khusus <code className="bg-slate-200 px-1 rounded text-[10px]">/shared/data/disposisi</code>. Terisolasi dari modifikasi data HR.</span>
+                  <span className="text-slate-500 text-xs">Memiliki namespace khusus <code className="bg-slate-200 px-1 rounded-lg text-[10px]">/shared/data/disposisi</code>. Terisolasi dari modifikasi data HR.</span>
                 </div>
               </li>
               <li className="flex items-start gap-3 bg-slate-50 p-3 rounded-lg border border-slate-100">
@@ -286,7 +286,7 @@ const db = getFirestore(app); // Database ai-studio-...`;
                 <div className="rounded-xl border border-slate-800 overflow-hidden bg-slate-900 flex flex-col">
                   <div className="flex items-center justify-between px-3 sm:px-4 py-2 sm:py-2.5 border-b border-slate-800 bg-slate-800/40">
                     <span className="text-[9px] sm:text-[10px] text-slate-400 font-mono tracking-wider">init.ts</span>
-                    <button onClick={() => copyToClipboard(initCode, true)} className="p-1 sm:p-1.5 rounded-md bg-slate-700/50 hover:bg-slate-600 text-white transition-all active:scale-95" aria-label="Copy code">
+                    <button onClick={() => copyToClipboard(initCode, true)} className="p-1 sm:p-1.5 rounded-lg bg-slate-700/50 hover:bg-slate-600 text-white transition-all active:scale-95" aria-label="Copy code">
                       {copiedContext ? <Check className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-400" /> : <Copy className="w-3 h-3 sm:w-3.5 sm:h-3.5" />}
                     </button>
                   </div>
@@ -299,7 +299,7 @@ const db = getFirestore(app); // Database ai-studio-...`;
                 <div className="rounded-xl border border-slate-800 overflow-hidden bg-slate-900 flex flex-col">
                   <div className="flex items-center justify-between px-3 sm:px-4 py-2 sm:py-2.5 border-b border-slate-800 bg-slate-800/40">
                     <span className="text-[9px] sm:text-[10px] text-slate-400 font-mono tracking-wider">query.ts</span>
-                    <button onClick={() => copyToClipboard(queryCode, false)} className="p-1 sm:p-1.5 rounded-md bg-slate-700/50 hover:bg-slate-600 text-white transition-all active:scale-95" aria-label="Copy code">
+                    <button onClick={() => copyToClipboard(queryCode, false)} className="p-1 sm:p-1.5 rounded-lg bg-slate-700/50 hover:bg-slate-600 text-white transition-all active:scale-95" aria-label="Copy code">
                       {copiedQuery ? <Check className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-400" /> : <Copy className="w-3 h-3 sm:w-3.5 sm:h-3.5" />}
                     </button>
                   </div>

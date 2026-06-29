@@ -182,21 +182,21 @@ export function KamusManager({ csvData, onChange }: KamusManagerProps) {
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="inline-flex items-center px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded hover:bg-slate-50 transition-colors "
+            className="inline-flex items-center px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all active:scale-95"
           >
             <Upload className="w-3.5 h-3.5 mr-1.5" /> Import
           </button>
           <button
             type="button"
             onClick={handleExport}
-            className="inline-flex items-center px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded hover:bg-slate-50 transition-colors "
+            className="inline-flex items-center px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all active:scale-95"
           >
             <Download className="w-3.5 h-3.5 mr-1.5" /> Export
           </button>
         </div>
       </div>
 
-      <div className="border border-slate-200 rounded-lg overflow-hidden bg-white ">
+      <div className="border border-slate-200 rounded-xl overflow-hidden bg-white ">
         <div className="overflow-x-auto max-h-[400px]">
           <table className="w-full text-left border-collapse">
             <thead className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200">
@@ -228,7 +228,7 @@ export function KamusManager({ csvData, onChange }: KamusManagerProps) {
                       onChange={(e) =>
                         handleCellChange(row.id, "no", e.target.value)
                       }
-                      className="w-full px-2 py-1.5 text-xs bg-transparent border border-transparent rounded hover:border-slate-200 focus:border-slate-300 focus:bg-white focus:outline-none transition-colors"
+                      className="w-full px-2 py-1.5 text-xs bg-transparent border border-transparent rounded-lg hover:border-slate-200 focus:border-slate-300 focus:bg-white focus:outline-none transition-colors"
                     />
                   </td>
                   <td className="px-2 py-1">
@@ -238,7 +238,7 @@ export function KamusManager({ csvData, onChange }: KamusManagerProps) {
                       onChange={(e) =>
                         handleCellChange(row.id, "jabatan", e.target.value)
                       }
-                      className="w-full px-2 py-1.5 text-xs font-medium text-slate-700 bg-transparent border border-transparent rounded hover:border-slate-200 focus:border-slate-300 focus:bg-white focus:outline-none transition-colors"
+                      className="w-full px-2 py-1.5 text-xs font-medium text-slate-700 bg-transparent border border-transparent rounded-lg hover:border-slate-200 focus:border-slate-300 focus:bg-white focus:outline-none transition-colors"
                       placeholder="Nama Jabatan..."
                     />
                   </td>
@@ -249,7 +249,7 @@ export function KamusManager({ csvData, onChange }: KamusManagerProps) {
                       onChange={(e) =>
                         handleCellChange(row.id, "kelas", e.target.value)
                       }
-                      className="w-full px-2 py-1.5 text-xs bg-transparent border border-transparent rounded hover:border-slate-200 focus:border-slate-300 focus:bg-white focus:outline-none transition-colors"
+                      className="w-full px-2 py-1.5 text-xs bg-transparent border border-transparent rounded-lg hover:border-slate-200 focus:border-slate-300 focus:bg-white focus:outline-none transition-colors"
                       placeholder="Misal: 14"
                     />
                   </td>
@@ -260,7 +260,7 @@ export function KamusManager({ csvData, onChange }: KamusManagerProps) {
                       onChange={(e) =>
                         handleCellChange(row.id, "beban", e.target.value)
                       }
-                      className="w-full px-2 py-1.5 text-xs bg-transparent border border-transparent rounded hover:border-slate-200 focus:border-slate-300 focus:bg-white focus:outline-none transition-colors"
+                      className="w-full px-2 py-1.5 text-xs bg-transparent border border-transparent rounded-lg hover:border-slate-200 focus:border-slate-300 focus:bg-white focus:outline-none transition-colors"
                       placeholder="Misal: 1.738"
                     />
                   </td>
@@ -268,7 +268,7 @@ export function KamusManager({ csvData, onChange }: KamusManagerProps) {
                     <button
                       type="button"
                       onClick={() => handleDeleteRow(row.id)}
-                      className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                      className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all active:scale-95"
                       title="Hapus"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -294,7 +294,7 @@ export function KamusManager({ csvData, onChange }: KamusManagerProps) {
           <button
             type="button"
             onClick={handleAddRow}
-            className="w-full inline-flex items-center justify-center px-3 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-200/50 rounded transition-colors"
+            className="w-full inline-flex items-center justify-center px-3 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-200/50 rounded-lg transition-all active:scale-95"
           >
             <Plus className="w-3.5 h-3.5 mr-1" /> Tambah Baris Kosong
           </button>

@@ -64,7 +64,7 @@ export default function Layout() {
           )}
         >
           <div className="flex items-center gap-3 overflow-hidden">
-            <div className="w-8 h-8 bg-slate-900 rounded flex items-center justify-center shrink-0">
+            <div className="w-8 h-8 bg-slate-900 rounded-lg flex items-center justify-center shrink-0">
               <Users className="w-4 h-4 text-white" />
             </div>
             {!isSidebarCollapsed && (
@@ -146,7 +146,7 @@ export default function Layout() {
             {!isSidebarCollapsed && (
               <button
                 onClick={() => signOut(auth)}
-                className="p-1.5 text-slate-400 hover:text-slate-900 rounded-md transition-colors"
+                className="p-1.5 text-slate-400 hover:text-slate-900 rounded-lg transition-colors"
               >
                 <LogOut className="w-4 h-4" />
               </button>
@@ -160,7 +160,7 @@ export default function Layout() {
         {/* Mobile Header */}
         <header className="lg:hidden bg-white/80 backdrop-blur-md border-b border-slate-100 h-14 px-4 flex items-center justify-between shrink-0 sticky top-0 z-30 print:hidden">
           <div className="flex items-center gap-3">
-            <div className="w-7 h-7 rounded bg-slate-900 flex items-center justify-center">
+            <div className="w-7 h-7 rounded-lg bg-slate-900 flex items-center justify-center">
               <Users className="w-3.5 h-3.5 text-white" />
             </div>
             <span className="font-bold text-slate-900 text-sm">HRCube</span>

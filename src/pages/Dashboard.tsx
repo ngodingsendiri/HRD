@@ -372,7 +372,7 @@ export default function Dashboard() {
           </p>
         </div>
         <div className="flex items-center gap-4">
-          <div className="h-9 px-4 bg-slate-900 text-white rounded text-[12px] font-semibold flex items-center justify-center cursor-default transition-all hover:bg-slate-800">
+          <div className="h-9 px-4 bg-slate-900 text-white rounded-lg text-[12px] font-semibold flex items-center justify-center cursor-default transition-all hover:bg-slate-800">
             {new Date().toLocaleDateString("id-ID", {
               day: "numeric",
               month: "long",
@@ -390,7 +390,7 @@ export default function Dashboard() {
         {statCards.map((item) => (
           <div
             key={item.name}
-            className="bg-white border border-slate-100 p-3 sm:p-6 rounded-lg hover:border-slate-300 transition-colors"
+            className="bg-white border border-slate-100 p-3 sm:p-6 rounded-xl hover:border-slate-300 transition-colors"
           >
             <div className="flex items-center gap-2 sm:gap-3 mb-1.5 sm:mb-3 text-slate-400">
               <item.icon className="w-4 h-4" />
@@ -414,7 +414,7 @@ export default function Dashboard() {
               Distribusi Aparatur per Unit Kerja
             </h2>
           </div>
-          <div className="bg-white border border-slate-100 rounded-lg overflow-hidden text-[13px]">
+          <div className="bg-white border border-slate-100 rounded-xl overflow-hidden text-[13px]">
             <div className="grid grid-cols-12 gap-2 sm:gap-4 px-3 sm:px-6 py-2.5 sm:py-3 bg-slate-50 border-b border-slate-100 font-bold text-slate-500 uppercase text-[9px] sm:text-[10px] tracking-wider">
               <div className="col-span-1 hidden sm:block">No</div>
               <div className="col-span-9 sm:col-span-8">
@@ -453,7 +453,7 @@ export default function Dashboard() {
           <h2 className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.1em]">
             Visualisasi Komposisi SDM
           </h2>
-          <div className="bg-white border border-slate-100 rounded-lg p-3 sm:p-6 ">
+          <div className="bg-white border border-slate-100 rounded-xl p-3 sm:p-6 ">
             <div className="h-[220px] sm:h-[260px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -548,7 +548,7 @@ export default function Dashboard() {
           )}
         </div>
 
-        <div className="bg-white border border-slate-100 rounded-lg overflow-hidden">
+        <div className="bg-white border border-slate-100 rounded-xl overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-[13px] whitespace-nowrap">
               <thead className="bg-slate-50/50 border-b border-slate-100 uppercase text-[9px] sm:text-[10px] tracking-widest font-bold text-slate-500">
@@ -591,7 +591,7 @@ export default function Dashboard() {
                         </div>
                       </td>
                       <td className="px-3 sm:px-6 py-2.5 sm:py-4 hidden sm:table-cell">
-                        <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-slate-600">
+                        <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[11px] font-semibold bg-slate-100 text-slate-600">
                           {kgb.status}
                         </div>
                         <div className="text-[11px] sm:text-xs text-slate-500 mt-1">
@@ -627,7 +627,7 @@ export default function Dashboard() {
                       <td className="px-3 sm:px-6 py-2.5 sm:py-4 text-right">
                         <div
                           className={cn(
-                            "inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-md text-[10px] sm:text-xs font-bold whitespace-nowrap",
+                            "inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg text-[10px] sm:text-xs font-bold whitespace-nowrap",
                             kgb.isOverdue
                               ? "bg-rose-50 text-rose-700 border border-rose-100/50"
                               : kgb.diffDays <= 30
@@ -695,7 +695,7 @@ export default function Dashboard() {
           )}
         </div>
 
-        <div className="bg-white border border-slate-100 rounded-lg overflow-hidden">
+        <div className="bg-white border border-slate-100 rounded-xl overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-[13px] whitespace-nowrap">
               <thead className="bg-slate-50/50 border-b border-slate-100 uppercase text-[9px] sm:text-[10px] tracking-widest font-bold text-slate-500">
@@ -738,7 +738,7 @@ export default function Dashboard() {
                         </div>
                       </td>
                       <td className="px-3 sm:px-6 py-2.5 sm:py-4 hidden sm:table-cell">
-                        <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-slate-600">
+                        <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[11px] font-semibold bg-slate-100 text-slate-600">
                           {kp.status}
                         </div>
                         <div className="text-[11px] sm:text-xs text-slate-500 mt-1">
@@ -771,7 +771,7 @@ export default function Dashboard() {
                       <td className="px-3 sm:px-6 py-2.5 sm:py-4 text-right">
                         <div
                           className={cn(
-                            "inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-md text-[10px] sm:text-xs font-bold whitespace-nowrap",
+                            "inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg text-[10px] sm:text-xs font-bold whitespace-nowrap",
                             kp.isOverdue
                               ? "bg-rose-50 text-rose-700 border border-rose-100/50"
                               : kp.diffDays <= 90
@@ -837,7 +837,7 @@ export default function Dashboard() {
               </button>
             )}
           </div>
-          <div className="bg-white border border-slate-100 rounded-lg overflow-x-auto ">
+          <div className="bg-white border border-slate-100 rounded-xl overflow-x-auto ">
             <table className="w-full text-left text-[13px] whitespace-nowrap">
               <thead className="bg-slate-50/50 border-b border-slate-100 uppercase text-[9px] sm:text-[10px] tracking-widest font-bold text-slate-500">
                 <tr>
@@ -879,7 +879,7 @@ export default function Dashboard() {
                         </div>
                       </td>
                       <td className="px-3 sm:px-6 py-3 sm:py-4 hidden sm:table-cell">
-                        <div className="inline-flex px-2 py-1 rounded bg-slate-100 text-slate-600 text-[10px] font-bold tracking-wider">
+                        <div className="inline-flex px-2 py-1 rounded-lg bg-slate-100 text-slate-600 text-[10px] font-bold tracking-wider">
                           {pensiun.status || "ASN"}
                         </div>
                         <div className="text-[11px] sm:text-xs text-slate-500 mt-1">
@@ -913,7 +913,7 @@ export default function Dashboard() {
                       <td className="px-3 sm:px-6 py-2.5 sm:py-4 text-right">
                         <div
                           className={cn(
-                            "inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-md text-[10px] sm:text-xs font-bold whitespace-nowrap",
+                            "inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg text-[10px] sm:text-xs font-bold whitespace-nowrap",
                             pensiun.isOverdue
                               ? "bg-rose-50 text-rose-700 border border-rose-100/50"
                               : pensiun.diffDays <= 365

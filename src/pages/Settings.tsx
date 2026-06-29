@@ -176,7 +176,7 @@ export default function Settings() {
           <nav className="flex md:flex-col gap-2 overflow-x-auto pb-2 md:pb-0">
             <button
               onClick={() => setActiveTab("identitas")}
-              className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all whitespace-nowrap ${
+              className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all whitespace-nowrap active:scale-95 ${
                 activeTab === "identitas"
                   ? "bg-slate-100 text-slate-900 ring-1 ring-slate-200"
                   : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
@@ -189,7 +189,7 @@ export default function Settings() {
             </button>
             <button
               onClick={() => setActiveTab("cetak")}
-              className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all whitespace-nowrap ${
+              className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all whitespace-nowrap active:scale-95 ${
                 activeTab === "cetak"
                   ? "bg-slate-100 text-slate-900 ring-1 ring-slate-200"
                   : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
@@ -202,7 +202,7 @@ export default function Settings() {
             </button>
             <button
               onClick={() => setActiveTab("kamus")}
-              className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all whitespace-nowrap ${
+              className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all whitespace-nowrap active:scale-95 ${
                 activeTab === "kamus"
                   ? "bg-slate-100 text-slate-900 ring-1 ring-slate-200"
                   : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
