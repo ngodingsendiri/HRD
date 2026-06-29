@@ -75,6 +75,8 @@ export function EmployeeForm({
   });
 
   const jabatan = watch("jabatan");
+  const nip = watch("nip");
+  const status = watch("status");
 
   const kamusJabatanList = useMemo(() => {
     if (!settings?.jabatanKamusCsv) return [];
@@ -123,6 +125,42 @@ export function EmployeeForm({
         setValue("bebanKerja", matchedBeban, { shouldDirty: true });
     }
   }, [jabatan, settings?.jabatanKamusCsv, setValue]);
+
+  useEffect(() => {
+    if (!nip) return;
+    
+    // Hapus karakter non-digit jika ada (termasuk spasi)
+    const cleanNip = nip.replace(/\D/g, '');
+    
+    if (cleanNip.length === 18) {
+      // 1. Ekstrak Jenis Kelamin (Digit ke-15)
+      const jkCode = cleanNip.charAt(14);
+      if (jkCode === '1') {
+        setValue("jk", "L", { shouldDirty: true });
+      } else if (jkCode === '2') {
+        setValue("jk", "P", { shouldDirty: true });
+      }
+
+      // 2. Ekstrak Tanggal Lahir (Digit 1-8)
+      const lahirYear = cleanNip.substring(0, 4);
+      const lahirMonth = cleanNip.substring(4, 6);
+      const lahirDay = cleanNip.substring(6, 8);
+      if (!isNaN(Number(lahirYear)) && !isNaN(Number(lahirMonth)) && !isNaN(Number(lahirDay))) {
+        setValue("tanggalLahir", `${lahirYear}-${lahirMonth}-${lahirDay}`, { shouldDirty: true });
+      }
+
+      // 3. Ekstrak TMT Kerja (TMT CPNS) khusus untuk PNS
+      if (status === "PNS" || status === "CPNS") {
+        const year = cleanNip.substring(8, 12);
+        const month = cleanNip.substring(12, 14);
+        
+        if (!isNaN(Number(year)) && !isNaN(Number(month))) {
+          // Format standar YYYY-MM-DD
+          setValue("tmtKerja", `${year}-${month}-01`, { shouldDirty: true });
+        }
+      }
+    }
+  }, [nip, status, setValue]);
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
@@ -181,6 +219,7 @@ export function EmployeeForm({
               Tanggal Lahir
             </label>
             <input
+              type="date"
               {...register("tanggalLahir")}
               className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
             />
@@ -371,6 +410,7 @@ export function EmployeeForm({
               TMT Golongan
             </label>
             <input
+              type="date"
               {...register("tmtGolonganRuang")}
               className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
             />
@@ -380,6 +420,7 @@ export function EmployeeForm({
               TMT Kerja
             </label>
             <input
+              type="date"
               {...register("tmtKerja")}
               className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
             />
