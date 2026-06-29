@@ -1,7 +1,7 @@
 import { useForm, useFieldArray } from "react-hook-form";
 import { Employee, AppSettings } from "../types";
 import { Plus, Trash2 } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 
 interface EmployeeFormProps {
   initialData?: Employee;
@@ -75,6 +75,23 @@ export function EmployeeForm({
   });
 
   const jabatan = watch("jabatan");
+
+  const kamusJabatanList = useMemo(() => {
+    if (!settings?.jabatanKamusCsv) return [];
+    const rows = settings.jabatanKamusCsv.split("\n");
+    const jabatans: string[] = [];
+    for (const row of rows) {
+      if (!row || row.trim() === "") continue;
+      const cols = row.split(/;|\t/);
+      if (cols.length >= 4) {
+        const jab = cols[1]?.trim();
+        if (jab && jab.toLowerCase() !== "jabatan" && !jabatans.includes(jab)) {
+          jabatans.push(jab);
+        }
+      }
+    }
+    return jabatans.sort();
+  }, [settings?.jabatanKamusCsv]);
 
   useEffect(() => {
     if (!settings?.jabatanKamusCsv || !jabatan) return;
@@ -281,19 +298,33 @@ export function EmployeeForm({
             <label className="text-sm font-medium text-slate-700">
               Jabatan
             </label>
-            <input
+            <select
               {...register("jabatan")}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-            />
+              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all cursor-pointer"
+            >
+              <option value="">Pilih Jabatan...</option>
+              {kamusJabatanList.map((jab) => (
+                <option key={jab} value={jab}>
+                  {jab}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="space-y-1.5">
             <label className="text-sm font-medium text-slate-700">
               Unit Kerja / Bidang
             </label>
-            <input
+            <select
               {...register("bidang")}
-              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
-            />
+              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all cursor-pointer"
+            >
+              <option value="">Pilih Unit Kerja / Bidang...</option>
+              <option value="Sekretariat">Sekretariat</option>
+              <option value="Infrastruktur Teknologi Informasi Komunikasi">Infrastruktur Teknologi Informasi Komunikasi</option>
+              <option value="Pengembangan Smart City dan Statistik">Pengembangan Smart City dan Statistik</option>
+              <option value="Aspirasi dan Layanan Informasi Publik">Aspirasi dan Layanan Informasi Publik</option>
+              <option value="Layanan Media Komunikasi Publik">Layanan Media Komunikasi Publik</option>
+            </select>
           </div>
           <div className="space-y-1.5">
             <label className="text-sm font-medium text-slate-700">

@@ -843,7 +843,7 @@ export default function Print() {
         {/* Actual Print Paper Container */}
         <div
           ref={printRef}
-          className="bg-white shadow-md print-container text-[12pt] w-[210mm] max-w-none shrink-0 p-[15mm] print:max-w-full print:w-full print:p-0 mx-auto"
+          className="bg-white border border-slate-200 print-container text-[12pt] w-[210mm] max-w-none shrink-0 p-[15mm] print:max-w-full print:w-full print:p-0 mx-auto print:border-none"
           style={{
             minHeight: "297mm",
             fontFamily: "Arial, Helvetica, sans-serif",

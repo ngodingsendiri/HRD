@@ -1845,7 +1845,7 @@ export default function Employees() {
       {/* Error Toast / Alert */}
       {error && (
         <div className="fixed bottom-6 right-6 z-50 animate-in fade-in slide-in-from-bottom-4 duration-300">
-          <div className="bg-red-600 text-white px-6 py-4 rounded-xl shadow-md flex items-center gap-3">
+          <div className="bg-red-600 text-white px-6 py-4 rounded-xl flex items-center gap-3">
             <AlertCircle className="w-5 h-5" />
             <div className="text-sm font-medium">{error.message}</div>
             <button
