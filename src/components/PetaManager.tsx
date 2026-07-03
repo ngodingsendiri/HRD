@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Plus, Trash2, Download, Upload, FileText } from "lucide-react";
+import { Plus, Trash2, Download, Upload, FileText, Database } from "lucide-react";
 import * as XLSX from "xlsx";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -208,45 +208,45 @@ const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
           <button
             type="button"
             onClick={handleDownloadTemplate}
-            className="flex-1 sm:flex-none justify-center inline-flex items-center px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all active:scale-95"
+            className="flex-1 sm:flex-none justify-center inline-flex items-center px-3 py-2 text-[12px] font-bold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all active:scale-95"
           >
             <FileText className="w-3.5 h-3.5 mr-1.5 text-emerald-600" /> Template
           </button>
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="flex-1 sm:flex-none justify-center inline-flex items-center px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all active:scale-95"
+            className="flex-1 sm:flex-none justify-center inline-flex items-center px-3 py-2 text-[12px] font-bold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all active:scale-95"
           >
-            <Upload className="w-3.5 h-3.5 mr-1.5" /> Import
+            <Upload className="w-3.5 h-3.5 mr-1.5" /> Impor
           </button>
           <button
             type="button"
             onClick={handleExport}
-            className="flex-1 sm:flex-none justify-center inline-flex items-center px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all active:scale-95"
+            className="flex-1 sm:flex-none justify-center inline-flex items-center px-3 py-2 text-[12px] font-bold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all active:scale-95"
           >
-            <Download className="w-3.5 h-3.5 mr-1.5" /> Export
+            <Download className="w-3.5 h-3.5 mr-1.5" /> Ekspor
           </button>
         </div>
       </div>
 
-      <div className="border border-slate-200 rounded-xl overflow-hidden bg-white ">
+      <div className="border border-slate-100 rounded-xl overflow-hidden bg-white ">
         <div className="overflow-x-auto max-h-[400px]">
           <table className="w-full text-left border-collapse">
-            <thead className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200">
+            <thead className="sticky top-0 z-10 bg-slate-50 border-b border-slate-100">
               <tr>
-                <th className="px-4 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider w-12">No</th>
-                <th className="px-4 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider min-w-[150px]">Bidang / Unit Kerja</th>
-                <th className="px-4 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider min-w-[180px]">Jabatan</th>
-                <th className="px-4 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider w-24">Kelas</th>
-                <th className="px-4 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider w-24">Kebutuhan</th>
-                <th className="px-4 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider w-16 text-center">Aksi</th>
+                <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50 border-r border-slate-100 last:border-r-0 w-12">No</th>
+                <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50 border-r border-slate-100 last:border-r-0 min-w-[150px]">Bidang / Unit Kerja</th>
+                <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50 border-r border-slate-100 last:border-r-0 min-w-[180px]">Jabatan</th>
+                <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50 border-r border-slate-100 last:border-r-0 w-24">Kelas</th>
+                <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50 border-r border-slate-100 last:border-r-0 w-24">Kebutuhan</th>
+                <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50 border-r border-slate-100 last:border-r-0 w-16 text-center">Aksi</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="bg-white">
               <AnimatePresence initial={false}>
               {rows.map((row) => (
-                <motion.tr layout initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} transition={{ duration: 0.2 }} key={row.id} className="hover:bg-slate-50/50 group">
-                  <td className="px-2 py-1">
+                <motion.tr initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} transition={{ duration: 0.2 }} key={row.id} className="group hover:bg-slate-50 transition-colors duration-150">
+                  <td className="px-2 py-1 border-b border-r border-slate-100 last:border-r-0">
                     <input
                       type="text"
                       value={row.no}
@@ -254,7 +254,7 @@ const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
                       className="w-full px-2 py-1.5 text-xs bg-transparent border border-transparent rounded-lg hover:border-slate-200 focus:border-slate-300 focus:bg-white focus:outline-none transition-colors"
                     />
                   </td>
-                  <td className="px-2 py-1">
+                  <td className="px-2 py-1 border-b border-r border-slate-100 last:border-r-0">
                     <input
                       type="text"
                       value={row.bidang}
@@ -263,7 +263,7 @@ const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
                       placeholder="Bidang..."
                     />
                   </td>
-                  <td className="px-2 py-1">
+                  <td className="px-2 py-1 border-b border-r border-slate-100 last:border-r-0">
                     <input
                       type="text"
                       value={row.jabatan}
@@ -272,7 +272,7 @@ const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
                       placeholder="Nama Jabatan..."
                     />
                   </td>
-                  <td className="px-2 py-1">
+                  <td className="px-2 py-1 border-b border-r border-slate-100 last:border-r-0">
                     <input
                       type="text"
                       value={row.kelas}
@@ -281,7 +281,7 @@ const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
                       placeholder="Misal: 14"
                     />
                   </td>
-                  <td className="px-2 py-1">
+                  <td className="px-2 py-1 border-b border-r border-slate-100 last:border-r-0">
                     <input
                       type="text"
                       value={row.kebutuhan}
@@ -290,7 +290,7 @@ const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
                       placeholder="0"
                     />
                   </td>
-                  <td className="px-2 py-1 text-center">
+                  <td className="px-2 py-1 text-center border-b border-r border-slate-100 last:border-r-0">
                     <button
                       type="button"
                       onClick={() => handleDeleteRow(row.id)}
@@ -303,9 +303,19 @@ const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
                 </motion.tr>
               ))}
               {rows.length === 0 && (
-                <motion.tr layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                  <td colSpan={6} className="px-4 py-8 text-center text-slate-400 text-sm">
-                    Master Peta Jabatan kosong. Silakan tambah baris atau import dari file Excel.
+                <motion.tr initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                  <td colSpan={6} className="px-6 py-16 text-center bg-white border-b border-slate-100">
+                    <div className="flex flex-col items-center justify-center">
+                      <div className="w-14 h-14 bg-slate-50 rounded-full flex items-center justify-center mb-4 ring-4 ring-white border border-slate-100">
+                        <Database className="w-6 h-6 text-slate-400" />
+                      </div>
+                      <h3 className="text-[13px] font-bold text-slate-900">
+                        Belum ada Master Peta Jabatan
+                      </h3>
+                      <p className="text-[12px] text-slate-500 mt-1 max-w-sm">
+                        Silakan tambah baris kosong untuk mengisi manual, atau impor dari file Excel untuk memproses massal.
+                      </p>
+                    </div>
                   </td>
                 </motion.tr>
               )}
@@ -317,7 +327,7 @@ const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
           <button
             type="button"
             onClick={handleAddRow}
-            className="w-full inline-flex items-center justify-center px-3 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-200/50 rounded-lg transition-all active:scale-95"
+            className="w-full inline-flex items-center justify-center px-3 py-2 text-[12px] font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-200/50 rounded-lg transition-all active:scale-95"
           >
             <Plus className="w-3.5 h-3.5 mr-1" /> Tambah Baris Kosong
           </button>

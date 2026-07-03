@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { AppSettings } from "../types";
@@ -48,6 +48,39 @@ export default function Settings() {
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  
+  const initialSettingsRef = useRef<string | null>(null);
+  
+  // Track initial settings
+  useEffect(() => {
+    if (!loading && initialSettingsRef.current === null) {
+      initialSettingsRef.current = JSON.stringify(settings);
+    }
+  }, [loading, settings]);
+
+  // Debounced Auto-save
+  useEffect(() => {
+    if (loading || !initialSettingsRef.current) return;
+    
+    const currentSettingsStr = JSON.stringify(settings);
+    if (currentSettingsStr === initialSettingsRef.current) return;
+
+    const timeout = setTimeout(async () => {
+      try {
+        setSaving(true);
+        await setDoc(doc(db, "shared/data/settings/app"), settings);
+        initialSettingsRef.current = currentSettingsStr;
+        // Don't show toast for autosave to prevent annoyance, just update the saving indicator
+      } catch (error) {
+        console.error("Auto-save failed:", error);
+      } finally {
+        setSaving(false);
+      }
+    }, 1000);
+
+    return () => clearTimeout(timeout);
+  }, [settings, loading]);
+
   const [message, setMessage] = useState<{
     type: "success" | "error";
     text: string;
@@ -159,7 +192,7 @@ export default function Settings() {
           ) : (
             <Save className="w-4 h-4 mr-2" />
           )}
-          Simpan Semua
+          {saving ? "Menyimpan..." : "Tersimpan"}
         </button>
       </motion.div>
 

@@ -25,7 +25,7 @@ export function EmployeeForm({
     watch,
     setValue,
     getValues,
-    formState: { errors },
+    formState: { errors, dirtyFields },
   } = useForm<Employee>({
     defaultValues: initialData || {
       nik: "",
@@ -105,7 +105,7 @@ export function EmployeeForm({
   }, [settings?.jabatanKamusCsv]);
 
   useEffect(() => {
-    if (!settings?.jabatanKamusCsv || !jabatan) return;
+    if (!settings?.jabatanKamusCsv || !jabatan || !dirtyFields.jabatan) return;
 
     // Parse kamus
     const rows = settings.jabatanKamusCsv.split("\n");
@@ -131,10 +131,10 @@ export function EmployeeForm({
       if (matchedBeban)
         setValue("bebanKerja", matchedBeban, { shouldDirty: true });
     }
-  }, [jabatan, settings?.jabatanKamusCsv, setValue]);
+  }, [jabatan, settings?.jabatanKamusCsv, setValue, dirtyFields.jabatan]);
 
   useEffect(() => {
-    if (!nip) return;
+    if (!nip || !dirtyFields.nip) return;
     
     const currentStatus = getValues("status");
     const extractResult = validateAndExtractNIP(nip, currentStatus);
@@ -148,25 +148,25 @@ export function EmployeeForm({
     if (extractResult.tmtKerja) {
       setValue("tmtKerja", extractResult.tmtKerja, { shouldDirty: true });
     }
-  }, [nip, setValue, getValues]);
+  }, [nip, setValue, getValues, dirtyFields.nip]);
 
   useEffect(() => {
-    if (tanggalLahir && jabatan) {
+    if (tanggalLahir && jabatan && (dirtyFields.tanggalLahir || dirtyFields.jabatan)) {
       const calculatedPensiun = calculateBUP(tanggalLahir, jabatan);
       if (calculatedPensiun) {
         setValue("pensiun", calculatedPensiun, { shouldDirty: true });
       }
     }
-  }, [tanggalLahir, jabatan, setValue]);
+  }, [tanggalLahir, jabatan, setValue, dirtyFields.tanggalLahir, dirtyFields.jabatan]);
 
   useEffect(() => {
-    if (tmtKerja) {
+    if (tmtKerja && dirtyFields.tmtKerja) {
       const calculatedMasaKerja = calculateMasaKerja(tmtKerja);
       if (calculatedMasaKerja) {
         setValue("masaKerja", calculatedMasaKerja, { shouldDirty: true });
       }
     }
-  }, [tmtKerja, setValue]);
+  }, [tmtKerja, setValue, dirtyFields.tmtKerja]);
 
   useEffect(() => {
     if (Object.keys(errors).length > 0) {
@@ -402,7 +402,7 @@ export function EmployeeForm({
 
             <div className="border-t border-slate-100 pt-4 mt-4">
               <h4 className="text-sm font-semibold text-slate-800 mb-4">Riwayat Pendidikan & Pelatihan</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium text-slate-900">Pendidikan Terakhir</label>
                   <input
@@ -546,7 +546,7 @@ export function EmployeeForm({
 
         {/* Tab 4: Keluarga & Cuti */}
         <div className={activeTab === 4 ? "space-y-6 animate-in fade-in duration-300 block" : "hidden"}>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-slate-900">Sisa Cuti N</label>
                 <input
@@ -572,7 +572,7 @@ export function EmployeeForm({
                 <label className="text-sm font-medium text-slate-900">Jumlah Tertanggung</label>
                 <input
                   type="number"
-                  {...register("jumlahTertanggung")}
+                  {...register("jumlahTertanggung", { valueAsNumber: true })}
                   className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
                 />
               </div>

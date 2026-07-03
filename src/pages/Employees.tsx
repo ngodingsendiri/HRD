@@ -335,9 +335,45 @@ export default function Employees() {
     }
   };
 
-  const handleExport = () => {
+    const handleExport = () => {
+    const today = new Date();
     const exportData = employees.map(
       ({ id, dataKeluarga, createdAt, updatedAt, ...rest }) => {
+        let usia = "";
+        let tmtPensiun = rest.pensiun;
+        if (rest.tanggalLahir) {
+          const birth = new Date(rest.tanggalLahir);
+          if (!isNaN(birth.getTime())) {
+            const ageDate = new Date(today.getTime() - birth.getTime());
+            usia = String(Math.abs(ageDate.getUTCFullYear() - 1970));
+            
+            if (!tmtPensiun) {
+              const pensiunDate = new Date(birth);
+              const pensiunAge = String(rest.jabatan).toLowerCase().includes('guru') || String(rest.jabatan).toLowerCase().includes('medis') ? 60 : 58;
+              pensiunDate.setFullYear(pensiunDate.getFullYear() + pensiunAge);
+              tmtPensiun = pensiunDate.toISOString().split("T")[0];
+            }
+          }
+        }
+
+        let nextKgb = "";
+        if (rest.tanggalBerkalaTerakhir) {
+           const d = new Date(rest.tanggalBerkalaTerakhir);
+           if (!isNaN(d.getTime())) {
+             d.setFullYear(d.getFullYear() + 2);
+             nextKgb = d.toISOString().split("T")[0];
+           }
+        }
+        
+        let nextKp = "";
+        if (rest.tmtGolonganRuang) {
+           const d = new Date(rest.tmtGolonganRuang);
+           if (!isNaN(d.getTime())) {
+             d.setFullYear(d.getFullYear() + 4);
+             nextKp = d.toISOString().split("T")[0];
+           }
+        }
+
         return {
           Nama: rest.nama,
           "N I P": rest.nip,
@@ -345,6 +381,7 @@ export default function Employees() {
           JK: rest.jk,
           "Tempat Lahir": rest.tempatLahir,
           "Tanggal Lahir": rest.tanggalLahir,
+          "Usia": usia,
           "Jalan/Dusun": rest.jalanDusun,
           RT: rest.rt,
           RW: rest.rw,
@@ -355,14 +392,16 @@ export default function Employees() {
           "beban kerja": rest.bebanKerja,
           "TMT Kerja": rest.tmtKerja,
           "Masa Kerja": rest.masaKerja,
-          Pensiun: rest.pensiun,
+          "Pensiun (BUP)": tmtPensiun,
           "TMT Golongan Ruang": rest.tmtGolonganRuang,
           "Masa Kerja Golongan Ruang": rest.masaKerjaGolonganRuang,
+          "Prediksi Kenaikan Pangkat (KP)": nextKp,
           "No. Rekening Bank": rest.noRekeningBank,
           NPWP: rest.npwp,
           Pangkat: rest.pangkat,
           Gol: rest.gol,
           "Tanggal Berkala Terakhir": rest.tanggalBerkalaTerakhir,
+          "Prediksi Kenaikan Gaji Berkala (KGB)": nextKgb,
           "Gaji Pokok": rest.gajiPokok,
           "Besaran Gaji Kotor": rest.besaranGajiKotor,
           "Digaji Menurut PP/SK": rest.digajiMenurut,
@@ -593,6 +632,7 @@ export default function Employees() {
     const totalSelisih = exportData.reduce((acc, curr) => acc + (Number(curr["Selisih"]) || 0), 0);
 
     exportData.push({
+      // @ts-ignore
       No: "",
       Bidang: "Jumlah",
       "Nama Jabatan Sesuai Peta Jabatan": "",
@@ -635,6 +675,7 @@ export default function Employees() {
       "JK",
       "Tempat Lahir",
       "Tanggal Lahir",
+      "Usia",
       "Jalan/Dusun",
       "RT",
       "RW",
@@ -645,14 +686,16 @@ export default function Employees() {
       "beban kerja",
       "TMT Kerja",
       "Masa Kerja",
-      "Pensiun",
+      "Pensiun (BUP)",
       "TMT Golongan Ruang",
       "Masa Kerja Golongan Ruang",
+      "Prediksi Kenaikan Pangkat (KP)",
       "No. Rekening Bank",
       "NPWP",
       "Pangkat",
       "Gol",
       "Tanggal Berkala Terakhir",
+      "Prediksi Kenaikan Gaji Berkala (KGB)",
       "Gaji Pokok",
       "Besaran Gaji Kotor",
       "Digaji Menurut PP/SK",
@@ -711,7 +754,8 @@ export default function Employees() {
         "3509191101830005",
         "L",
         "Bondowoso",
-        "11 Januari 1983",
+        "1983-01-11", // Tanggal Lahir
+        "43", // Usia
         "Perum Muktisari Blok BF No. 6",
         "004",
         "003",
@@ -720,65 +764,51 @@ export default function Employees() {
         "Jember",
         "10",
         "Tinggi",
-        "02 Januari 2026",
-        "24 Tahun 4 Bulan",
-        "2041-01-11",
-        "01/10/2025",
-        "Pembina Tk. I",
-        "IV.b",
-        "01/10/2025",
-        "4.672.800",
-        "7.236.979",
-        "Kepala Dinas",
-        "Sekretariat",
-        "PNS",
-        "L.066441",
-        "S2",
-        "Ilmu Pemerintahan",
-        "PIM II",
-        "2020",
-        "Kawin",
-        "Islam",
-        "081252748226",
-        "12",
-        "0",
-        "0",
-        "Bupati Jember",
-        "-",
-        "Sekda Jember",
-        "-",
-        "SK Bupati No. 123",
-        "Nama Pasangan",
+        "2002-01-01", // TMT Kerja
+        "24", // Masa Kerja
+        "2041-01-11", // Pensiun (BUP)
+        "2021-10-01", // TMT Golongan Ruang
+        "20", // Masa Kerja Golongan Ruang
+        "2025-10-01", // Prediksi Kenaikan Pangkat (KP)
+        "1234567890", // No. Rekening Bank
+        "12.345.678.9-012.000", // NPWP
+        "Pembina Tk. I", // Pangkat
+        "IV.b", // Gol
+        "2023-10-01", // Tanggal Berkala Terakhir
+        "2025-10-01", // Prediksi Kenaikan Gaji Berkala (KGB)
+        "4.672.800", // Gaji Pokok
+        "7.236.979", // Besaran Gaji Kotor
+        "Kepala Dinas", // Digaji Menurut PP/SK
+        "Kepala Dinas Pendidikan", // Jabatan
+        "Sekretariat", // Bidang
+        "PNS", // Status
+        "L.066441", // Nomor Karpeg
+        "S2", // Pendidikan
+        "Ilmu Pemerintahan", // Jurusan
+        "PIM II", // Diklat Jenjang
+        "2020", // Tahun Diklat
+        "Kawin", // Status Kawin
+        "Islam", // Agama
+        "081252748226", // Nomor HP
+        "12", // Sisa Cuti N
+        "0", // Sisa Cuti N-1
+        "0", // Sisa Cuti N-2
+        "SK Bupati No. 123", // SK Terakhir
+        "Nama Pasangan", // Pasangan
         "1985-01-01",
         "2010-01-01",
         "Wiraswasta",
         "Aktif",
-        "Anak Pertama",
+        "Anak Pertama", // Anak 1
         "2012-05-10",
-        "-",
-        "Sekolah",
-        "Tertanggung",
-        "Anak Kedua",
-        "2017-08-20",
-        "-",
-        "Belum Sekolah",
-        "Tertanggung",
         "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "2",
+        "Pelajar",
+        "Tanggungan",
+        "", "", "", "", "", // Anak 2
+        "", "", "", "", "", // Anak 3
+        "", "", "", "", "", // Anak 4
+        "", "", "", "", "", // Anak 5
+        "2", // Jumlah Tertanggung
       ],
     ];
 
@@ -973,7 +1003,7 @@ export default function Employees() {
               bebanKerja: String(getVal(row, ["Beban Kerja"]) || "").trim(),
               tmtKerja: excelDateToJSDate(getVal(row, ["TMT Kerja"])),
               masaKerja: String(getVal(row, ["Masa Kerja"]) || "").trim(),
-              pensiun: excelDateToJSDate(getVal(row, ["Pensiun"])),
+              pensiun: excelDateToJSDate(getVal(row, ["Pensiun", "Pensiun (BUP)"])),
               tmtGolonganRuang: excelDateToJSDate(
                 getVal(row, ["TMT Golongan Ruang"]),
               ),
@@ -1015,10 +1045,10 @@ export default function Employees() {
               nomorHp: String(
                 getVal(row, ["Nomor HP", "No HP", "Nomo HP", "No. HP"]) || "",
               ).trim(),
-              sisaCutiN: String(getVal(row, ["Sisa Cuti N"]) || "").trim(),
-              sisaCutiN1: String(getVal(row, ["Sisa Cuti N-1"]) || "").trim(),
-              sisaCutiN2: String(getVal(row, ["Sisa Cuti N-2"]) || "").trim(),
-              skTerakhir: String(getVal(row, ["SK Terakhir"]) || "").trim(),
+              sisaCutiN: String(getVal(row, ["Sisa Cuti N", "Sisa Cuti Tahunan N"]) || "").trim(),
+              sisaCutiN1: String(getVal(row, ["Sisa Cuti N-1", "Sisa Cuti Tahunan N1"]) || "").trim(),
+              sisaCutiN2: String(getVal(row, ["Sisa Cuti N-2", "Sisa Cuti Tahunan N2"]) || "").trim(),
+              skTerakhir: String(getVal(row, ["SK Terakhir", "SK Terakhir Yang Dimiliki"]) || "").trim(),
               jumlahTertanggung: Number(
                 getVal(row, ["Jumlah Tertanggung"]) || 0,
               ),
@@ -1666,13 +1696,12 @@ export default function Employees() {
                 </tr>
               </thead>
               <tbody className="bg-white">
-                <AnimatePresence mode="popLayout">
+                <AnimatePresence initial={false}>
                   {displayedEmployees.map((emp, index) => (
                     <motion.tr
-                      layout
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.95 }}
                       transition={{ duration: 0.2 }}
                       key={emp.id}
                       className="group hover:bg-slate-50 transition-colors duration-150 border-b border-slate-100 last:border-0"
@@ -1781,12 +1810,11 @@ export default function Employees() {
 
           {/* Mobile Card View */}
           <div className="lg:hidden flex-1 overflow-y-auto bg-slate-50/50 p-2 sm:p-4 space-y-3 sm:space-y-4">
-            <AnimatePresence mode="popLayout">
+            <AnimatePresence initial={false}>
               {displayedEmployees.map((emp, index) => (
                 <motion.div
-                  layout
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
+                  initial={{ opacity: 0, scale: 0.95, y: -10 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.95 }}
                   transition={{ duration: 0.2 }}
                   key={emp.id}
@@ -1877,15 +1905,15 @@ export default function Employees() {
               ))}
             </AnimatePresence>
             {filteredEmployees.length === 0 && (
-              <div className="text-center py-12 bg-white rounded-xl border border-slate-200">
-                <div className="w-12 h-12 bg-slate-50 rounded-xl flex items-center justify-center mx-auto mb-3">
-                  <Search className="w-6 h-6 text-slate-300" />
+              <div className="text-center py-16 bg-white rounded-xl border border-slate-100 flex flex-col items-center justify-center">
+                <div className="w-14 h-14 bg-slate-50 rounded-full flex items-center justify-center mb-4 ring-4 ring-white border border-slate-100">
+                  <Search className="w-6 h-6 text-slate-400" />
                 </div>
-                <h3 className="text-sm font-semibold text-slate-900">
+                <h3 className="text-[13px] font-bold text-slate-900">
                   Tidak ada data ditemukan
                 </h3>
-                <p className="text-xs text-slate-500 mt-1">
-                  Coba sesuaikan kata pencarian.
+                <p className="text-[12px] text-slate-500 mt-1 max-w-sm">
+                  Coba sesuaikan kata kunci pencarian Anda atau tambah pegawai baru.
                 </p>
               </div>
             )}

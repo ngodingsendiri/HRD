@@ -560,7 +560,6 @@ export default function Dashboard() {
                   {displayedKgb.map((kgb) => (
                     <motion.tr
                       variants={itemVariants}
-                      layout
                       initial="hidden"
                       animate="visible"
                       exit="hidden"
@@ -707,7 +706,6 @@ export default function Dashboard() {
                   {displayedKp.map((kp) => (
                     <motion.tr
                       variants={itemVariants}
-                      layout
                       initial="hidden"
                       animate="visible"
                       exit="hidden"
@@ -848,7 +846,6 @@ export default function Dashboard() {
                   {displayedPensiun.map((pensiun) => (
                     <motion.tr
                       variants={itemVariants}
-                      layout
                       initial="hidden"
                       animate="visible"
                       exit="hidden"
