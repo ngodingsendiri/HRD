@@ -13,6 +13,8 @@ import {
   Printer,
 } from "lucide-react";
 import { KamusManager } from "../components/KamusManager";
+import { PetaManager } from "../components/PetaManager";
+import { FileSpreadsheet } from "lucide-react";
 import { DEFAULT_KAMUS } from "../constants";
 import { motion } from "motion/react";
 
@@ -42,6 +44,7 @@ export default function Settings() {
     kopLine4: "",
     logoBase64: "",
     jabatanKamusCsv: DEFAULT_KAMUS,
+    petaJabatanCsv: "",
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -49,7 +52,7 @@ export default function Settings() {
     type: "success" | "error";
     text: string;
   } | null>(null);
-  const [activeTab, setActiveTab] = useState<"identitas" | "cetak" | "kamus">(
+  const [activeTab, setActiveTab] = useState<"identitas" | "cetak" | "kamus" | "peta">(
     "identitas",
   );
 
@@ -64,6 +67,7 @@ export default function Settings() {
             ...prev,
             ...data,
             jabatanKamusCsv: data.jabatanKamusCsv || DEFAULT_KAMUS,
+            petaJabatanCsv: data.petaJabatanCsv || "",
           }));
         }
       } catch (error) {
@@ -133,7 +137,7 @@ export default function Settings() {
     >
       <motion.div
         variants={itemVariants}
-        className="flex flex-col md:flex-row md:items-end justify-between border-b border-slate-100 pb-4 md:pb-6 gap-4"
+        className="sticky top-0 z-20 bg-slate-50/90 backdrop-blur-md flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 py-4 sm:py-6 gap-4 -mx-4 px-4 sm:-mx-0 sm:px-0"
       >
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">
@@ -148,7 +152,7 @@ export default function Settings() {
           type="button"
           onClick={handleSave}
           disabled={saving}
-          className="inline-flex items-center justify-center px-6 py-2.5 text-[13px] font-bold text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-all active:scale-95 disabled:opacity-50 shrink-0"
+          className="w-full sm:w-auto inline-flex items-center justify-center px-6 py-2.5 text-[13px] font-bold text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-all active:scale-95 disabled:opacity-50 shrink-0"
         >
           {saving ? (
             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -173,10 +177,10 @@ export default function Settings() {
       <div className="flex flex-col md:flex-row gap-8">
         {/* Sidebar Nav */}
         <div className="w-full md:w-64 shrink-0">
-          <nav className="flex md:flex-col gap-2 overflow-x-auto pb-2 md:pb-0">
+          <nav className="flex md:flex-col gap-2 overflow-x-auto pb-4 md:pb-0 scrollbar-hide snap-x">
             <button
               onClick={() => setActiveTab("identitas")}
-              className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all whitespace-nowrap active:scale-95 ${
+              className={`snap-center flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all whitespace-nowrap active:scale-95 ${
                 activeTab === "identitas"
                   ? "bg-slate-100 text-slate-900 ring-1 ring-slate-200"
                   : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
@@ -189,7 +193,7 @@ export default function Settings() {
             </button>
             <button
               onClick={() => setActiveTab("cetak")}
-              className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all whitespace-nowrap active:scale-95 ${
+              className={`snap-center flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all whitespace-nowrap active:scale-95 ${
                 activeTab === "cetak"
                   ? "bg-slate-100 text-slate-900 ring-1 ring-slate-200"
                   : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
@@ -202,7 +206,7 @@ export default function Settings() {
             </button>
             <button
               onClick={() => setActiveTab("kamus")}
-              className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all whitespace-nowrap active:scale-95 ${
+              className={`snap-center flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all whitespace-nowrap active:scale-95 ${
                 activeTab === "kamus"
                   ? "bg-slate-100 text-slate-900 ring-1 ring-slate-200"
                   : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
@@ -211,7 +215,20 @@ export default function Settings() {
               <Database
                 className={`w-4 h-4 ${activeTab === "kamus" ? "text-slate-900" : "text-slate-400"}`}
               />
-              Data Acuan
+              Kamus Jabatan
+            </button>
+            <button
+              onClick={() => setActiveTab("peta")}
+              className={`snap-center flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all whitespace-nowrap active:scale-95 ${
+                activeTab === "peta"
+                  ? "bg-slate-100 text-slate-900 ring-1 ring-slate-200"
+                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+              }`}
+            >
+              <FileSpreadsheet
+                className={`w-4 h-4 ${activeTab === "peta" ? "text-slate-900" : "text-slate-400"}`}
+              />
+              Master Peta Jabatan
             </button>
           </nav>
         </div>
@@ -433,11 +450,11 @@ export default function Settings() {
               <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
                 <div className="border-b border-slate-100 pb-4 mb-6">
                   <h2 className="text-lg font-bold text-slate-800">
-                    Data Kelas Jabatan
+                    Data Kamus Jabatan
                   </h2>
                   <p className="text-sm text-slate-500 mt-1">
                     Data master referensi jabatan untuk menghitung kelas & beban
-                    kerja secara real-time.
+                    kerja secara otomatis di seluruh sistem.
                   </p>
                 </div>
 
@@ -446,6 +463,29 @@ export default function Settings() {
                   onChange={(newCsv) =>
                     setSettings({ ...settings, jabatanKamusCsv: newCsv })
                   }
+                  
+                />
+              </div>
+            )}
+            
+            {/* TAB PETA JABATAN */}
+            {activeTab === "peta" && (
+              <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <div className="border-b border-slate-100 pb-4 mb-6">
+                  <h2 className="text-lg font-bold text-slate-800">
+                    Master Peta Jabatan (Kebutuhan & Bezetting)
+                  </h2>
+                  <p className="text-sm text-slate-500 mt-1">
+                    Data referensi master untuk perhitungan kebutuhan pegawai dan analisis selisih/bezetting per Bidang/Unit Kerja.
+                  </p>
+                </div>
+
+                <PetaManager
+                  csvData={settings.petaJabatanCsv || ""}
+                  onChange={(newCsv) =>
+                    setSettings({ ...settings, petaJabatanCsv: newCsv })
+                  }
+                  
                 />
               </div>
             )}

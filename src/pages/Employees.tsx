@@ -486,6 +486,147 @@ export default function Employees() {
     XLSX.writeFile(wb, "Data_Pegawai_Full.xlsx");
   };
 
+  
+    const handleExportBezetting = () => {
+    // Read from settings or fallback to empty
+    let petaMap = [];
+    const csvData = settings?.petaJabatanCsv || "";
+    if (csvData) {
+      const rows = csvData.split("\n");
+      let isFirstRow = true;
+      for (const row of rows) {
+        if (!row || row.trim() === "") continue;
+        const cols = row.split(/;|\t/);
+        if (isFirstRow && cols[1]?.toLowerCase().includes("bidang")) {
+          isFirstRow = false;
+          continue;
+        }
+        isFirstRow = false;
+
+        if (cols.length >= 2) {
+          petaMap.push({
+            bidang: cols[1]?.trim() || "",
+            jabatan: cols[2]?.trim() || "",
+            kelas: cols[3]?.trim() || "",
+            kebutuhan: Number(cols[4]?.trim()) || 0,
+          });
+        }
+      }
+    } else {
+       // If no master map is provided, we just group the existing data
+    }
+
+    const grouped = new Map<string, any>();
+
+    // Initialize map with master peta data
+    petaMap.forEach((item) => {
+      if (!item.bidang || !item.jabatan) return;
+      const key = `${item.bidang.trim().toLowerCase()}|${item.jabatan.trim().toLowerCase()}`;
+      grouped.set(key, {
+        bidang: item.bidang,
+        jabatan: item.jabatan,
+        kelasJabatan: item.kelas,
+        kebutuhan: item.kebutuhan,
+        pns: 0,
+        cpns: 0,
+        pppk: 0,
+        pppkpw: 0,
+      });
+    });
+
+    // Populate with actual employees
+    employees.forEach((emp) => {
+      if (!emp.bidang || !emp.jabatan) return;
+      const key = `${emp.bidang.trim().toLowerCase()}|${emp.jabatan.trim().toLowerCase()}`;
+      
+      // If employee's jabatan is not in the map, add it
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          bidang: emp.bidang,
+          jabatan: emp.jabatan,
+          kelasJabatan: emp.kelasJabatan || "",
+          kebutuhan: 0, // 0 since not in peta
+          pns: 0,
+          cpns: 0,
+          pppk: 0,
+          pppkpw: 0,
+        });
+      }
+
+      const group = grouped.get(key);
+      if (emp.status === "PNS") group.pns += 1;
+      else if (emp.status === "CPNS") group.cpns += 1;
+      else if (emp.status === "PPPK") group.pppk += 1;
+      else if (emp.status === "PPPKPW") group.pppkpw += 1;
+    });
+
+    let exportData = Array.from(grouped.values())
+      .sort((a, b) => {
+        if (a.bidang < b.bidang) return -1;
+        if (a.bidang > b.bidang) return 1;
+        // if same bidang, sort by kebutuhan (desc) then kelas jabatan (desc)
+        if (b.kebutuhan !== a.kebutuhan) return b.kebutuhan - a.kebutuhan;
+        return Number(b.kelasJabatan) - Number(a.kelasJabatan);
+      })
+      .map((g, index) => {
+        const totalBezetting = g.pns + g.cpns + g.pppk + g.pppkpw;
+        return {
+          No: index + 1,
+          Bidang: g.bidang,
+          "Nama Jabatan Sesuai Peta Jabatan": g.jabatan,
+          "Kelas Jabatan": g.kelasJabatan,
+          "Kebutuhan Berdasarkan Peta Jabatan": g.kebutuhan,
+          PNS: g.pns || "",
+          CPNS: g.cpns || "",
+          PPPK: g.pppk || "",
+          "PPPK PW": g.pppkpw || "",
+          Selisih: totalBezetting - g.kebutuhan,
+        };
+      });
+
+    // Hitung baris Jumlah (Total)
+    const totalKebutuhan = exportData.reduce((acc, curr) => acc + (Number(curr["Kebutuhan Berdasarkan Peta Jabatan"]) || 0), 0);
+    const totalPNS = exportData.reduce((acc, curr) => acc + (Number(curr["PNS"]) || 0), 0);
+    const totalCPNS = exportData.reduce((acc, curr) => acc + (Number(curr["CPNS"]) || 0), 0);
+    const totalPPPK = exportData.reduce((acc, curr) => acc + (Number(curr["PPPK"]) || 0), 0);
+    const totalPPPKPW = exportData.reduce((acc, curr) => acc + (Number(curr["PPPK PW"]) || 0), 0);
+    const totalSelisih = exportData.reduce((acc, curr) => acc + (Number(curr["Selisih"]) || 0), 0);
+
+    exportData.push({
+      No: "",
+      Bidang: "Jumlah",
+      "Nama Jabatan Sesuai Peta Jabatan": "",
+      "Kelas Jabatan": "",
+      "Kebutuhan Berdasarkan Peta Jabatan": totalKebutuhan,
+      PNS: totalPNS || "",
+      CPNS: totalCPNS || "",
+      PPPK: totalPPPK || "",
+      "PPPK PW": totalPPPKPW || "",
+      Selisih: totalSelisih,
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    
+    // Sesuaikan lebar kolom
+    const wscols = [
+      { wch: 5 }, // No
+      { wch: 40 }, // Bidang
+      { wch: 50 }, // Jabatan
+      { wch: 15 }, // Kelas
+      { wch: 35 }, // Kebutuhan
+      { wch: 10 }, // PNS
+      { wch: 10 }, // CPNS
+      { wch: 10 }, // PPPK
+      { wch: 15 }, // PPPK PW
+      { wch: 10 }  // Selisih
+    ];
+    worksheet['!cols'] = wscols;
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Bezetting");
+    XLSX.writeFile(workbook, "Data_Bezetting_Pegawai.xlsx");
+  };
+
   const handleDownloadTemplate = () => {
     const headers = [
       "Nama",
@@ -1304,38 +1445,29 @@ export default function Employees() {
             secara terpusat.
           </p>
         </div>
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto mt-2 lg:mt-0">
-          <button
-            onClick={handleDownloadTemplate}
-            className="w-full sm:w-auto justify-center group inline-flex items-center px-4 py-2.5 text-[12px] font-bold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all active:scale-95"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5 mr-2 text-emerald-600" />
-            Template
-          </button>
-
-          <div className="flex bg-white border border-slate-200 rounded-lg overflow-hidden w-full sm:w-auto">
-            {selectedIds.size > 0 && (
-              <button
-                onClick={() => setIsBulkDeleteModalOpen(true)}
-                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 py-2.5 text-[12px] font-bold text-white bg-red-600 hover:bg-red-700 transition-all active:scale-95 border-r border-red-700"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Hapus {selectedIds.size}</span>
-              </button>
-            )}
+        <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 sm:gap-3 w-full lg:w-auto mt-3 lg:mt-0 sm:justify-end">
+          {selectedIds.size > 0 && (
             <button
-              onClick={() => {
-                setEditingEmployee(undefined);
-                setIsModalOpen(true);
-              }}
-              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 py-2.5 text-[12px] font-bold text-white bg-slate-900 hover:bg-slate-800 transition-all active:scale-95"
+              onClick={() => setIsBulkDeleteModalOpen(true)}
+              className="w-full sm:w-auto justify-center group inline-flex items-center px-4 py-2 text-[12px] font-bold text-white bg-red-600 rounded-lg hover:bg-red-700 transition-all active:scale-95"
             >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Tambah Data</span>
+              <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+              Hapus {selectedIds.size} Data
             </button>
-            <label className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2.5 text-[12px] font-bold text-slate-700 hover:bg-slate-50 border-r border-slate-100 transition-all active:scale-95 cursor-pointer order-first">
-              <Upload className="w-3.5 h-3.5" />
-              <span>Impor Excel</span>
+          )}
+
+          <div className="grid grid-cols-2 sm:flex sm:flex-row w-full sm:w-auto gap-2">
+            <button
+              onClick={handleDownloadTemplate}
+              className="w-full justify-center group inline-flex items-center px-3 py-2 text-[12px] font-bold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all active:scale-95"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 mr-1.5 text-emerald-600" />
+              Template
+            </button>
+
+            <label className="w-full justify-center group inline-flex items-center px-3 py-2 text-[12px] font-bold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all active:scale-95 cursor-pointer">
+              <Upload className="w-3.5 h-3.5 mr-1.5" />
+              Impor
               <input
                 type="file"
                 accept=".xlsx, .xls"
@@ -1343,14 +1475,35 @@ export default function Employees() {
                 onChange={handleImport}
               />
             </label>
+          </div>
+
+          <div className="grid grid-cols-2 sm:flex sm:flex-row w-full sm:w-auto gap-2">
             <button
               onClick={handleExport}
-              className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2.5 text-[12px] font-bold text-slate-700 hover:bg-slate-50 transition-all active:scale-95"
+              className="w-full justify-center group inline-flex items-center px-3 py-2 text-[12px] font-bold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all active:scale-95"
             >
-              <Download className="w-3.5 h-3.5" />
-              <span>Ekspor Data</span>
+              <Download className="w-3.5 h-3.5 mr-1.5 text-blue-600" />
+              Ekspor
+            </button>
+            <button
+              onClick={handleExportBezetting}
+              className="w-full justify-center group inline-flex items-center px-3 py-2 text-[12px] font-bold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all active:scale-95"
+            >
+              <Download className="w-3.5 h-3.5 mr-1.5 text-amber-600" />
+              Bezetting
             </button>
           </div>
+
+          <button
+            onClick={() => {
+              setEditingEmployee(undefined);
+              setIsModalOpen(true);
+            }}
+            className="w-full sm:w-auto justify-center group inline-flex items-center px-4 py-2 text-[12px] font-bold text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-all active:scale-95 mt-1 sm:mt-0 shadow-sm"
+          >
+            <Plus className="w-3.5 h-3.5 mr-1.5" />
+            Tambah
+          </button>
         </div>
       </motion.div>
 

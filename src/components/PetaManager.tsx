@@ -3,15 +3,16 @@ import { Plus, Trash2, Download, Upload, FileText } from "lucide-react";
 import * as XLSX from "xlsx";
 import { motion, AnimatePresence } from "framer-motion";
 
-interface KamusRow {
+interface PetaRow {
   id: string;
   no: string;
+  bidang: string;
   jabatan: string;
   kelas: string;
-  beban: string;
+  kebutuhan: string;
 }
 
-interface KamusManagerProps {
+interface PetaManagerProps {
   csvData: string;
   onChange: (csv: string) => void;
   
@@ -21,50 +22,50 @@ function generateId() {
   return Math.random().toString(36).substring(2, 9);
 }
 
-function parseCsvToRows(csv: string): KamusRow[] {
+function parseCsvToRows(csv: string): PetaRow[] {
   const rows = csv.split("\n");
-  const kamus: KamusRow[] = [];
+  const peta: PetaRow[] = [];
   let isFirstRow = true;
   for (const row of rows) {
     if (!row || row.trim() === "") continue;
     const cols = row.split(/;|\t/);
-    // identify header if it's the first row and contains "jabatan"
-    if (isFirstRow && cols[1]?.toLowerCase().includes("jabatan")) {
+    if (isFirstRow && cols[1]?.toLowerCase().includes("bidang")) {
       isFirstRow = false;
       continue;
     }
     isFirstRow = false;
 
     if (cols.length >= 2) {
-      kamus.push({
+      peta.push({
         id: generateId(),
         no: cols[0]?.trim() || "",
-        jabatan: cols[1]?.trim() || "",
-        kelas: cols[2]?.trim() || "",
-        beban: cols[3]?.trim() || "",
+        bidang: cols[1]?.trim() || "",
+        jabatan: cols[2]?.trim() || "",
+        kelas: cols[3]?.trim() || "",
+        kebutuhan: cols[4]?.trim() || "",
       });
     }
   }
-  return kamus;
+  return peta;
 }
 
-function stringifyRowsToCsv(rows: KamusRow[]): string {
-  const header = "No;Jabatan;Kelas;Beban Kerja";
+function stringifyRowsToCsv(rows: PetaRow[]): string {
+  const header = "No;Bidang;Jabatan;Kelas;Kebutuhan";
   const dataLines = rows.map(
-    (r) => `${r.no};${r.jabatan};${r.kelas};${r.beban}`,
+    (r) => `${r.no};${r.bidang};${r.jabatan};${r.kelas};${r.kebutuhan}`
   );
   return [header, ...dataLines].join("\n");
 }
 
-export function KamusManager({ csvData, onChange }: KamusManagerProps) {
-  const [rows, setRows] = useState<KamusRow[]>([]);
+export function PetaManager({ csvData, onChange }: PetaManagerProps) {
+  const [rows, setRows] = useState<PetaRow[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setRows(parseCsvToRows(csvData || ""));
   }, [csvData]);
 
-  const updateParent = (newRows: KamusRow[]) => {
+  const updateParent = (newRows: PetaRow[]) => {
     onChange(stringifyRowsToCsv(newRows));
   };
 
@@ -72,9 +73,10 @@ export function KamusManager({ csvData, onChange }: KamusManagerProps) {
     const newRow = {
       id: generateId(),
       no: String(rows.length + 1),
+      bidang: "",
       jabatan: "",
       kelas: "",
-      beban: "",
+      kebutuhan: "",
     };
     const newRows = [...rows, newRow];
     setRows(newRows);
@@ -83,7 +85,6 @@ export function KamusManager({ csvData, onChange }: KamusManagerProps) {
 
   const handleDeleteRow = (id: string) => {
     const newRows = rows.filter((r) => r.id !== id);
-    // re-index
     newRows.forEach((r, idx) => (r.no = String(idx + 1)));
     setRows(newRows);
     updateParent(newRows);
@@ -91,7 +92,7 @@ export function KamusManager({ csvData, onChange }: KamusManagerProps) {
 
   const handleCellChange = (
     id: string,
-    field: keyof KamusRow,
+    field: keyof PetaRow,
     value: string,
   ) => {
     const newRows = rows.map((r) =>
@@ -104,27 +105,36 @@ export function KamusManager({ csvData, onChange }: KamusManagerProps) {
   const handleExport = () => {
     const exportData = rows.map((row) => ({
       No: row.no,
+      Bidang: row.bidang,
       Jabatan: row.jabatan,
       Kelas: row.kelas,
-      "Beban Kerja": row.beban,
+      Kebutuhan: row.kebutuhan,
     }));
     const ws = XLSX.utils.json_to_sheet(exportData);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Kamus_Jabatan");
-    XLSX.writeFile(wb, "Kamus_Kelas_Jabatan.xlsx");
+    XLSX.utils.book_append_sheet(wb, ws, "Peta_Jabatan");
+    XLSX.writeFile(wb, "Master_Peta_Jabatan.xlsx");
   };
 
   
   const handleDownloadTemplate = () => {
-    const headers = ["No", "Jabatan", "Kelas", "Beban Kerja"];
-    const sampleData = [
-      ["1", "Kepala Dinas", "14", "1"],
-      ["2", "Sekretaris", "12", "1"],
+    const headers = [
+      "No",
+      "Bidang",
+      "Jabatan",
+      "Kelas",
+      "Kebutuhan",
     ];
+
+    const sampleData = [
+      ["1", "Sekretariat", "Kepala Dinas", "14", "1"],
+      ["2", "Sekretariat", "Sekretaris", "12", "1"],
+    ];
+
     const ws = XLSX.utils.aoa_to_sheet([headers, ...sampleData]);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Template_Kamus");
-    XLSX.writeFile(wb, "Template_Kamus_Jabatan.xlsx");
+    XLSX.utils.book_append_sheet(wb, ws, "Template_Peta");
+    XLSX.writeFile(wb, "Template_Master_Peta_Jabatan.xlsx");
   };
 
 const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -141,27 +151,29 @@ const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
         const data = XLSX.utils.sheet_to_json<any>(ws);
 
         if (data && data.length > 0) {
-          const newRows: KamusRow[] = data
+          const newRows: PetaRow[] = data
             .map((d: any, idx: number) => {
               const no = d["No"] || d["no"] || String(idx + 1);
+              const bidang = d["Bidang"] || d["bidang"] || "";
               const jabatan =
                 d["Jabatan"] || d["jabatan"] || d["JABATAN"] || "";
               const kelas = String(
                 d["Kelas"] || d["kelas"] || d["Kelas Jabatan"] || "",
               );
-              const beban = String(
-                d["Beban Kerja"] || d["beban kerja"] || d["Beban"] || "",
+              const kebutuhan = String(
+                d["Kebutuhan"] || d["kebutuhan"] || "",
               );
 
               return {
                 id: generateId(),
                 no: String(no),
+                bidang: String(bidang),
                 jabatan: String(jabatan),
                 kelas: String(kelas),
-                beban: String(beban),
+                kebutuhan: String(kebutuhan),
               };
             })
-            .filter((r) => r.jabatan); // Only import rows with an actual jabatan
+            .filter((r) => r.jabatan);
 
           setRows(newRows);
           updateParent(newRows);
@@ -169,12 +181,11 @@ const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
       } catch (error) {
         console.error("Error parsing import:", error);
         alert(
-          "Gagal membaca file Excel/CSV. Pastikan format kolom sesuai: No, Jabatan, Kelas, Beban Kerja.",
+          "Gagal membaca file Excel/CSV. Pastikan format kolom sesuai: No, Bidang, Jabatan, Kelas, Kebutuhan.",
         );
       }
     };
     reader.readAsBinaryString(file);
-    // reset input
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -182,9 +193,8 @@ const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <p className="text-xs text-slate-500 max-w-lg">
-          Kelola data Kamus Jabatan untuk Autofill otomatis. Anda dapat mengetik
-          langsung ke tabel, menambah baris, atau memproses massal menggunakan
-          Excel.
+          Kelola Master Peta Jabatan untuk menghitung analisis Bezetting secara akurat. Anda dapat mengetik
+          langsung ke tabel, menambah baris, atau memproses massal menggunakan Excel.
         </p>
         <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 shrink-0 w-full sm:w-auto">
           
@@ -224,21 +234,12 @@ const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
           <table className="w-full text-left border-collapse">
             <thead className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200">
               <tr>
-                <th className="px-4 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider w-16">
-                  No
-                </th>
-                <th className="px-4 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider min-w-[200px]">
-                  Jabatan
-                </th>
-                <th className="px-4 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider w-32">
-                  Kelas
-                </th>
-                <th className="px-4 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider w-32">
-                  Beban Kerja
-                </th>
-                <th className="px-4 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider w-16 text-center">
-                  Aksi
-                </th>
+                <th className="px-4 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider w-12">No</th>
+                <th className="px-4 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider min-w-[150px]">Bidang / Unit Kerja</th>
+                <th className="px-4 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider min-w-[180px]">Jabatan</th>
+                <th className="px-4 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider w-24">Kelas</th>
+                <th className="px-4 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider w-24">Kebutuhan</th>
+                <th className="px-4 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider w-16 text-center">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -249,19 +250,24 @@ const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
                     <input
                       type="text"
                       value={row.no}
-                      onChange={(e) =>
-                        handleCellChange(row.id, "no", e.target.value)
-                      }
+                      onChange={(e) => handleCellChange(row.id, "no", e.target.value)}
                       className="w-full px-2 py-1.5 text-xs bg-transparent border border-transparent rounded-lg hover:border-slate-200 focus:border-slate-300 focus:bg-white focus:outline-none transition-colors"
                     />
                   </td>
                   <td className="px-2 py-1">
                     <input
                       type="text"
+                      value={row.bidang}
+                      onChange={(e) => handleCellChange(row.id, "bidang", e.target.value)}
+                      className="w-full px-2 py-1.5 text-xs font-medium text-slate-700 bg-transparent border border-transparent rounded-lg hover:border-slate-200 focus:border-slate-300 focus:bg-white focus:outline-none transition-colors"
+                      placeholder="Bidang..."
+                    />
+                  </td>
+                  <td className="px-2 py-1">
+                    <input
+                      type="text"
                       value={row.jabatan}
-                      onChange={(e) =>
-                        handleCellChange(row.id, "jabatan", e.target.value)
-                      }
+                      onChange={(e) => handleCellChange(row.id, "jabatan", e.target.value)}
                       className="w-full px-2 py-1.5 text-xs font-medium text-slate-700 bg-transparent border border-transparent rounded-lg hover:border-slate-200 focus:border-slate-300 focus:bg-white focus:outline-none transition-colors"
                       placeholder="Nama Jabatan..."
                     />
@@ -270,9 +276,7 @@ const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
                     <input
                       type="text"
                       value={row.kelas}
-                      onChange={(e) =>
-                        handleCellChange(row.id, "kelas", e.target.value)
-                      }
+                      onChange={(e) => handleCellChange(row.id, "kelas", e.target.value)}
                       className="w-full px-2 py-1.5 text-xs bg-transparent border border-transparent rounded-lg hover:border-slate-200 focus:border-slate-300 focus:bg-white focus:outline-none transition-colors"
                       placeholder="Misal: 14"
                     />
@@ -280,12 +284,10 @@ const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
                   <td className="px-2 py-1">
                     <input
                       type="text"
-                      value={row.beban}
-                      onChange={(e) =>
-                        handleCellChange(row.id, "beban", e.target.value)
-                      }
+                      value={row.kebutuhan}
+                      onChange={(e) => handleCellChange(row.id, "kebutuhan", e.target.value)}
                       className="w-full px-2 py-1.5 text-xs bg-transparent border border-transparent rounded-lg hover:border-slate-200 focus:border-slate-300 focus:bg-white focus:outline-none transition-colors"
-                      placeholder="Misal: 1.738"
+                      placeholder="0"
                     />
                   </td>
                   <td className="px-2 py-1 text-center">
@@ -302,16 +304,12 @@ const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
               ))}
               {rows.length === 0 && (
                 <motion.tr layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                  <td
-                    colSpan={5}
-                    className="px-4 py-8 text-center text-slate-400 text-sm"
-                  >
-                    Kamus jabatan kosong. Silakan tambah baris atau import dari
-                    file Excel.
+                  <td colSpan={6} className="px-4 py-8 text-center text-slate-400 text-sm">
+                    Master Peta Jabatan kosong. Silakan tambah baris atau import dari file Excel.
                   </td>
                 </motion.tr>
               )}
-              </AnimatePresence>
+            </AnimatePresence>
             </tbody>
           </table>
         </div>

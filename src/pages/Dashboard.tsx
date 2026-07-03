@@ -322,7 +322,7 @@ export default function Dashboard() {
     { name: "Total Aparatur", value: stats.total, icon: Users },
     { name: "PNS Aktif", value: stats.pns, icon: UserCheck },
     { name: "PPPK Aktif", value: stats.pppk, icon: Briefcase },
-    { name: "Penempatan Unit", value: bidangStats.length, icon: PieChartIcon },
+    { name: "PPPKPW Aktif", value: stats.pppkpw, icon: UserCheck },
   ];
 
   const COLORS = [
@@ -405,119 +405,104 @@ export default function Dashboard() {
         ))}
       </motion.div>
 
-      {/* Main Content Area */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8 items-start">
-        {/* Bidang Distribution Table-like List */}
-        <div className="lg:col-span-2 space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.1em]">
-              Distribusi Aparatur per Unit Kerja
-            </h2>
-          </div>
-          <div className="bg-white border border-slate-100 rounded-xl overflow-hidden text-[13px]">
-            <div className="grid grid-cols-12 gap-2 sm:gap-4 px-3 sm:px-6 py-2.5 sm:py-3 bg-slate-50 border-b border-slate-100 font-bold text-slate-500 uppercase text-[9px] sm:text-[10px] tracking-wider">
-              <div className="col-span-1 hidden sm:block">No</div>
-              <div className="col-span-9 sm:col-span-8">
-                Nomenklatur Unit Kerja
-              </div>
-              <div className="col-span-3 text-right">Alokasi SDM</div>
+                  {/* Main Content Area */}
+      <div className="space-y-4 pt-4 sm:pt-6">
+        <h2 className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.1em]">
+          Komposisi & Distribusi SDM per Unit Kerja
+        </h2>
+        
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+          {/* Chart Card */}
+          <div className="bg-white border border-slate-100 rounded-xl overflow-hidden flex flex-col xl:col-span-1">
+            <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50">
+              <h3 className="text-sm font-semibold text-slate-800">Visualisasi Komposisi</h3>
             </div>
-            <div className="divide-y divide-slate-50">
-              {bidangStats.map((bidang, index) => (
-                <motion.div
-                  variants={itemVariants}
-                  key={bidang.name}
-                  className="grid grid-cols-12 gap-2 sm:gap-4 px-3 sm:px-6 py-2.5 sm:py-4 hover:bg-slate-50/50 transition-colors group items-center"
-                >
-                  <div className="col-span-1 text-slate-300 font-mono text-[10px] sm:text-[11px] hidden sm:block">
-                    {String(index + 1).padStart(2, "0")}
-                  </div>
-                  <div className="col-span-9 sm:col-span-8 font-medium text-slate-700 group-hover:text-slate-900 truncate">
-                    {bidang.name}
-                  </div>
-                  <div className="col-span-3 text-right font-bold text-slate-900 tabular-nums text-sm">
-                    {bidang.value}
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-            <div className="px-3 sm:px-6 py-2.5 sm:py-4 bg-slate-50/50 flex flex-col sm:flex-row sm:justify-between items-start sm:items-center text-[10px] sm:text-[11px] text-slate-400 font-medium gap-1 sm:gap-0">
-              <span>Menampilkan {bidangStats.length} Unit Kerja</span>
-              <span>Terakhir diperbarui hari ini</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Chart Section */}
-        <div className="space-y-4">
-          <h2 className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.1em]">
-            Visualisasi Komposisi SDM
-          </h2>
-          <div className="bg-white border border-slate-100 rounded-xl p-3 sm:p-6 ">
-            <div className="h-[220px] sm:h-[260px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={bidangStats}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={70}
-                    outerRadius={95}
-                    paddingAngle={3}
-                    dataKey="value"
-                    stroke="none"
-                  >
-                    {bidangStats.map((entry, index) => (
-                      <Cell
-                        key={`cell-${index}`}
-                        fill={COLORS[index % COLORS.length]}
-                      />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    contentStyle={{
-                      borderRadius: "4px",
-                      border: "1px solid #e2e8f0",
-                      boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.05)",
-                      fontSize: "12px",
-                      color: "#1e293b",
-                    }}
-                    itemStyle={{ padding: "0px" }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-
-            <div className="mt-6 space-y-2 border-t border-slate-50 pt-6">
-              {bidangStats.slice(0, 3).map((item, index) => (
-                <div
-                  key={item.name}
-                  className="flex items-center justify-between text-[11px]"
-                >
-                  <div className="flex items-center gap-2">
-                    <div
-                      className="w-1.5 h-1.5 rounded-full"
-                      style={{ backgroundColor: COLORS[index % COLORS.length] }}
+            <div className="p-6 flex flex-col items-center justify-center flex-1">
+              <div className="h-[240px] w-full max-w-[280px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={bidangStats}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={75}
+                      outerRadius={105}
+                      paddingAngle={3}
+                      dataKey="value"
+                      stroke="none"
+                    >
+                      {bidangStats.map((entry, index) => (
+                        <Cell
+                          key={`cell-${index}`}
+                          fill={COLORS[index % COLORS.length]}
+                        />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{
+                        borderRadius: "8px",
+                        border: "1px solid #e2e8f0",
+                        boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.05)",
+                        fontSize: "12px",
+                        color: "#1e293b",
+                        padding: "8px 12px"
+                      }}
+                      itemStyle={{ padding: "0px" }}
                     />
-                    <span className="text-slate-500 font-medium truncate max-w-[150px]">
-                      {item.name}
-                    </span>
-                  </div>
-                  <span className="font-bold text-slate-900 tabular-nums">
-                    {item.value}
-                  </span>
-                </div>
-              ))}
-              <div className="text-[10px] text-center text-slate-400 italic pt-2">
-                *Hanya menampilkan unit kerja utama
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+
+          {/* List Card */}
+          <div className="bg-white border border-slate-100 rounded-xl overflow-hidden flex flex-col xl:col-span-2">
+            <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+              <h3 className="text-sm font-semibold text-slate-800">Rincian Alokasi per Unit Kerja</h3>
+              <span className="text-[10px] font-medium text-slate-400 bg-white border border-slate-200 px-2 py-1 rounded-md">
+                Total: {stats.total} Pegawai
+              </span>
+            </div>
+            
+            <div className="flex flex-col flex-1">
+              <div className="grid grid-cols-12 gap-4 px-5 py-3 border-b border-slate-50 font-bold text-slate-400 uppercase text-[10px] tracking-wider">
+                <div className="col-span-1 hidden sm:block">No</div>
+                <div className="col-span-9 sm:col-span-8">Unit Kerja</div>
+                <div className="col-span-3 text-right">Jumlah SDM</div>
+              </div>
+              
+              <div className="divide-y divide-slate-50 flex-1 overflow-y-auto" style={{ maxHeight: "400px" }}>
+                {bidangStats.map((bidang, index) => (
+                  <motion.div
+                    variants={itemVariants}
+                    key={bidang.name}
+                    className="grid grid-cols-12 gap-4 px-5 py-3.5 hover:bg-slate-50/50 transition-colors group items-center"
+                  >
+                    <div className="col-span-1 text-slate-300 font-mono text-[11px] hidden sm:block">
+                      {String(index + 1).padStart(2, "0")}
+                    </div>
+                    <div className="col-span-9 sm:col-span-8 font-medium text-slate-700 group-hover:text-slate-900 truncate text-sm">
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="w-1.5 h-1.5 rounded-full hidden sm:block"
+                          style={{ backgroundColor: COLORS[index % COLORS.length] }}
+                        />
+                        <span className="truncate">{bidang.name}</span>
+                      </div>
+                    </div>
+                    <div className="col-span-3 text-right font-bold text-slate-900 tabular-nums text-sm">
+                      {bidang.value}
+                    </div>
+                  </motion.div>
+                ))}
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* KGB Countdown Section */}
-      <div className="space-y-4 pt-4 sm:pt-6 mt-4 sm:mt-6 border-t border-slate-100">
+{/* KGB Countdown Section */}
+      <div className="space-y-6 pt-10 sm:pt-14 mt-8 sm:mt-12 border-t-2 border-slate-100">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h2 className="text-sm border-l-2 pl-3 border-sky-500 font-bold text-slate-800 uppercase tracking-wide flex items-center gap-2">
@@ -664,7 +649,7 @@ export default function Dashboard() {
       </div>
 
       {/* Kenaikan Pangkat (KP) Countdown Section */}
-      <div className="space-y-4 pt-4 sm:pt-6 mt-4 sm:mt-6 border-t border-slate-100">
+      <div className="space-y-6 pt-10 sm:pt-14 mt-8 sm:mt-12 border-t-2 border-slate-100">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h2 className="text-sm border-l-2 pl-3 border-emerald-500 font-bold text-slate-800 uppercase tracking-wide flex items-center gap-2">
@@ -807,7 +792,7 @@ export default function Dashboard() {
         </div>
 
         {/* Pensiun List */}
-        <div className="space-y-4">
+        <div className="space-y-6 pt-10 sm:pt-14 mt-8 sm:mt-12 border-t-2 border-slate-100">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-3 px-1">
             <div>
               <h2 className="text-sm border-l-2 pl-3 border-amber-500 font-bold text-slate-800 uppercase tracking-wide flex items-center gap-2">
