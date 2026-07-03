@@ -186,7 +186,12 @@ export function EmployeeForm({
   ];
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+    <form onSubmit={handleSubmit((data) => {
+      let combined = `${data.pangkat || ""} / ${data.gol || ""}`.trim();
+      if (combined === "/") combined = "";
+      data.pangkatGolongan = combined;
+      onSubmit(data);
+    })} className="space-y-6">
       
       {/* Navigation Tabs */}
       <div className="flex space-x-1 border-b border-slate-200 overflow-x-auto whitespace-nowrap [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] pb-px">
@@ -206,7 +211,7 @@ export function EmployeeForm({
         ))}
       </div>
 
-      <div className="min-h-[400px]">
+      <div className="h-[60vh] sm:h-[65vh] overflow-y-auto pr-2 pb-4 space-y-6">
         {/* Tab 1: Identitas Pribadi */}
         <div className={activeTab === 1 ? "space-y-6 animate-in fade-in duration-300 block" : "hidden"}>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -617,7 +622,7 @@ export function EmployeeForm({
                         <Trash2 className="w-5 h-5" />
                       </button>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                       <div className="space-y-1">
 <label className="text-xs font-medium text-slate-500">Nama</label>
                         <input
