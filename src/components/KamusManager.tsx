@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Plus, Trash2, Download, Upload, FileText, Database } from "lucide-react";
 import * as XLSX from "xlsx";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence } from "motion/react";
 
 interface KamusRow {
   id: string;

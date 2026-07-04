@@ -6,3 +6,8 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# One-time migration artifacts (Fase 0 & 6) — may contain sensitive employee data
+backup/*.json
+service-account*.json
+*.pem

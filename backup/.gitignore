@@ -1,0 +1,4 @@
+backup/*.json
+backup/!*.gitkeep
+scripts/service-account*.json
+*.pem
