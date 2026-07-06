@@ -86,6 +86,7 @@ export function EmployeeForm({
   const status = watch("status");
   const tanggalLahir = watch("tanggalLahir");
   const tmtKerja = watch("tmtKerja");
+  const tmtGolonganRuang = watch("tmtGolonganRuang");
 
   const kamusJabatanList = useMemo(() => {
     if (!settings?.jabatanKamusCsv) return [];
@@ -167,6 +168,15 @@ export function EmployeeForm({
       }
     }
   }, [tmtKerja, setValue, dirtyFields.tmtKerja]);
+
+  useEffect(() => {
+    if (tmtGolonganRuang && dirtyFields.tmtGolonganRuang) {
+      const calculatedMKG = calculateMasaKerja(tmtGolonganRuang);
+      if (calculatedMKG) {
+        setValue("masaKerjaGolonganRuang", calculatedMKG, { shouldDirty: true });
+      }
+    }
+  }, [tmtGolonganRuang, setValue, dirtyFields.tmtGolonganRuang]);
 
   useEffect(() => {
     if (Object.keys(errors).length > 0) {
@@ -469,6 +479,7 @@ export function EmployeeForm({
                 <label className="text-sm font-medium text-slate-900">Masa Kerja Golongan Ruang (MKG)</label>
                 <input
                   {...register("masaKerjaGolonganRuang")}
+                  placeholder="Terhitung otomatis"
                   className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
                 />
               </div>

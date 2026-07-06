@@ -16,6 +16,7 @@ import {
   AlertCircle,
   Printer,
   ArrowUpDown,
+  AlertTriangle,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { handleApiError, OperationType } from "../lib/error";
@@ -25,6 +26,11 @@ import { buildFamilyExportFields } from "../lib/employeeExport";
 import { motion, AnimatePresence } from "motion/react";
 
 import { DEFAULT_KAMUS } from "../constants";
+import {
+  checkKGBandKP,
+  formatKPLabel,
+  type KPStatus,
+} from "../lib/employeeUtils";
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -40,6 +46,50 @@ const itemVariants = {
   hidden: { opacity: 0, y: 15 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.3 } },
 };
+
+/** Badge peringatan KP/KGB. Warna merah = lewat, kuning = mendekati. */
+function KPBadge({ kind, status }: { kind: "KP" | "KGB"; status: KPStatus }) {
+  if (!status.due && !status.overdue) return null;
+  const isOverdue = status.overdue;
+  return (
+    <span
+      title={
+        status.targetDate
+          ? `${kind} jatuh tempo ${status.targetDate}${
+              status.daysLeft !== null
+                ? status.daysLeft < 0
+                  ? ` (lewat ${Math.abs(status.daysLeft)} hari)`
+                  : ` (sisa ${status.daysLeft} hari)`
+                : ""
+            }`
+          : kind
+      }
+      className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded-lg border whitespace-nowrap ${
+        isOverdue
+          ? "bg-red-50 text-red-700 border-red-100"
+          : "bg-amber-50 text-amber-700 border-amber-100"
+      }`}
+    >
+      <AlertTriangle className="w-2.5 h-2.5" />
+      {formatKPLabel(kind, status)}
+    </span>
+  );
+}
+
+/** Render badge KP & KGB untuk seorang pegawai. */
+function KPKGBBadges({ emp }: { emp: Employee }) {
+  const { kp, kgb, clear } = checkKGBandKP(
+    emp.tmtGolonganRuang,
+    emp.tanggalBerkalaTerakhir,
+  );
+  if (clear) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      <KPBadge kind="KP" status={kp} />
+      <KPBadge kind="KGB" status={kgb} />
+    </div>
+  );
+}
 
 export default function Employees() {
   const [rawEmployees, setRawEmployees] = useState<Employee[]>([]);
@@ -1148,6 +1198,9 @@ export default function Employees() {
                       />
                     </div>
                   </th>
+                  <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap border-b border-slate-100">
+                    Peringatan
+                  </th>
                   <th
                     onClick={() => handleSort("nip")}
                     className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap border-b border-slate-100 cursor-pointer hover:bg-slate-50 transition-colors"
@@ -1288,6 +1341,9 @@ export default function Employees() {
                           </span>
                         </div>
                       </td>
+                      <td className="px-4 py-3 border-b border-slate-100 whitespace-nowrap">
+                        <KPKGBBadges emp={emp} />
+                      </td>
                       <td className="px-4 py-3 border-b border-slate-100 whitespace-nowrap text-[11px] text-slate-500 tabular-nums">
                         {val(emp.nip)}
                       </td>
@@ -1329,7 +1385,7 @@ export default function Employees() {
                 {filteredEmployees.length === 0 && (
                   <tr>
                     <td
-                      colSpan={16}
+                      colSpan={17}
                       className="px-6 py-16 text-center bg-white"
                     >
                       <div className="flex flex-col items-center justify-center">
@@ -1372,6 +1428,7 @@ export default function Employees() {
                         <div className="text-xs text-slate-500 mt-1 font-medium">
                           {emp.nip ? `NIP: ${emp.nip}` : "NIP: -"}
                         </div>
+                        <KPKGBBadges emp={emp} />
                       </div>
                       <span
                         className={`px-2 py-1 inline-flex text-[10px] font-bold uppercase tracking-wider rounded-lg border shrink-0

@@ -1,4 +1,4 @@
-import { differenceInMonths, differenceInYears, addMonths, addYears, parse, isValid, startOfMonth } from "date-fns";
+import { differenceInMonths, differenceInYears, addMonths, addYears, startOfMonth } from "date-fns";
 
 export interface NIPExtractionResult {
   tanggalLahir: string | null;
@@ -108,48 +108,92 @@ export function calculateMasaKerja(startDate: string): string | null {
   return `${years} Tahun ${months} Bulan`;
 }
 
-export function checkKGBandKP(
-  tmtGolonganRuang: string | null | undefined, 
-  tanggalBerkalaTerakhir: string | null | undefined
-) {
-  const result = {
-    warningKP: false,
-    warningKGB: false,
-    status: ""
+export interface KPStatus {
+  /** true bila target sudah lewat (overdue). */
+  overdue: boolean;
+  /** true bila target jatuh tempo dalam <= warningDays (H-90). */
+  due: boolean;
+  /** Sisa hari hingga jatuh tempo (negatif bila sudah lewat). */
+  daysLeft: number | null;
+  /** Tanggal target (KP+4 thn / KGB+2 thn) dalam format YYYY-MM-DD. */
+  targetDate: string | null;
+}
+
+export interface KPStatusResult {
+  warningKP: boolean;
+  warningKGB: boolean;
+  status: string;
+  kp: KPStatus;
+  kgb: KPStatus;
+  /** true bila tidak ada peringatan apa pun. */
+  clear: boolean;
+}
+
+const WARNING_DAYS = 90; // H-90 dianggap "mendekati"
+
+function buildStatus(
+  baseDate: string | null | undefined,
+  cycleYears: number,
+): KPStatus {
+  const empty: KPStatus = {
+    overdue: false,
+    due: false,
+    daysLeft: null,
+    targetDate: null,
   };
-  
+  if (!baseDate) return empty;
+
+  const start = new Date(baseDate);
+  if (isNaN(start.getTime())) return empty;
+
+  const target = addYears(start, cycleYears);
   const now = new Date();
-  const warningDays = 90; // Warning H-90
+  const diffDays = Math.floor(
+    (target.getTime() - now.getTime()) / (1000 * 3600 * 24),
+  );
 
-  if (tmtGolonganRuang) {
-    const tmtDate = new Date(tmtGolonganRuang);
-    if (!isNaN(tmtDate.getTime())) {
-      const targetDate = addYears(tmtDate, 4);
-      const diffTime = targetDate.getTime() - now.getTime();
-      const diffDays = diffTime / (1000 * 3600 * 24);
-      if (diffDays <= warningDays) {
-        result.warningKP = true;
-      }
-    }
-  }
+  const pad = (num: number) => num.toString().padStart(2, "0");
+  const targetStr = `${target.getFullYear()}-${pad(target.getMonth() + 1)}-${pad(target.getDate())}`;
 
-  if (tanggalBerkalaTerakhir) {
-    const kgbDate = new Date(tanggalBerkalaTerakhir);
-    if (!isNaN(kgbDate.getTime())) {
-      const targetDate = addYears(kgbDate, 2);
-      const diffTime = targetDate.getTime() - now.getTime();
-      const diffDays = diffTime / (1000 * 3600 * 24);
-      if (diffDays <= warningDays) {
-        result.warningKGB = true;
-      }
-    }
+  return {
+    overdue: diffDays < 0,
+    due: diffDays >= 0 && diffDays <= WARNING_DAYS,
+    daysLeft: diffDays,
+    targetDate: targetStr,
+  };
+}
+
+export function checkKGBandKP(
+  tmtGolonganRuang: string | null | undefined,
+  tanggalBerkalaTerakhir: string | null | undefined,
+): KPStatusResult {
+  const kp = buildStatus(tmtGolonganRuang, 4);
+  const kgb = buildStatus(tanggalBerkalaTerakhir, 2);
+
+  const warningKP = kp.due || kp.overdue;
+  const warningKGB = kgb.due || kgb.overdue;
+
+  const statuses: string[] = [];
+  if (warningKP) statuses.push("Mendekati/Lewat KP (4 Thn)");
+  if (warningKGB) statuses.push("Mendekati/Lewat KGB (2 Thn)");
+
+  return {
+    warningKP,
+    warningKGB,
+    status: statuses.join(", "),
+    kp,
+    kgb,
+    clear: !warningKP && !warningKGB,
+  };
+}
+
+/** Render label ringkas untuk badge, mis. "KP H-30" atau "KGB Lewat". */
+export function formatKPLabel(kind: "KP" | "KGB", status: KPStatus): string {
+  if (status.overdue) return `${kind} Lewat`;
+  if (status.due) {
+    if (status.daysLeft === null) return kind;
+    if (status.daysLeft === 0) return `${kind} Hari Ini`;
+    return `${kind} H-${status.daysLeft}`;
   }
-  
-  const statuses = [];
-  if (result.warningKP) statuses.push("Mendekati/Lewat KP (4 Thn)");
-  if (result.warningKGB) statuses.push("Mendekati/Lewat KGB (2 Thn)");
-  
-  result.status = statuses.join(", ");
-  
-  return result;
+  return kind;
 }
