@@ -23,7 +23,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     if (existingUser) {
-      // Jika user sudah ada (misal dari login GitHub lama) tapi belum punya password
+      // Jika user sudah ada tapi belum punya password (migrasi dari provider lama)
       if (!existingUser.password) {
         const hashedPassword = await bcrypt.hash(password, 10);
         const updatedUser = await prisma.user.update({

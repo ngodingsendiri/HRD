@@ -100,8 +100,6 @@ export default function Employees() {
       .catch((err) => console.error("Error fetching settings:", err));
 
     // Fetch employees (computed fields come back from the API already).
-    // This replaces the old onSnapshot + auto-write-batch loop, which could
-    // trigger recursive writes and waste Firestore quota.
     const loadEmployees = async () => {
       try {
         const data = await api.getEmployees();

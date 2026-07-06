@@ -10,7 +10,6 @@ import Employees from "./pages/Employees";
 import Settings from "./pages/Settings";
 import Print from "./pages/Print";
 import Chat from "./pages/Chat";
-import Ecosystem from "./pages/Ecosystem";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { useEffect, useState } from "react";
 import { LogIn, UserPlus } from "lucide-react";
@@ -237,7 +236,6 @@ export default function App() {
             <Route path="print" element={<Print />} />
             <Route path="settings" element={<Settings />} />
             <Route path="chat" element={<Chat />} />
-            <Route path="ecosystem" element={<Ecosystem />} />
           </Route>
         </Routes>
       </BrowserRouter>

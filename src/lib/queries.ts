@@ -1,6 +1,7 @@
 /**
  * Data access layer — the ONLY place that touches Prisma directly.
- * Replaces all Firestore calls. Computed fields (masaKerja, kelasJabatan,
+ * Data access layer — the ONLY place that touches Prisma directly.
+ * Computed fields (masaKerja, kelasJabatan,
  * bebanKerja, pensiun) are attached at read time, never persisted.
  */
 import { prisma } from "./db";
@@ -136,7 +137,7 @@ export async function createEmployee(emp: EmployeeT): Promise<EmployeeT> {
 export async function updateEmployee(id: string, emp: Partial<EmployeeT>): Promise<EmployeeT> {
   const updated = await prisma.employee.update({
     where: { id },
-    data: { ...(toPersistence(emp) as never), updatedAt: Math.floor(Date.now() / 1000) },
+    data: toPersistence(emp) as never,
   });
   return rowToEmployee(updated as unknown as PrismaEmployee);
 }

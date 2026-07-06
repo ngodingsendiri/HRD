@@ -1,9 +1,6 @@
 /**
  * Centralized error handling for API responses.
- *
- * Previously this logged sensitive Firebase auth info (uid, email, providers)
- * to the console and embedded it in thrown messages. That was a privacy leak.
- * Now it captures only the operation context for diagnostics, never PII.
+ * Captures only the operation context for diagnostics, never PII.
  */
 export enum OperationType {
   CREATE = "create",

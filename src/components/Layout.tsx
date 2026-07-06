@@ -10,7 +10,6 @@ import {
   Settings,
   Printer,
   MessageSquare,
-  Network
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../lib/utils";
@@ -27,7 +26,6 @@ export default function Layout() {
     { name: "Dasbor", href: "/", icon: LayoutDashboard },
     { name: "Direktori Pegawai", href: "/employees", icon: Users },
     { name: "Pencetakan Dokumen", href: "/print", icon: Printer },
-    { name: "Ekosistem & Integrasi", href: "/ecosystem", icon: Network },
     { name: "Pengaturan Sistem", href: "/settings", icon: Settings },
     { name: "Pesan Internal", href: "/chat", icon: MessageSquare },
   ];
@@ -192,13 +190,13 @@ export default function Layout() {
 
         {/* BOTTOM NAV (Mobile Only) */}
         <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-md border-t border-slate-100 px-2 py-2 safe-bottom z-30 grid grid-cols-5 gap-1 print:hidden">
-          {navigation.slice(0, 5).map((item) => {
+          {navigation.map((item) => {
             const isActive = location.pathname === item.href;
             const shortLabel =
               item.name === "Direktori Pegawai" ? "Pegawai"
               : item.name === "Pencetakan Dokumen" ? "Cetak"
               : item.name === "Pengaturan Sistem" ? "Sistem"
-              : item.name === "Ekosistem & Integrasi" ? "API"
+              : item.name === "Pesan Internal" ? "Pesan"
               : item.name.split(" ")[0];
             return (
               <Link

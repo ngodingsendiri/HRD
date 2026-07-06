@@ -16,8 +16,7 @@ export const FamilyMemberSchema = z.object({
   description: z.string().optional(),
 });
 
-// --- Employment status: unified union (fixes audit inconsistency across
-//     types.ts, firestore.rules, gemini.ts, firebase-blueprint.json) ---
+// --- Employment status: unified union enforced across app and API layers ---
 export const EmployeeStatusSchema = z.enum([
   "PNS",
   "CPNS",
@@ -35,8 +34,8 @@ export const GenderSchema = z.enum(["L", "P"]);
  * NOTE on computed/derived fields:
  *   masaKerja, kelasJabatan, bebanKerja, pensiun are DERIVED at read time
  *   (see src/lib/employeeUtils.ts) and are NOT persisted to the database.
- *   They are kept as optional here only to tolerate legacy Firestore documents
- *   during migration; new writes ignore them.
+ *   They are kept as optional here for backward compatibility with imported data;
+ *   new writes via the form/API ignore them.
  */
 export const EmployeeSchema = z.object({
   id: z.string().optional(),
