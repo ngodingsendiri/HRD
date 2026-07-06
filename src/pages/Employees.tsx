@@ -1636,7 +1636,7 @@ export default function Employees() {
         <div className="fixed bottom-6 right-6 z-50 animate-in fade-in slide-in-from-bottom-4 duration-300">
           <div className="bg-red-600 text-white px-6 py-4 rounded-xl flex items-center gap-3">
             <AlertCircle className="w-5 h-5" />
-            <div className="text-sm font-medium">{error.message}</div>
+            <div className="text-sm font-medium">{(error as Error).message}</div>
             <button
               onClick={() => setError(null)}
               className="ml-4 p-1 hover:bg-white/20 rounded-lg transition-colors"

@@ -113,7 +113,7 @@ function computeMasaKerja(emp: EmployeeT): string | null {
 
 export async function getEmployees(kamusCsv?: string): Promise<EmployeeT[]> {
   const rows = await prisma.employee.findMany({ orderBy: { nama: "asc" } });
-  return rows.map((r) => rowToEmployee(r as unknown as PrismaEmployee, kamusCsv));
+  return rows.map((r: PrismaEmployee) => rowToEmployee(r, kamusCsv));
 }
 
 export async function getEmployee(id: string, kamusCsv?: string): Promise<EmployeeT | null> {

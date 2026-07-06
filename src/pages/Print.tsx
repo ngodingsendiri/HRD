@@ -203,6 +203,7 @@ export default function Print() {
       }
 
       // Fallback a to z
+      return (a.nama || "").localeCompare(b.nama || "");
     }
   });
 
@@ -1072,14 +1073,14 @@ export default function Print() {
                       <tr>
                         <td className="border-r border-black px-1.5 py-0.5 w-[30%]">
                           Selama {cutiLamaHari} Hari
-                          <strike className={cutiLamaHari > 30 ? "" : "hidden"}>
+                          <s className={cutiLamaHari > 30 ? "" : "hidden"}>
                             /Bulan/Tahun
-                          </strike>
-                          <strike
+                          </s>
+                          <s
                             className={cutiLamaHari <= 30 ? "" : "hidden"}
                           >
                             /Bulan/Tahun
-                          </strike>
+                          </s>
                         </td>
                         <td className="px-1.5 py-0.5">
                           Mulai tanggal{" "}

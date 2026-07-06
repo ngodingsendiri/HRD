@@ -28,11 +28,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const fetchSession = () => {
     fetch("/api/auth/session")
-      .then((r) => r.json())
-      .then((data: { user?: SessionUser }) => {
-        setUser(data.user ?? null);
+      .then(async (r) => {
+        if (!r.ok) {
+          console.warn("Session fetch failed:", r.status, r.statusText);
+          return null;
+        }
+        // Guard: handler crash can return non-JSON (e.g. HTML error page)
+        const text = await r.text();
+        try {
+          return text ? JSON.parse(text) : null;
+        } catch {
+          console.warn("Session response was not valid JSON");
+          return null;
+        }
       })
-      .catch(() => {
+      .then((data: { user?: SessionUser } | null) => {
+        setUser(data?.user ?? null);
+      })
+      .catch((err) => {
+        console.warn("Session fetch error:", err);
         setUser(null);
       })
       .finally(() => {

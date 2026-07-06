@@ -12,10 +12,10 @@ function adminEmails(): Set<string> {
 }
 
 export interface AdminUser {
-  id: string;
-  name: string | null;
-  email: string;
-  image: string | null;
+  id?: string;
+  name?: string | null;
+  email?: string;
+  image?: string | null;
 }
 
 /**
@@ -25,13 +25,17 @@ export interface AdminUser {
  */
 export async function requireAdmin(req: VercelRequest, res: VercelResponse): Promise<AdminUser> {
   const session = await getServerSession(req, res);
-  const email = (session as { user?: { email?: string } } | null)?.user?.email;
+  const email = session?.user?.email;
 
   if (!session || !email || !adminEmails().has(email.toLowerCase())) {
     res.status(401).json({ error: "Unauthorized: Email not registered as admin" });
     throw new Error("Unauthorized");
   }
 
-  const u = (session as { user: AdminUser }).user;
+  const u = session?.user;
+  if (!u) {
+    res.status(401).json({ error: "Unauthorized: No session user" });
+    throw new Error("Unauthorized");
+  }
   return { id: u.id, name: u.name, email: u.email, image: u.image };
 }
