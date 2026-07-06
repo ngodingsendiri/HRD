@@ -1,0 +1,9 @@
+# Backup artifacts
+
+This directory holds one-time Firestore exports performed in Fase 6
+(migration Firestore → Neon). Files here are NOT committed (ignored via .gitignore)
+to avoid leaking personal employee data (NIK, NIP, bank accounts, etc.).
+
+Expected outputs after running `scripts/migrate-firestore.ts`:
+- backup-employees.json
+- backup-settings.json

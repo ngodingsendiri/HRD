@@ -1,0 +1,63 @@
+{
+  "entities": {
+    "FamilyMember": {
+      "title": "FamilyMember",
+      "description": "Data anggota keluarga pegawai",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "relation": { "type": "string", "enum": ["Istri", "Suami", "Anak"] },
+        "birthDate": { "type": "string", "format": "date" },
+        "occupation": { "type": "string" }
+      },
+      "required": ["name", "relation"]
+    },
+    "Employee": {
+      "title": "Employee",
+      "description": "Data master pegawai SIMPEG",
+      "type": "object",
+      "properties": {
+        "nik": { "type": "string" },
+        "nama": { "type": "string" },
+        "nip": { "type": "string" },
+        "pangkatGolongan": { "type": "string" },
+        "jabatan": { "type": "string" },
+        "bidang": { "type": "string" },
+        "status": { "type": "string", "enum": ["PNS", "PPPK", "Honorer", "Lainnya"] },
+        "tmtKerja": { "type": "string", "format": "date" },
+        "masaKerja": { "type": "string" },
+        "pendidikan": { "type": "string" },
+        "agama": { "type": "string" },
+        "alamatLengkap": { "type": "string" },
+        "nomorHp": { "type": "string" },
+        "dataKeluarga": {
+          "type": "array",
+          "items": { "$ref": "#/entities/FamilyMember" }
+        },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["nik", "nama", "status"]
+    },
+    "AppSettings": {
+      "title": "AppSettings",
+      "description": "Pengaturan identitas pejabat daerah",
+      "type": "object",
+      "properties": {
+        "sekdaNama": { "type": "string" },
+        "sekdaNip": { "type": "string" },
+        "bupatiNama": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "shared/data/employees/{employeeId}": {
+      "schema": { "$ref": "#/entities/Employee" },
+      "description": "Koleksi data pegawai"
+    },
+    "shared/data/settings/app": {
+      "schema": { "$ref": "#/entities/AppSettings" },
+      "description": "Pengaturan aplikasi"
+    }
+  }
+}
