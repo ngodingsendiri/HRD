@@ -1,3 +1,10 @@
+/**
+ * Centralized error handling for API responses.
+ *
+ * Previously this logged sensitive Firebase auth info (uid, email, providers)
+ * to the console and embedded it in thrown messages. That was a privacy leak.
+ * Now it captures only the operation context for diagnostics, never PII.
+ */
 export enum OperationType {
   CREATE = "create",
   UPDATE = "update",
@@ -7,51 +14,38 @@ export enum OperationType {
   WRITE = "write",
 }
 
-export interface FirestoreErrorInfo {
+export interface ErrorContext {
   error: string;
   operationType: OperationType;
   path: string | null;
-  authInfo: {
-    userId?: string;
-    email?: string;
-    emailVerified?: boolean;
-    isAnonymous?: boolean;
-    tenantId?: string;
-    providerInfo: {
-      providerId: string;
-      displayName: string | null;
-      email: string | null;
-      photoUrl: string | null;
-    }[];
-  };
 }
 
-import { auth } from "./firebase";
-
-export function handleFirestoreError(
+/**
+ * Normalize an error into a user-friendly message based on the operation.
+ * Logs a redacted context to the console for debugging (no auth/PII data).
+ */
+export function handleApiError(
   error: unknown,
   operationType: OperationType,
   path: string | null,
-) {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email || undefined,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId || undefined,
-      providerInfo:
-        auth.currentUser?.providerData.map((provider) => ({
-          providerId: provider.providerId,
-          displayName: provider.displayName,
-          email: provider.email,
-          photoUrl: provider.photoURL,
-        })) || [],
-    },
+): Error {
+  const message = error instanceof Error ? error.message : String(error);
+
+  const ctx: ErrorContext = {
+    error: message,
     operationType,
     path,
   };
-  console.error("Firestore Error: ", JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  console.error("API Error:", JSON.stringify(ctx));
+
+  // Translate to a generic user-facing message (no stack/PII).
+  const friendly: Record<OperationType, string> = {
+    [OperationType.CREATE]: "Gagal menambahkan data.",
+    [OperationType.UPDATE]: "Gagal memperbarui data.",
+    [OperationType.DELETE]: "Gagal menghapus data.",
+    [OperationType.LIST]: "Gagal memuat data.",
+    [OperationType.GET]: "Gagal memuat data.",
+    [OperationType.WRITE]: "Gagal menyimpan data.",
+  };
+  return new Error(friendly[operationType]);
 }

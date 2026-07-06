@@ -1,0 +1,149 @@
+// Prisma schema for dataHRD (Neon Postgres)
+// Run: prisma migrate dev --name init
+// Connection string is read from DATABASE_URL env var.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL") // Neon pooled (DATABASE_URL) + direct (DIRECT_URL) for migrations
+}
+
+/// Master employee records (replaces Firestore shared/data/employees)
+model Employee {
+  id String @id @default(cuid())
+
+  // --- Identity ---
+  nik        String
+  nama       String
+  nip        String
+  jk         String  @db.VarChar(2)   // "L" | "P"
+  tempatLahir String
+  tanggalLahir String
+
+  // --- Address ---
+  jalanDusun    String
+  rt            String
+  rw            String
+  desaKelurahan String
+  kecamatan     String
+  kabupaten     String
+
+  // --- Position ---
+  jabatan String
+  bidang  String
+  status  String  // EmployeeStatus union (enforced in app layer via Zod)
+  tmtKerja String
+
+  // --- Rank / grade ---
+  pangkat         String
+  gol             String
+  pangkatGolongan String
+  tmtGolonganRuang       String
+  masaKerjaGolonganRuang String
+  tanggalBerkalaTerakhir String
+
+  // --- Salary ---
+  gajiPokok       String
+  besaranGajiKotor String
+  digajiMenurut   String
+  noRekeningBank  String
+  npwp            String
+
+  // --- Administrative ---
+  nomorKarpeg  String
+  pendidikan  String
+  jurusan     String
+  diklatJenjang String
+  tahunDiklat String
+  statusKawin String
+  agama       String
+  nomorHp     String
+
+  // --- Leave ---
+  sisaCutiN  String
+  sisaCutiN1 String
+  sisaCutiN2 String
+  skTerakhir String
+
+  // --- Family / dependents (JSONB — flexible, like Firestore sub-array) ---
+  jumlahTertanggung Int       @default(0)
+  dataKeluarga      Json      @default("[]")
+
+  // --- Timestamps ---
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Derived fields (masaKerja, kelasJabatan, bebanKerja, pensiun) are
+  // intentionally NOT stored — they are computed at read time.
+
+  @@index([nip])
+  @@index([nik])
+  @@index([status])
+  @@index([bidang])
+  @@map("employees")
+}
+
+/// Singleton app settings (replaces Firestore shared/data/settings/app)
+model Settings {
+  id    String @id @default("app") // fixed singleton key
+  data  Json
+
+  updatedAt DateTime @updatedAt
+
+  @@map("settings")
+}
+
+/// Auth.js session/user tables (via @auth/neon-adapter / Prisma adapter)
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}

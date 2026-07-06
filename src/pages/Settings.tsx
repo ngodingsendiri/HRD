@@ -1,6 +1,4 @@
 import React, { useState, useEffect, useRef } from "react";
-import { doc, getDoc, setDoc } from "firebase/firestore";
-import { db } from "../lib/firebase";
 import { AppSettings } from "../types";
 import {
   Save,
@@ -17,6 +15,7 @@ import { PetaManager } from "../components/PetaManager";
 import { FileSpreadsheet } from "lucide-react";
 import { DEFAULT_KAMUS } from "../constants";
 import { motion } from "motion/react";
+import { api } from "../lib/api";
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -51,35 +50,17 @@ export default function Settings() {
   
   const initialSettingsRef = useRef<string | null>(null);
   
-  // Track initial settings
+  // Track initial settings (snapshot at load — used to detect unsaved changes).
   useEffect(() => {
     if (!loading && initialSettingsRef.current === null) {
       initialSettingsRef.current = JSON.stringify(settings);
     }
   }, [loading, settings]);
 
-  // Debounced Auto-save
-  useEffect(() => {
-    if (loading || !initialSettingsRef.current) return;
-    
-    const currentSettingsStr = JSON.stringify(settings);
-    if (currentSettingsStr === initialSettingsRef.current) return;
-
-    const timeout = setTimeout(async () => {
-      try {
-        setSaving(true);
-        await setDoc(doc(db, "shared/data/settings/app"), settings);
-        initialSettingsRef.current = currentSettingsStr;
-        // Don't show toast for autosave to prevent annoyance, just update the saving indicator
-      } catch (error) {
-        console.error("Auto-save failed:", error);
-      } finally {
-        setSaving(false);
-      }
-    }, 1000);
-
-    return () => clearTimeout(timeout);
-  }, [settings, loading]);
+  // Auto-save DISABLED intentionally. Settings include official document
+  // headers (kop surat, pejabat names) — silent auto-save risked persisting
+  // mistakes with no audit trail. Save now goes through the explicit Save
+  // button (handleSave) which calls api.upsertSettings.
 
   const [message, setMessage] = useState<{
     type: "success" | "error";
@@ -90,26 +71,22 @@ export default function Settings() {
   );
 
   useEffect(() => {
-    async function fetchSettings() {
+    async function fetchSettingsData() {
       try {
-        const docRef = doc(db, "shared/data/settings/app");
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          const data = docSnap.data() as AppSettings;
-          setSettings((prev) => ({
-            ...prev,
-            ...data,
-            jabatanKamusCsv: data.jabatanKamusCsv || DEFAULT_KAMUS,
-            petaJabatanCsv: data.petaJabatanCsv || "",
-          }));
-        }
+        const data = await api.getSettings();
+        setSettings((prev) => ({
+          ...prev,
+          ...data,
+          jabatanKamusCsv: data.jabatanKamusCsv || DEFAULT_KAMUS,
+          petaJabatanCsv: data.petaJabatanCsv || "",
+        }));
       } catch (error) {
         console.error("Error fetching settings:", error);
       } finally {
         setLoading(false);
       }
     }
-    fetchSettings();
+    fetchSettingsData();
   }, []);
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -141,7 +118,7 @@ export default function Settings() {
     setSaving(true);
     setMessage(null);
     try {
-      await setDoc(doc(db, "shared/data/settings/app"), settings);
+      await api.upsertSettings(settings);
       setMessage({ type: "success", text: "Pengaturan berhasil disimpan" });
       // clear message after 3 seconds
       setTimeout(() => setMessage(null), 3000);
@@ -185,6 +162,7 @@ export default function Settings() {
           type="button"
           onClick={handleSave}
           disabled={saving}
+          aria-label="Simpan pengaturan"
           className="w-full sm:w-auto inline-flex items-center justify-center px-6 py-2.5 text-[13px] font-bold text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-all active:scale-95 disabled:opacity-50 shrink-0"
         >
           {saving ? (
@@ -192,7 +170,12 @@ export default function Settings() {
           ) : (
             <Save className="w-4 h-4 mr-2" />
           )}
-          {saving ? "Menyimpan..." : "Tersimpan"}
+          {saving
+            ? "Menyimpan..."
+            : initialSettingsRef.current !== null &&
+              JSON.stringify(settings) !== initialSettingsRef.current
+              ? "Simpan Perubahan"
+              : "Tersimpan"}
         </button>
       </motion.div>
 

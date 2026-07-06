@@ -14,14 +14,14 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../lib/utils";
-import { auth } from "../lib/firebase";
-import { signOut } from "firebase/auth";
+import { useAuth } from "../lib/auth";
 import { AnimatePresence, motion } from "motion/react";
 
 export default function Layout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const location = useLocation();
+  const { user, signOut } = useAuth();
 
   const navigation = [
     { name: "Dasbor", href: "/", icon: LayoutDashboard },
@@ -29,7 +29,7 @@ export default function Layout() {
     { name: "Pencetakan Dokumen", href: "/print", icon: Printer },
     { name: "Ekosistem & Integrasi", href: "/ecosystem", icon: Network },
     { name: "Pengaturan Sistem", href: "/settings", icon: Settings },
-    { name: "Fitur AI", href: "/chat", icon: MessageSquare },
+    { name: "Pesan Internal", href: "/chat", icon: MessageSquare },
   ];
 
   return (
@@ -120,23 +120,23 @@ export default function Layout() {
             )}
           >
             <div className="relative shrink-0">
-              {auth.currentUser?.photoURL ? (
+              {user?.image ? (
                 <img
-                  src={auth.currentUser.photoURL}
+                  src={user.image}
                   alt="Profile"
-                  className="w-8 h-8 rounded-full grayscale hover:grayscale-0 transition-all "
+                  className="w-8 h-8 rounded-full grayscale hover:grayscale-0 transition-all"
                   referrerPolicy="no-referrer"
                 />
               ) : (
                 <div className="w-8 h-8 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600 text-[10px] font-bold">
-                  {auth.currentUser?.email?.[0].toUpperCase() || "A"}
+                  {user?.name?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || "A"}
                 </div>
               )}
             </div>
             {!isSidebarCollapsed && (
               <div className="overflow-hidden flex-1">
                 <div className="text-[12px] font-semibold text-slate-900 truncate">
-                  {auth.currentUser?.email?.split("@")[0]}
+                  {user?.name || user?.email?.split("@")[0]}
                 </div>
                 <div className="text-[10px] font-medium text-slate-400 truncate">
                   Administrator
@@ -145,7 +145,9 @@ export default function Layout() {
             )}
             {!isSidebarCollapsed && (
               <button
-                onClick={() => signOut(auth)}
+                type="button"
+                onClick={signOut}
+                aria-label="Logout"
                 className="p-1.5 text-slate-400 hover:text-slate-900 rounded-lg transition-colors"
               >
                 <LogOut className="w-4 h-4" />
@@ -188,30 +190,30 @@ export default function Layout() {
           </AnimatePresence>
         </main>
 
-        {/* BOTTOM NAV (Mobile Only) - Simplified */}
-        <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-md border-t border-slate-100 px-4 py-2 safe-bottom z-30 flex items-center justify-between print:hidden">
-          {navigation.slice(0, 4).map((item) => {
+        {/* BOTTOM NAV (Mobile Only) */}
+        <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-md border-t border-slate-100 px-2 py-2 safe-bottom z-30 grid grid-cols-5 gap-1 print:hidden">
+          {navigation.slice(0, 5).map((item) => {
             const isActive = location.pathname === item.href;
+            const shortLabel =
+              item.name === "Direktori Pegawai" ? "Pegawai"
+              : item.name === "Pencetakan Dokumen" ? "Cetak"
+              : item.name === "Pengaturan Sistem" ? "Sistem"
+              : item.name === "Ekosistem & Integrasi" ? "API"
+              : item.name.split(" ")[0];
             return (
               <Link
                 key={item.name}
                 to={item.href}
+                aria-label={item.name}
+                aria-current={isActive ? "page" : undefined}
                 className={cn(
-                  "flex flex-col items-center gap-1.5 p-2 transition-all active:scale-95",
-                  isActive ? "text-slate-900" : "text-slate-400 hover:text-slate-600",
+                  "flex flex-col items-center gap-1 p-1.5 rounded-lg transition-all active:scale-95",
+                  isActive ? "text-slate-900 bg-slate-50" : "text-slate-400 hover:text-slate-600",
                 )}
               >
-                <item.icon
-                  className={cn("w-5 h-5", isActive && "stroke-[2.5]")}
-                />
+                <item.icon className={cn("w-5 h-5", isActive && "stroke-[2.5]")} />
                 <span className="text-[9px] font-bold uppercase tracking-wider">
-                  {item.name === "Direktori Pegawai"
-                    ? "Pegawai"
-                    : item.name === "Pencetakan Dokumen"
-                      ? "Cetak"
-                      : item.name === "Pengaturan Sistem"
-                        ? "Sistem"
-                        : item.name.split(" ")[0]}
+                  {shortLabel}
                 </span>
               </Link>
             );

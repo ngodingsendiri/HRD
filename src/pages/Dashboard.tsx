@@ -1,6 +1,4 @@
 import { useEffect, useState } from "react";
-import { collection, onSnapshot } from "firebase/firestore";
-import { db } from "../lib/firebase";
 import {
   Users,
   UserCheck,
@@ -14,7 +12,8 @@ import {
   ChevronUp,
   Award,
 } from "lucide-react";
-import { handleFirestoreError, OperationType } from "../lib/error";
+import { handleApiError, OperationType } from "../lib/error";
+import { api } from "../lib/api";
 import { cn } from "../lib/utils";
 import {
   BarChart,
@@ -250,20 +249,20 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(
-      collection(db, "shared/data/employees"),
-      (snapshot) => {
+    let cancelled = false;
+
+    async function load() {
+      try {
+        const employeesData = await api.getEmployees();
+        if (cancelled) return;
+
         let pns = 0;
         let cpns = 0;
         let pppk = 0;
         let pppkpw = 0;
         const bidangMap: Record<string, number> = {};
-        const employeesData: Employee[] = [];
 
-        snapshot.docs.forEach((doc) => {
-          const data = doc.data() as Employee;
-          employeesData.push({ ...data, id: doc.id });
-
+        employeesData.forEach((data) => {
           if (data.status === "PNS") pns++;
           else if (data.status === "CPNS") cpns++;
           else if (data.status === "PPPK") pppk++;
@@ -286,7 +285,7 @@ export default function Dashboard() {
         });
 
         setStats({
-          total: snapshot.docs.length,
+          total: employeesData.length,
           pns,
           cpns,
           pppk,
@@ -301,17 +300,20 @@ export default function Dashboard() {
         setKgbList(calculateKgbList(employeesData));
         setKpList(calculateKpList(employeesData));
         setPensiunList(calculatePensiunList(employeesData));
-      },
-      (err) => {
-        try {
-          handleFirestoreError(err, OperationType.GET, "shared/data/employees");
-        } catch (e) {
-          if (e instanceof Error) setError(e);
-        }
-      },
-    );
+      } catch (e) {
+        const err = handleApiError(e, OperationType.GET, "/api/employees");
+        if (!cancelled) setError(err);
+      }
+    }
 
-    return () => unsubscribe();
+    load();
+    // Refresh every 60s as a lightweight realtime replacement.
+    const interval = setInterval(load, 60000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, []);
 
   if (error) {

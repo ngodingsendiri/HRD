@@ -1,14 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
-import {
-  collection,
-  getDocs,
-  doc,
-  getDoc,
-  updateDoc,
-} from "firebase/firestore";
-import { db } from "../lib/firebase";
 import { Employee, AppSettings } from "../types";
-import { Printer, Settings, Users, FileText, ChevronDown } from "lucide-react";
+import { Printer, Users, FileText, ChevronDown } from "lucide-react";
+import { api } from "../lib/api";
+import { lookupKamus } from "../lib/kamus";
+import { countWorkingDays } from "../lib/holidays";
 
 type PrintType =
   | "absen_global"
@@ -40,89 +35,22 @@ export default function Print() {
   const [selectedBidang, setSelectedBidang] = useState<string>("Semua");
   const [sortOption, setSortOption] = useState<SortAction>("default_kelas");
 
-  // Cuti Form Config
+  // Cuti Form Config — defaults intentionally empty so the user must fill them
+  // (previously hardcoded "Mekah" / "082120202180" / etc., which risked being
+  // printed on official documents unchanged).
   const [cutiEmployeeId, setCutiEmployeeId] = useState<string>("");
   const [cutiJenis, setCutiJenis] = useState<string>("1. Cuti Tahunan");
-  const [cutiAlasan, setCutiAlasan] = useState<string>("Ibadah Umroh");
-  const [cutiLamaHari, setCutiLamaHari] = useState<number>(13);
-  const [cutiMulai, setCutiMulai] = useState<string>("2026-03-02");
-  const [cutiAkhir, setCutiAkhir] = useState<string>("2026-03-18");
-  const [cutiAlamat, setCutiAlamat] = useState<string>("Mekah");
-  const [cutiHp, setCutiHp] = useState<string>("082120202180");
-  const [cutiMasaKerja, setCutiMasaKerja] =
-    useState<string>("0 Tahun 10 Bulan");
+  const [cutiAlasan, setCutiAlasan] = useState<string>("");
+  const [cutiLamaHari, setCutiLamaHari] = useState<number>(0);
+  const [cutiMulai, setCutiMulai] = useState<string>("");
+  const [cutiAkhir, setCutiAkhir] = useState<string>("");
+  const [cutiAlamat, setCutiAlamat] = useState<string>("");
+  const [cutiHp, setCutiHp] = useState<string>("");
+  const [cutiMasaKerja, setCutiMasaKerja] = useState<string>("");
 
   useEffect(() => {
     if (cutiMulai && cutiAkhir) {
-      const start = new Date(cutiMulai);
-      const end = new Date(cutiAkhir);
-
-      let workDays = 0;
-      let currentDate = new Date(start);
-
-      // Mocked public holidays (can be updated later)
-      const publicHolidays = [
-        "2024-01-01",
-        "2024-02-08",
-        "2024-02-09",
-        "2024-02-10",
-        "2024-03-11",
-        "2024-03-12",
-        "2024-03-29",
-        "2024-03-31",
-        "2024-04-10",
-        "2024-04-11",
-        "2024-05-01",
-        "2024-05-09",
-        "2024-05-23",
-        "2024-06-01",
-        "2024-06-17",
-        "2024-07-07",
-        "2024-08-17",
-        "2024-09-16",
-        "2024-12-25",
-        "2025-01-01",
-        "2025-01-27",
-        "2025-03-29",
-        "2025-03-31",
-        "2025-04-18",
-        "2025-05-01",
-        "2025-05-12",
-        "2025-05-29",
-        "2025-06-01",
-        "2025-06-27",
-        "2025-08-17",
-        "2025-09-05",
-        "2025-12-25",
-        "2026-01-01",
-        "2026-02-17",
-        "2026-03-19",
-        "2026-03-20",
-        "2026-04-03",
-        "2026-05-01",
-        "2026-05-14",
-        "2026-06-01",
-        "2026-06-16",
-        "2026-08-17",
-        "2026-12-25",
-      ];
-
-      while (currentDate <= end) {
-        const dayOfWeek = currentDate.getDay();
-        const dateString = currentDate.toISOString().split("T")[0];
-
-        // Exclude weekends (0 = Sunday, 6 = Saturday) and public holidays
-        if (
-          dayOfWeek !== 0 &&
-          dayOfWeek !== 6 &&
-          !publicHolidays.includes(dateString)
-        ) {
-          workDays++;
-        }
-        currentDate.setDate(currentDate.getDate() + 1);
-      }
-
-      if (workDays >= 0) setCutiLamaHari(workDays);
+      setCutiLamaHari(countWorkingDays(cutiMulai, cutiAkhir));
     }
   }, [cutiMulai, cutiAkhir]);
 
@@ -149,50 +77,23 @@ export default function Print() {
   useEffect(() => {
     async function fetchData() {
       try {
-        // Fetch Settings
-        const settingsDoc = await getDoc(doc(db, "shared/data/settings/app"));
-        let currentSettings: AppSettings | null = null;
-        if (settingsDoc.exists()) {
-          currentSettings = settingsDoc.data() as AppSettings;
-          setSettings(currentSettings);
-        }
+        // Fetch settings + employees in parallel
+        const [currentSettings, empRaw] = await Promise.all([
+          api.getSettings(),
+          api.getEmployees(),
+        ]);
+        setSettings(currentSettings);
 
-        // Fetch Employees
-        const empSnapshot = await getDocs(
-          collection(db, "shared/data/employees"),
-        );
-        let empData = empSnapshot.docs.map(
-          (doc) => ({ id: doc.id, ...doc.data() }) as Employee,
-        );
-
-        // Apply Kamus Jabatan Overrides dynamically
-        if (currentSettings?.jabatanKamusCsv) {
-          const kamusMap = new Map<string, { kelas: string; beban: string }>();
-          const rows = currentSettings.jabatanKamusCsv.split("\n");
-          for (let i = 1; i < rows.length; i++) {
-            const kamusRow = rows[i];
-            if (!kamusRow || kamusRow.trim() === "") continue;
-            const cols = kamusRow.split(/;|\t/);
-            if (cols.length >= 4) {
-              kamusMap.set(cols[1].trim().toLowerCase(), {
-                kelas: cols[2].trim(),
-                beban: cols[3].trim(),
-              });
+        // Apply Kamus Jabatan overrides dynamically (computed client-side)
+        const empData: Employee[] = empRaw.map((emp) => {
+          if (emp.jabatan) {
+            const { kelas, beban } = lookupKamus(emp.jabatan, currentSettings.jabatanKamusCsv);
+            if (kelas || beban) {
+              return { ...emp, kelasJabatan: kelas, bebanKerja: beban };
             }
           }
-
-          empData = empData.map((emp) => {
-            if (emp.jabatan && kamusMap.has(emp.jabatan.trim().toLowerCase())) {
-              const match = kamusMap.get(emp.jabatan.trim().toLowerCase())!;
-              return {
-                ...emp,
-                kelasJabatan: match.kelas,
-                bebanKerja: match.beban,
-              };
-            }
-            return emp;
-          });
-        }
+          return emp;
+        });
 
         setEmployees(empData);
       } catch (err) {
@@ -442,8 +343,7 @@ export default function Print() {
                         }
                       }
 
-                      const empRef = doc(db, "shared/data/employees", emp.id!);
-                      await updateDoc(empRef, {
+                      await api.updateEmployee(emp.id!, {
                         sisaCutiN: String(newN),
                         sisaCutiN1: String(newN1),
                         sisaCutiN2: String(newN2),

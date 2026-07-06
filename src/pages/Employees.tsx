@@ -1,18 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
-import {
-  collection,
-  onSnapshot,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  doc,
-  query,
-  where,
-  getDocs,
-  getDoc,
-  writeBatch,
-} from "firebase/firestore";
-import { db } from "../lib/firebase";
+import React, { useState, useEffect } from "react";
 import { Employee, AppSettings } from "../types";
 import { Modal } from "../components/Modal";
 import { EmployeeForm } from "../components/EmployeeForm";
@@ -24,7 +10,6 @@ import {
   Download,
   Upload,
   FileSpreadsheet,
-  Sparkles,
   Loader2,
   Check,
   X,
@@ -33,12 +18,10 @@ import {
   ArrowUpDown,
 } from "lucide-react";
 import * as XLSX from "xlsx";
-import { handleFirestoreError, OperationType } from "../lib/error";
-import {
-  extractEmployeeData,
-  extractEmployeeDataFromText,
-  mapExcelColumnsWithAI,
-} from "../services/geminiService";
+import { handleApiError, OperationType } from "../lib/error";
+import { api } from "../lib/api";
+import { mapExcelHeaders } from "../lib/excelMapping";
+import { buildFamilyExportFields } from "../lib/employeeExport";
 import { motion, AnimatePresence } from "motion/react";
 
 import { DEFAULT_KAMUS } from "../constants";
@@ -106,168 +89,37 @@ export default function Employees() {
   }, [rawEmployees, settings?.jabatanKamusCsv]);
 
   useEffect(() => {
-    // Fetch Settings
-    const fetchSettings = async () => {
+    let cancelled = false;
+
+    // Fetch settings
+    api
+      .getSettings()
+      .then((data) => {
+        if (!cancelled) setSettings(data);
+      })
+      .catch((err) => console.error("Error fetching settings:", err));
+
+    // Fetch employees (computed fields come back from the API already).
+    // This replaces the old onSnapshot + auto-write-batch loop, which could
+    // trigger recursive writes and waste Firestore quota.
+    const loadEmployees = async () => {
       try {
-        const docRef = doc(db, "shared/data/settings/app");
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          setSettings(docSnap.data() as AppSettings);
-        }
-      } catch (err) {
-        console.error("Error fetching settings:", err);
+        const data = await api.getEmployees();
+        if (!cancelled) setRawEmployees(data);
+      } catch (e) {
+        const err = handleApiError(e, OperationType.LIST, "/api/employees");
+        if (!cancelled) setError(err);
       }
     };
-    fetchSettings();
+    loadEmployees();
 
-    const unsubscribe = onSnapshot(
-      collection(db, "shared/data/employees"),
-      (snapshot) => {
-        const data = snapshot.docs.map((doc) => {
-          const d = doc.data();
+    // Light refresh polling (every 60s) — realtime replacement.
+    const interval = setInterval(loadEmployees, 60000);
 
-          let updatedMasaKerja = d.masaKerja || "";
-          const statusVal = (d.status || "").toUpperCase();
-
-          if ((statusVal === "PNS" || statusVal === "CPNS") && d.nip) {
-            const nipStr = String(d.nip).replace(/[^0-9]/g, "");
-            if (nipStr.length >= 14) {
-              const yearAppt = parseInt(nipStr.substring(8, 12), 10);
-              const monthAppt = parseInt(nipStr.substring(12, 14), 10);
-              if (
-                !isNaN(yearAppt) &&
-                !isNaN(monthAppt) &&
-                yearAppt > 1900 &&
-                yearAppt <= new Date().getFullYear() &&
-                monthAppt >= 1 &&
-                monthAppt <= 12
-              ) {
-                const now = new Date();
-                let years = now.getFullYear() - yearAppt;
-                let months = now.getMonth() + 1 - monthAppt;
-                if (months < 0) {
-                  years--;
-                  months += 12;
-                }
-                updatedMasaKerja = `${years} Tahun ${months} Bulan`;
-              }
-            }
-          } else if (
-            (statusVal === "PPPK" || statusVal === "PPPKPW") &&
-            d.tmtKerja
-          ) {
-            const tmtDate = new Date(d.tmtKerja);
-            if (!isNaN(tmtDate.getTime())) {
-              const now = new Date();
-              let years = now.getFullYear() - tmtDate.getFullYear();
-              let months = now.getMonth() - tmtDate.getMonth();
-              if (now.getDate() < tmtDate.getDate()) {
-                months--;
-              }
-              if (months < 0) {
-                years--;
-                months += 12;
-              }
-              if (years >= 0 && months >= 0) {
-                updatedMasaKerja = `${years} Tahun ${months} Bulan`;
-              }
-            }
-          }
-
-          return {
-            id: doc.id,
-            ...d,
-            masaKerja: updatedMasaKerja,
-            nama: d.nama || d.name || "",
-            pangkatGolongan: d.pangkatGolongan || d.pangkatGol || "",
-            nik: d.nik || "",
-            nip: d.nip || "",
-            status: d.status || "",
-            jabatan: d.jabatan || "",
-            bidang: d.bidang || "",
-          };
-        }) as Employee[];
-        setRawEmployees(data);
-
-        // Auto-fill kelasJabatan to database if empty
-        const docsToUpdate = snapshot.docs.filter((doc) => {
-          const kt = doc.data().kelasJabatan;
-          return !kt || String(kt).trim() === "";
-        });
-
-        if (docsToUpdate.length > 0) {
-          try {
-            const batch = writeBatch(db);
-            let count = 0;
-            for (const d of docsToUpdate) {
-              const emp = d.data();
-              const jab = (emp.jabatan || "").toLowerCase();
-              let predictedKelas = "6"; // default
-              if (jab.includes("kepala dinas") || jab.includes("kepala badan"))
-                predictedKelas = "14";
-              else if (jab.includes("sekretaris")) predictedKelas = "12";
-              else if (jab.includes("kepala bidang") || jab.includes("kabid"))
-                predictedKelas = "11";
-              else if (
-                jab.includes("kepala seksi") ||
-                jab.includes("kasi ") ||
-                jab.includes("kasubbag") ||
-                jab.includes("kepala sub")
-              )
-                predictedKelas = "9";
-              else if (jab.includes("madya")) predictedKelas = "11";
-              else if (jab.includes("muda")) predictedKelas = "9";
-              else if (jab.includes("pertama")) predictedKelas = "8";
-              else if (jab.includes("penyelia")) predictedKelas = "8";
-              else if (jab.includes("mahir")) predictedKelas = "7";
-              else if (jab.includes("terampil")) predictedKelas = "6";
-              else if (jab.includes("pemula")) predictedKelas = "5";
-              else {
-                const p = (
-                  emp.pangkatGolongan ||
-                  emp.gol ||
-                  emp.pangkat ||
-                  ""
-                ).toUpperCase();
-                if (p.includes("IV/E")) predictedKelas = "15";
-                else if (p.includes("IV/D")) predictedKelas = "14";
-                else if (p.includes("IV/C")) predictedKelas = "13";
-                else if (p.includes("IV/B")) predictedKelas = "12";
-                else if (p.includes("IV/A")) predictedKelas = "11";
-                else if (p.includes("III/D")) predictedKelas = "10";
-                else if (p.includes("III/C")) predictedKelas = "9";
-                else if (p.includes("III/B")) predictedKelas = "8";
-                else if (p.includes("III/A")) predictedKelas = "7";
-                else if (p.includes("II/C") || p.includes("II/D"))
-                  predictedKelas = "6";
-                else if (p.includes("II/A") || p.includes("II/B"))
-                  predictedKelas = "5";
-                else if (p.includes("I")) predictedKelas = "3";
-              }
-              batch.update(d.ref, { kelasJabatan: predictedKelas });
-              count++;
-              if (count >= 490) break; // Firestore batch limit protection
-            }
-            if (count > 0) {
-              batch
-                .commit()
-                .catch((e) => console.error("Batch update failed:", e));
-            }
-          } catch (err) {
-            console.error("Autofill kelasJabatan error", err);
-          }
-        }
-      },
-      (err) => {
-        try {
-          handleFirestoreError(err, OperationType.GET, "shared/data/employees");
-        } catch (e) {
-          if (e instanceof Error) setError(e);
-        }
-      },
-    );
-
-    return () => unsubscribe();
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, []);
 
   if (error) {
@@ -277,29 +129,22 @@ export default function Employees() {
   const handleSave = async (data: Employee) => {
     try {
       if (editingEmployee?.id) {
-        await updateDoc(doc(db, "shared/data/employees", editingEmployee.id), {
-          ...data,
-          updatedAt: Date.now(),
-        });
+        await api.updateEmployee(editingEmployee.id, data);
       } else {
-        await addDoc(collection(db, "shared/data/employees"), {
-          ...data,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        });
+        await api.createEmployee(data);
       }
+      // Refresh list after mutation
+      const fresh = await api.getEmployees();
+      setRawEmployees(fresh);
       setIsModalOpen(false);
       setEditingEmployee(undefined);
-    } catch (err) {
-      try {
-        handleFirestoreError(
-          err,
-          editingEmployee?.id ? OperationType.UPDATE : OperationType.CREATE,
-          "shared/data/employees",
-        );
-      } catch (e) {
-        if (e instanceof Error) setError(e);
-      }
+    } catch (e) {
+      const err = handleApiError(
+        e,
+        editingEmployee?.id ? OperationType.UPDATE : OperationType.CREATE,
+        editingEmployee?.id ? `/api/employees/${editingEmployee.id}` : "/api/employees",
+      );
+      setError(err);
     }
   };
 
@@ -317,19 +162,18 @@ export default function Employees() {
     if (!employeeToDelete) return;
     setIsDeleting(true);
     try {
-      await deleteDoc(doc(db, "shared/data/employees", employeeToDelete));
+      await api.deleteEmployee(employeeToDelete);
       setIsDeleteModalOpen(false);
       setEmployeeToDelete(null);
-    } catch (err) {
-      try {
-        handleFirestoreError(
-          err,
-          OperationType.DELETE,
-          `shared/data/employees/${employeeToDelete}`,
-        );
-      } catch (e) {
-        if (e instanceof Error) setError(e);
-      }
+      const fresh = await api.getEmployees();
+      setRawEmployees(fresh);
+    } catch (e) {
+      const err = handleApiError(
+        e,
+        OperationType.DELETE,
+        `/api/employees/${employeeToDelete}`,
+      );
+      setError(err);
     } finally {
       setIsDeleting(false);
     }
@@ -420,101 +264,7 @@ export default function Employees() {
           "Sisa Cuti Tahunan N1": rest.sisaCutiN1,
           "Sisa Cuti Tahunan N2": rest.sisaCutiN2,
           "SK Terakhir Yang Dimiliki": rest.skTerakhir,
-          "Nama Istri/Suami":
-            dataKeluarga?.find(
-              (k: any) => k.relation === "Istri" || k.relation === "Suami",
-            )?.name || "",
-          "Tanggal Lahir Pasangan":
-            dataKeluarga?.find(
-              (k: any) => k.relation === "Istri" || k.relation === "Suami",
-            )?.birthDate || "",
-          "Perkawinan Pasangan":
-            dataKeluarga?.find(
-              (k: any) => k.relation === "Istri" || k.relation === "Suami",
-            )?.marriageDate || "",
-          "Pekerjaan Pasangan":
-            dataKeluarga?.find(
-              (k: any) => k.relation === "Istri" || k.relation === "Suami",
-            )?.occupation || "",
-          "Keterangan Pasangan":
-            dataKeluarga?.find(
-              (k: any) => k.relation === "Istri" || k.relation === "Suami",
-            )?.description || "",
-          "Nama Anak 1":
-            dataKeluarga?.filter((k: any) => k.relation === "Anak")[0]?.name ||
-            "",
-          "Tanggal Lahir Anak 1":
-            dataKeluarga?.filter((k: any) => k.relation === "Anak")[0]
-              ?.birthDate || "",
-          "Perkawinan Anak 1":
-            dataKeluarga?.filter((k: any) => k.relation === "Anak")[0]
-              ?.marriageDate || "",
-          "Pekerjaan Anak 1":
-            dataKeluarga?.filter((k: any) => k.relation === "Anak")[0]
-              ?.occupation || "",
-          "Keterangan Anak 1":
-            dataKeluarga?.filter((k: any) => k.relation === "Anak")[0]
-              ?.description || "",
-          "Nama Anak 2":
-            dataKeluarga?.filter((k: any) => k.relation === "Anak")[1]?.name ||
-            "",
-          "Tanggal Lahir Anak 2":
-            dataKeluarga?.filter((k: any) => k.relation === "Anak")[1]
-              ?.birthDate || "",
-          "Perkawinan Anak 2":
-            dataKeluarga?.filter((k: any) => k.relation === "Anak")[1]
-              ?.marriageDate || "",
-          "Pekerjaan Anak 2":
-            dataKeluarga?.filter((k: any) => k.relation === "Anak")[1]
-              ?.occupation || "",
-          "Keterangan Anak 2":
-            dataKeluarga?.filter((k: any) => k.relation === "Anak")[1]
-              ?.description || "",
-          "Nama Anak 3":
-            dataKeluarga?.filter((k: any) => k.relation === "Anak")[2]?.name ||
-            "",
-          "Tanggal Lahir Anak 3":
-            dataKeluarga?.filter((k: any) => k.relation === "Anak")[2]
-              ?.birthDate || "",
-          "Perkawinan Anak 3":
-            dataKeluarga?.filter((k: any) => k.relation === "Anak")[2]
-              ?.marriageDate || "",
-          "Pekerjaan Anak 3":
-            dataKeluarga?.filter((k: any) => k.relation === "Anak")[2]
-              ?.occupation || "",
-          "Keterangan Anak 3":
-            dataKeluarga?.filter((k: any) => k.relation === "Anak")[2]
-              ?.description || "",
-          "Nama Anak 4":
-            dataKeluarga?.filter((k: any) => k.relation === "Anak")[3]?.name ||
-            "",
-          "Tanggal Lahir Anak 4":
-            dataKeluarga?.filter((k: any) => k.relation === "Anak")[3]
-              ?.birthDate || "",
-          "Perkawinan Anak 4":
-            dataKeluarga?.filter((k: any) => k.relation === "Anak")[3]
-              ?.marriageDate || "",
-          "Pekerjaan Anak 4":
-            dataKeluarga?.filter((k: any) => k.relation === "Anak")[3]
-              ?.occupation || "",
-          "Keterangan Anak 4":
-            dataKeluarga?.filter((k: any) => k.relation === "Anak")[3]
-              ?.description || "",
-          "Nama Anak 5":
-            dataKeluarga?.filter((k: any) => k.relation === "Anak")[4]?.name ||
-            "",
-          "Tanggal Lahir Anak 5":
-            dataKeluarga?.filter((k: any) => k.relation === "Anak")[4]
-              ?.birthDate || "",
-          "Perkawinan Anak 5":
-            dataKeluarga?.filter((k: any) => k.relation === "Anak")[4]
-              ?.marriageDate || "",
-          "Pekerjaan Anak 5":
-            dataKeluarga?.filter((k: any) => k.relation === "Anak")[4]
-              ?.occupation || "",
-          "Keterangan Anak 5":
-            dataKeluarga?.filter((k: any) => k.relation === "Anak")[4]
-              ?.description || "",
+          ...buildFamilyExportFields(dataKeluarga),
           "Jumlah Tertanggung": rest.jumlahTertanggung,
         };
       },
@@ -831,39 +581,18 @@ export default function Employees() {
         const ws = wb.Sheets[wsname];
 
         const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
-        let successCount = 0;
-        let updateCount = 0;
 
         if (rows.length === 0) throw new Error("File Excel kosong.");
 
-        // Load existing employees for upsert logic (prevent duplicates)
-        const existingSnapshot = await getDocs(
-          collection(db, "shared/data/employees"),
-        );
-        const nipMap: Record<string, string> = {};
-        const nikMap: Record<string, string> = {};
-        existingSnapshot.docs.forEach((d) => {
-          const data = d.data();
-          if (data.nip) nipMap[String(data.nip).trim()] = d.id;
-          if (data.nik) nikMap[String(data.nik).trim()] = d.id;
-        });
-
-        // Find header row and create mapping
+        // Locate header row (first 10 rows containing NIP/NIK/Nama).
         let headerIdx = -1;
         let colMap: Record<string, number> = {};
-
-        // Search first 10 rows for headers
         for (let i = 0; i < Math.min(10, rows.length); i++) {
           const row = rows[i];
           if (
             row.some((c) => {
-              const s = String(c || "").toUpperCase();
-              return (
-                s === "NIP" ||
-                s === "NIK" ||
-                s === "NAMA LENGKAP" ||
-                s === "N I P"
-              );
+              const s = String(c || "").toUpperCase().trim();
+              return s === "NIP" || s === "NIK" || s === "NAMA LENGKAP" || s === "N I P";
             })
           ) {
             headerIdx = i;
@@ -874,7 +603,16 @@ export default function Employees() {
           }
         }
 
-        // Helper to get value by possible header names
+        // Convert Excel serial date → YYYY-MM-DD
+        const excelDateToJSDate = (serial: any) => {
+          if (typeof serial !== "number") return String(serial || "").trim();
+          if (serial < 10000) return String(serial).trim();
+          const utc_days = Math.floor(serial - 25569);
+          const utc_value = utc_days * 86400;
+          const date_info = new Date(utc_value * 1000);
+          return date_info.toISOString().split("T")[0];
+        };
+
         const getVal = (row: any[], names: string[]) => {
           for (const name of names) {
             const idx = colMap[name.toUpperCase()];
@@ -883,332 +621,154 @@ export default function Employees() {
           return undefined;
         };
 
-        // Helper to convert Excel date number to string
-        const excelDateToJSDate = (serial: any) => {
-          if (typeof serial !== "number") return String(serial || "").trim();
-          if (serial < 10000) return String(serial).trim(); // Not a serial date
-          const utc_days = Math.floor(serial - 25569);
-          const utc_value = utc_days * 86400;
-          const date_info = new Date(utc_value * 1000);
-          return date_info.toISOString().split("T")[0];
-        };
+        // Build a normalized header lookup if the standard template wasn't
+        // detected — uses the deterministic mapper (no AI).
+        let fallbackMap: Record<string, string> = {};
+        if (headerIdx === -1) {
+          const rawHeaders = rows[0].map((h) => String(h || "").trim());
+          fallbackMap = mapExcelHeaders(rawHeaders);
+          headerIdx = 0;
+          rawHeaders.forEach((h, idx) => {
+            if (h) colMap[h.toUpperCase()] = idx;
+          });
+        }
 
-        // If we found headers, we can use direct mapping
-        if (headerIdx !== -1) {
-          const dataRows = rows.slice(headerIdx + 1);
+        const dataRows = rows.slice(headerIdx + 1);
+        const payload: Record<string, unknown>[] = [];
 
-          // Use batch to prevent freezing and multiple onSnapshot triggers
-          let batch = writeBatch(db);
-          let batchCount = 0;
+        for (const row of dataRows) {
+          if (!row || row.length < 2) continue;
 
-          for (let i = 0; i < dataRows.length; i++) {
-            const row = dataRows[i];
+          let employeeData: Record<string, unknown> = {};
 
-            if (!row || row.length < 2) continue;
-
-            const nama = String(
-              getVal(row, ["Nama Lengkap", "Nama", "NAMA"]) || "",
-            ).trim();
+          if (Object.keys(fallbackMap).length > 0) {
+            // Fallback path: use deterministic mapping
+            for (const [header, field] of Object.entries(fallbackMap)) {
+              const idx = colMap[header.toUpperCase()];
+              if (idx !== undefined && row[idx] !== undefined) {
+                employeeData[field] = excelDateToJSDate(row[idx]);
+              }
+            }
+          } else {
+            // Standard template path
+            const nama = String(getVal(row, ["Nama Lengkap", "Nama", "NAMA"]) || "").trim();
             const nik = String(getVal(row, ["NIK", "N I K"]) || "").trim();
             const nip = String(getVal(row, ["NIP", "N I P"]) || "").trim();
-
             if (!nama && !nik && !nip) continue;
             if (nama.toLowerCase().includes("nama lengkap")) continue;
 
-            // Family Data Parsing
+            // Family data
             const dataKeluarga: any[] = [];
-            const spouseName = getVal(row, [
-              "Nama Istri/Suami",
-              "Nama Pasangan",
-            ]);
+            const spouseName = getVal(row, ["Nama Istri/Suami", "Nama Pasangan"]);
             if (spouseName && String(spouseName).trim()) {
-              const jk = String(
-                getVal(row, ["JK", "Jenis Kelamin"]) || "",
-              ).toUpperCase();
+              const jk = String(getVal(row, ["JK", "Jenis Kelamin"]) || "").toUpperCase();
               dataKeluarga.push({
                 name: String(spouseName).trim(),
                 relation: jk.includes("L") ? "Istri" : "Suami",
-                birthDate: excelDateToJSDate(
-                  getVal(row, ["Tgl Lahir Pasangan", "Tanggal Lahir Pasangan"]),
-                ),
-                marriageDate: excelDateToJSDate(
-                  getVal(row, ["Tgl Nikah", "Tanggal Nikah"]),
-                ),
-                occupation: String(
-                  getVal(row, ["Pekerjaan Pasangan"]) || "",
-                ).trim(),
-                description: String(
-                  getVal(row, ["Keterangan Pasangan"]) || "",
-                ).trim(),
+                birthDate: excelDateToJSDate(getVal(row, ["Tgl Lahir Pasangan", "Tanggal Lahir Pasangan"])),
+                marriageDate: excelDateToJSDate(getVal(row, ["Tgl Nikah", "Tanggal Nikah"])),
+                occupation: String(getVal(row, ["Pekerjaan Pasangan"]) || "").trim(),
+                description: String(getVal(row, ["Keterangan Pasangan"]) || "").trim(),
               });
             }
-
-            // Children
             for (let c = 1; c <= 5; c++) {
               const cName = getVal(row, [`Nama Anak ${c}`]);
               if (cName && String(cName).trim()) {
                 dataKeluarga.push({
                   name: String(cName).trim(),
                   relation: "Anak",
-                  birthDate: excelDateToJSDate(
-                    getVal(row, [`Tgl Lahir Anak ${c}`]),
-                  ),
-                  marriageDate: excelDateToJSDate(
-                    getVal(row, [`Tgl Nikah Anak ${c}`]),
-                  ),
-                  occupation: String(
-                    getVal(row, [`Pekerjaan Anak ${c}`]) || "",
-                  ).trim(),
-                  description: String(
-                    getVal(row, [`Keterangan Anak ${c}`]) || "",
-                  ).trim(),
+                  birthDate: excelDateToJSDate(getVal(row, [`Tgl Lahir Anak ${c}`])),
+                  marriageDate: excelDateToJSDate(getVal(row, [`Tgl Nikah Anak ${c}`])),
+                  occupation: String(getVal(row, [`Pekerjaan Anak ${c}`]) || "").trim(),
+                  description: String(getVal(row, [`Keterangan Anak ${c}`]) || "").trim(),
                 });
               }
             }
 
-            let rawStatus = String(
-              getVal(row, ["Status"]) || "PNS",
-            ).toUpperCase();
+            let rawStatus = String(getVal(row, ["Status"]) || "PNS").toUpperCase();
             let status: Employee["status"] = "PNS";
             if (rawStatus.includes("CPNS")) status = "CPNS";
             else if (rawStatus.includes("PPPKPW")) status = "PPPKPW";
             else if (rawStatus.includes("PPPK")) status = "PPPK";
             else if (rawStatus.includes("PNS")) status = "PNS";
 
-            const employeeData: Partial<Employee> = {
+            const pangkat = String(getVal(row, ["Pangkat"]) || "").trim();
+            const gol = String(getVal(row, ["Gol"]) || "").trim();
+
+            employeeData = {
               nip,
               nik,
               nama,
-              jk: String(getVal(row, ["JK", "Jenis Kelamin"]) || "")
-                .trim()
-                .toUpperCase()
-                .startsWith("L")
-                ? "L"
-                : "P",
+              jk: String(getVal(row, ["JK", "Jenis Kelamin"]) || "").trim().toUpperCase().startsWith("L") ? "L" : "P",
               tempatLahir: String(getVal(row, ["Tempat Lahir"]) || "").trim(),
-              tanggalLahir: excelDateToJSDate(
-                getVal(row, ["Tanggal Lahir", "Tgl Lahir"]),
-              ),
-              jalanDusun: String(
-                getVal(row, ["Jalan/Dusun", "Alamat"]) || "",
-              ).trim(),
+              tanggalLahir: excelDateToJSDate(getVal(row, ["Tanggal Lahir", "Tgl Lahir"])),
+              jalanDusun: String(getVal(row, ["Jalan/Dusun", "Alamat"]) || "").trim(),
               rt: String(getVal(row, ["RT"]) || "").trim(),
               rw: String(getVal(row, ["RW"]) || "").trim(),
-              desaKelurahan: String(
-                getVal(row, ["Desa/Kelurahan"]) || "",
-              ).trim(),
+              desaKelurahan: String(getVal(row, ["Desa/Kelurahan"]) || "").trim(),
               kecamatan: String(getVal(row, ["Kecamatan"]) || "").trim(),
               kabupaten: String(getVal(row, ["Kabupaten"]) || "").trim(),
-              kelasJabatan: String(getVal(row, ["Kelas Jabatan"]) || "").trim(),
-              bebanKerja: String(getVal(row, ["Beban Kerja"]) || "").trim(),
               tmtKerja: excelDateToJSDate(getVal(row, ["TMT Kerja"])),
-              masaKerja: String(getVal(row, ["Masa Kerja"]) || "").trim(),
-              pensiun: excelDateToJSDate(getVal(row, ["Pensiun", "Pensiun (BUP)"])),
-              tmtGolonganRuang: excelDateToJSDate(
-                getVal(row, ["TMT Golongan Ruang"]),
-              ),
-              masaKerjaGolonganRuang: String(
-                getVal(row, ["Masa Kerja Golongan Ruang"]) || "",
-              ).trim(),
-              noRekeningBank: String(
-                getVal(row, ["No. Rekening Bank", "Rekening"]) || "",
-              ).trim(),
+              tmtGolonganRuang: excelDateToJSDate(getVal(row, ["TMT Golongan Ruang"])),
+              masaKerjaGolonganRuang: String(getVal(row, ["Masa Kerja Golongan Ruang"]) || "").trim(),
+              noRekeningBank: String(getVal(row, ["No. Rekening Bank", "Rekening"]) || "").trim(),
               npwp: String(getVal(row, ["NPWP"]) || "").trim(),
-              pangkat: String(getVal(row, ["Pangkat"]) || "").trim(),
-              gol: String(getVal(row, ["Gol"]) || "").trim(),
-              pangkatGolongan:
-                `${getVal(row, ["Pangkat"]) || ""} / ${getVal(row, ["Gol"]) || ""}`.trim(),
-              tanggalBerkalaTerakhir: excelDateToJSDate(
-                getVal(row, ["Tanggal Berkala Terakhir"]),
-              ),
+              pangkat,
+              gol,
+              pangkatGolongan: `${pangkat} / ${gol}`.trim(),
+              tanggalBerkalaTerakhir: excelDateToJSDate(getVal(row, ["Tanggal Berkala Terakhir"])),
               gajiPokok: String(getVal(row, ["Gaji Pokok"]) || "").trim(),
-              besaranGajiKotor: String(
-                getVal(row, ["Besaran Gaji Kotor"]) || "",
-              ).trim(),
-              digajiMenurut: String(
-                getVal(row, ["Digaji Menurut PP/SK"]) || "",
-              ).trim(),
+              besaranGajiKotor: String(getVal(row, ["Besaran Gaji Kotor"]) || "").trim(),
+              digajiMenurut: String(getVal(row, ["Digaji Menurut PP/SK"]) || "").trim(),
               jabatan: String(getVal(row, ["Jabatan"]) || "").trim(),
-              bidang: String(
-                getVal(row, ["Bidang", "Unit Kerja"]) || "",
-              ).trim(),
+              bidang: String(getVal(row, ["Bidang", "Unit Kerja"]) || "").trim(),
               status,
               nomorKarpeg: String(getVal(row, ["Nomor Karpeg"]) || "").trim(),
               pendidikan: String(getVal(row, ["Pendidikan"]) || "").trim(),
               jurusan: String(getVal(row, ["Jurusan"]) || "").trim(),
-              diklatJenjang: String(
-                getVal(row, ["Diklat Jenjang"]) || "",
-              ).trim(),
+              diklatJenjang: String(getVal(row, ["Diklat Jenjang"]) || "").trim(),
               tahunDiklat: String(getVal(row, ["Tahun Diklat"]) || "").trim(),
               statusKawin: String(getVal(row, ["Status Kawin"]) || "").trim(),
               agama: String(getVal(row, ["Agama"]) || "").trim(),
-              nomorHp: String(
-                getVal(row, ["Nomor HP", "No HP", "Nomo HP", "No. HP"]) || "",
-              ).trim(),
+              nomorHp: String(getVal(row, ["Nomor HP", "No HP", "Nomo HP", "No. HP"]) || "").trim(),
               sisaCutiN: String(getVal(row, ["Sisa Cuti N", "Sisa Cuti Tahunan N"]) || "").trim(),
               sisaCutiN1: String(getVal(row, ["Sisa Cuti N-1", "Sisa Cuti Tahunan N1"]) || "").trim(),
               sisaCutiN2: String(getVal(row, ["Sisa Cuti N-2", "Sisa Cuti Tahunan N2"]) || "").trim(),
               skTerakhir: String(getVal(row, ["SK Terakhir", "SK Terakhir Yang Dimiliki"]) || "").trim(),
-              jumlahTertanggung: Number(
-                getVal(row, ["Jumlah Tertanggung"]) || 0,
-              ),
+              jumlahTertanggung: Number(getVal(row, ["Jumlah Tertanggung"]) || 0),
               dataKeluarga,
             };
-
-            // Apply Kamus Auto-fill during import if empty
-            if (settings?.jabatanKamusCsv && employeeData.jabatan) {
-              const rows = settings.jabatanKamusCsv.split("\n");
-              for (const kamusRow of rows) {
-                if (!kamusRow || kamusRow.trim() === "") continue;
-                const cols = kamusRow.split(/;|\t/);
-                if (cols.length >= 4) {
-                  const kamusJabatan = cols[1]?.trim().toLowerCase() || "";
-                  if (kamusJabatan === employeeData.jabatan.toLowerCase()) {
-                    if (!employeeData.kelasJabatan)
-                      employeeData.kelasJabatan = cols[2]?.trim() || "";
-                    if (!employeeData.bebanKerja)
-                      employeeData.bebanKerja = cols[3]?.trim() || "";
-                    break;
-                  }
-                }
-              }
-            }
-
-            let existingId = null;
-            if (nip && nipMap[nip]) existingId = nipMap[nip];
-            else if (nik && nikMap[nik]) existingId = nikMap[nik];
-
-            const docRef = existingId
-              ? doc(db, "shared/data/employees", existingId)
-              : doc(collection(db, "shared/data/employees"));
-
-            batch.set(
-              docRef,
-              {
-                ...employeeData,
-                ...(existingId ? {} : { createdAt: Date.now() }),
-                updatedAt: Date.now(),
-              },
-              { merge: true },
-            );
-
-            batchCount++;
-            if (existingId) updateCount++;
-            else successCount++;
-
-            if (batchCount >= 400) {
-              await batch.commit();
-              batch = writeBatch(db);
-              batchCount = 0;
-            }
           }
 
-          if (batchCount > 0) {
-            await batch.commit();
-          }
-        } else {
-          // AI SEMI-AUTO MAPPING (Fallback if no standard headers found)
-          const rawHeaders = rows[0].map((h) => String(h || "").trim());
-          const validHeaders = rawHeaders.filter((h) => h !== "");
+          const nama = String(employeeData.nama || "").trim();
+          const nip = String(employeeData.nip || "").trim();
+          const nik = String(employeeData.nik || "").trim();
+          if (!nama && !nip && !nik) continue;
 
-          if (validHeaders.length === 0)
-            throw new Error("File Excel tidak memiliki header yang valid.");
-
-          const mapping = await mapExcelColumnsWithAI(validHeaders);
-          if (!mapping || Object.keys(mapping).length === 0) {
-            throw new Error(
-              "AI tidak dapat mengenali kolom di file Excel Anda.",
-            );
-          }
-
-          const dataRows = rows.slice(1);
-          let batch = writeBatch(db);
-          let batchCount = 0;
-
-          for (let i = 0; i < dataRows.length; i++) {
-            const row = dataRows[i];
-            if (!row || row.length === 0) continue;
-
-            const employeeData: any = {
-              dataKeluarga: [],
-            };
-
-            rawHeaders.forEach((header, idx) => {
-              const field = mapping[header];
-              if (field && row[idx] !== undefined) {
-                employeeData[field] = excelDateToJSDate(row[idx]);
-              }
-            });
-
-            const nipRaw = String(employeeData.nip || "").trim();
-            const nikRaw = String(employeeData.nik || "").trim();
-
-            if (employeeData.nama || nikRaw || nipRaw) {
-              // Apply Kamus Auto-fill for AI Mapping as well
-              if (settings?.jabatanKamusCsv && employeeData.jabatan) {
-                const rows = settings.jabatanKamusCsv.split("\n");
-                for (const kamusRow of rows) {
-                  if (!kamusRow || kamusRow.trim() === "") continue;
-                  const cols = kamusRow.split(/;|\t/);
-                  if (cols.length >= 4) {
-                    const kamusJabatan = cols[1]?.trim().toLowerCase() || "";
-                    if (
-                      kamusJabatan ===
-                      String(employeeData.jabatan).trim().toLowerCase()
-                    ) {
-                      if (!employeeData.kelasJabatan)
-                        employeeData.kelasJabatan = cols[2]?.trim() || "";
-                      if (!employeeData.bebanKerja)
-                        employeeData.bebanKerja = cols[3]?.trim() || "";
-                      break;
-                    }
-                  }
-                }
-              }
-
-              let existingId = null;
-              if (nipRaw && nipMap[nipRaw]) existingId = nipMap[nipRaw];
-              else if (nikRaw && nikMap[nikRaw]) existingId = nikMap[nikRaw];
-
-              const docRef = existingId
-                ? doc(db, "shared/data/employees", existingId)
-                : doc(collection(db, "shared/data/employees"));
-
-              batch.set(
-                docRef,
-                {
-                  ...employeeData,
-                  ...(existingId ? {} : { createdAt: Date.now() }),
-                  updatedAt: Date.now(),
-                },
-                { merge: true },
-              );
-
-              batchCount++;
-              if (existingId) updateCount++;
-              else successCount++;
-
-              if (batchCount >= 400) {
-                await batch.commit();
-                batch = writeBatch(db);
-                batchCount = 0;
-              }
-            }
-          }
-
-          if (batchCount > 0) {
-            await batch.commit();
-          }
+          payload.push(employeeData);
         }
 
+        if (payload.length === 0) {
+          throw new Error("Tidak ada baris valid untuk diimport.");
+        }
+
+        const result = await api.bulkUpsert(payload);
         alert(
-          `Import selesai! Berhasil menambah ${successCount} data baru, dan memperbarui/melengkapi ${updateCount} data lama.`,
+          `Import selesai! ${result.created} data baru, ${result.updated} diperbarui` +
+            (result.errors > 0 ? `, ${result.errors} baris dilewati (data invalid).` : "."),
         );
+
+        const fresh = await api.getEmployees();
+        setRawEmployees(fresh);
       } catch (err) {
         console.error("Import error:", err);
-        alert("Gagal mengimport data. Pastikan format file benar.");
+        alert(
+          err instanceof Error && err.message
+            ? `Gagal mengimport: ${err.message}`
+            : "Gagal mengimport data. Pastikan format file benar.",
+        );
       } finally {
-        e.target.value = ""; // Reset input
+        e.target.value = "";
       }
     };
     reader.readAsBinaryString(file);
@@ -1426,29 +986,14 @@ export default function Employees() {
   const handleBulkDelete = async () => {
     setIsDeletingBulk(true);
     try {
-      let batch = writeBatch(db);
-      let i = 0;
-      for (const id of selectedIds) {
-        batch.delete(doc(db, "shared/data/employees", id));
-        i++;
-        if (i % 400 === 0) {
-          await batch.commit();
-          batch = writeBatch(db);
-        }
-      }
-      if (i > 0) await batch.commit();
+      await api.deleteEmployees(Array.from(selectedIds));
       setSelectedIds(new Set());
       setIsBulkDeleteModalOpen(false);
-    } catch (err) {
-      try {
-        handleFirestoreError(
-          err,
-          OperationType.DELETE,
-          "shared/data/employees",
-        );
-      } catch (e) {
-        if (e instanceof Error) setError(e);
-      }
+      const fresh = await api.getEmployees();
+      setRawEmployees(fresh);
+    } catch (e) {
+      const err = handleApiError(e, OperationType.DELETE, "/api/employees");
+      setError(err);
     } finally {
       setIsDeletingBulk(false);
     }
