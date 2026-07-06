@@ -23,7 +23,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     if (existingUser) {
-      return res.status(400).json({ error: "Email is already registered" });
+      // Jika user sudah ada (misal dari login GitHub lama) tapi belum punya password
+      if (!existingUser.password) {
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const updatedUser = await prisma.user.update({
+          where: { email: email.toLowerCase() },
+          data: { password: hashedPassword },
+        });
+        return res.status(200).json({ success: true, user: { id: updatedUser.id, email: updatedUser.email } });
+      } else {
+        // Jika sudah ada dan punya password
+        return res.status(400).json({ error: "Email is already registered" });
+      }
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
