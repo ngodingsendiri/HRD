@@ -82,10 +82,30 @@ export const authOptions: AuthConfig = {
 // We bridge the two with lightweight adapters below.
 
 /**
+ * Read the raw, unparsed request body from a Vercel Node.js IncomingMessage.
+ *
+ * @vercel/node auto-parses JSON / form-urlencoded bodies into `req.body`, but
+ * that parsing is fragile: it can be skipped depending on content-type
+ * negotiation, and re-serializing a parsed object can corrupt values that
+ * contain special characters (e.g. `+`, `%`). Auth.js's credentials callback
+ * reads the POST body itself from the Web `Request`, so we must give it the
+ * verbatim bytes the client sent. This drains any pre-parsed body first and
+ * falls back to reading the raw stream.
+ */
+function readRawBody(req: VercelRequest): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (chunk: Buffer) => chunks.push(chunk));
+    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    req.on("error", reject);
+  });
+}
+
+/**
  * Convert a Node.js IncomingMessage (VercelRequest) into a Web API Request.
  * Reads the body into the Request init so Auth.js can parse form/json payloads.
  */
-function vercelRequestToWebRequest(req: VercelRequest): Request {
+async function vercelRequestToWebRequest(req: VercelRequest): Promise<Request> {
   const url = `https://${req.headers.host || "localhost"}${req.url || "/"}`;
   const headers = new Headers();
 
@@ -99,23 +119,36 @@ function vercelRequestToWebRequest(req: VercelRequest): Request {
     }
   }
 
-  // Remove headers that should be computed automatically or could break proxying
+  // Remove hop-by-hop / computed headers BEFORE setting the body. The Web
+  // `Request` constructor recomputes Content-Length from the actual body bytes;
+  // leaving a stale value (pointing at the original, possibly larger request)
+  // causes Auth.js to read a truncated body and fail CSRF / credential checks.
   headers.delete("content-length");
   headers.delete("transfer-encoding");
 
   let body: BodyInit | undefined;
 
-  // Extract body — Vercel parses JSON/form body into req.body, but Auth.js
-  // credentials callback reads form-encoded POST body from the Request.
+  // Auth.js credentials callback expects the raw form-urlencoded POST body.
   if (req.method === "POST" || req.method === "PUT" || req.method === "PATCH") {
-    if (typeof req.body === "string") {
-      body = req.body;
+    if (typeof req.body === "string" || Buffer.isBuffer(req.body)) {
+      // Vercel left the body as a raw string/buffer — use verbatim.
+      body = typeof req.body === "string" ? req.body : req.body.toString("utf8");
     } else if (req.body && typeof req.body === "object") {
-      // If Vercel parsed the body as an object, serialize it as form-encoded
-      // (Auth.js credentials expects application/x-www-form-urlencoded).
-      body = new URLSearchParams(
-        Object.entries(req.body).map(([k, v]) => [k, String(v ?? "")]),
-      ).toString();
+      // Vercel parsed the body into an object. Re-serialize to form-urlencoded.
+      // Use URLSearchParams directly so values are correctly percent-encoded
+      // (handles `+`, `%`, unicode, and repeated/array keys).
+      const params = new URLSearchParams();
+      for (const [key, value] of Object.entries(req.body)) {
+        if (Array.isArray(value)) {
+          for (const item of value) params.append(key, String(item ?? ""));
+        } else {
+          params.append(key, String(value ?? ""));
+        }
+      }
+      body = params.toString();
+    } else {
+      // Body wasn't pre-parsed — drain the raw stream as a last resort.
+      body = await readRawBody(req);
     }
   }
 
@@ -123,6 +156,9 @@ function vercelRequestToWebRequest(req: VercelRequest): Request {
     method: req.method || "GET",
     headers,
     body,
+    // @ts-expect-error - duplex is required by undici when a body is provided
+    // but is missing from the lib.dom typings used here.
+    duplex: "half",
   });
 }
 
@@ -168,7 +204,7 @@ function nextResponseToVercel(webRes: Response, res: VercelResponse): void {
 /** Vercel-compatible GET handler for /api/auth/[...auth] */
 export async function authGet(req: VercelRequest, res: VercelResponse) {
   try {
-    const webReq = vercelRequestToWebRequest(req);
+    const webReq = await vercelRequestToWebRequest(req);
     const webRes = await Auth(webReq, authOptions);
     nextResponseToVercel(webRes, res);
   } catch (error: any) {
@@ -180,7 +216,7 @@ export async function authGet(req: VercelRequest, res: VercelResponse) {
 /** Vercel-compatible POST handler for /api/auth/[...auth] */
 export async function authPost(req: VercelRequest, res: VercelResponse) {
   try {
-    const webReq = vercelRequestToWebRequest(req);
+    const webReq = await vercelRequestToWebRequest(req);
     const webRes = await Auth(webReq, authOptions);
     nextResponseToVercel(webRes, res);
   } catch (error: any) {

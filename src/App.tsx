@@ -78,21 +78,57 @@ export default function App() {
           csrfToken,
           redirect: "false",
         }),
+        // Auth.js always responds to credential POSTs with a 303/302 redirect
+        // (to "/" on success, to "/api/auth/error?error=..." on failure). If we
+        // let fetch follow it, the browser GETs the SPA index.html and we get
+        // HTML back here, which looks like an opaque "non-JSON" failure.
+        // Manual mode lets us inspect the redirect target instead.
+        redirect: "manual",
       });
 
-      let data;
-      try {
-        const text = await res.text();
-        data = text ? JSON.parse(text) : {};
-      } catch (e) {
-        throw new Error(`Gagal membaca respons dari server (Status: ${res.status}). Respons bukan JSON.`);
-      }
-
-      if (!res.ok || data?.error) {
-        toast.error("Login gagal", { description: data?.error || `Server merespons dengan status ${res.status}` });
+      // `redirect: "manual"` returns an opaque response (type "opaqueredirect")
+      // with status 0 and no readable body/headers. The only signal we get is
+      // `res.type`. A successful Auth.js flow returns a normal redirect; a
+      // server-side crash returns a real error status.
+      if (res.type === "opaqueredirect") {
+        // Auth.js processed the request and redirected. On success it sets the
+        // session cookie and redirects to "/"; on failure it redirects to an
+        // error URL. Verify by fetching the session.
+        const sessionRes = await fetch("/api/auth/session", { credentials: "same-origin" });
+        let loggedIn = false;
+        if (sessionRes.ok) {
+          try {
+            const session = await sessionRes.json();
+            loggedIn = Boolean(session?.user);
+          } catch {
+            loggedIn = false;
+          }
+        }
+        if (loggedIn) {
+          toast.success("Login berhasil");
+          window.location.reload();
+        } else {
+          toast.error("Login gagal", { description: "Email atau password salah." });
+        }
+      } else if (!res.ok) {
+        // Real server error (500, 404, etc.) — try to parse a JSON message.
+        let detail = `Server merespons dengan status ${res.status}`;
+        try {
+          const text = await res.text();
+          if (text) {
+            try {
+              detail = JSON.parse(text)?.error || detail;
+            } catch {
+              detail = text.slice(0, 200);
+            }
+          }
+        } catch {
+          /* ignore body read errors */
+        }
+        toast.error("Login gagal", { description: detail });
       } else {
-        toast.success("Login berhasil");
-        window.location.reload(); // Refresh to let auth provider fetch session
+        // Unexpected non-redirect, non-error response — treat as failure.
+        toast.error("Login gagal", { description: "Respons server tidak terduga." });
       }
     } catch (err: any) {
       console.error("Detail error login:", err);

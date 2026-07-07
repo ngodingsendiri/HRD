@@ -62,10 +62,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const csrfRes = await fetch("/api/auth/csrf");
       const { csrfToken } = await csrfRes.json();
+      // Auth.js signout also responds with a 303 redirect; use manual mode
+      // so the cookie gets cleared on the response without the browser
+      // navigating away to follow the redirect.
       await fetch("/api/auth/signout", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({ csrfToken }),
+        redirect: "manual",
+        credentials: "same-origin",
       });
       setUser(null);
       window.location.href = "/";
