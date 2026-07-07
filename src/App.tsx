@@ -60,8 +60,14 @@ export default function App() {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      const csrfRes = await fetch("/api/auth/csrf");
-      const { csrfToken } = await csrfRes.json();
+      let csrfToken;
+      try {
+        const csrfRes = await fetch("/api/auth/csrf");
+        const csrfData = await csrfRes.json();
+        csrfToken = csrfData.csrfToken;
+      } catch (e) {
+        throw new Error("Gagal terhubung ke server (CSRF Init Failed). Server mungkin sedang down atau mengalami error internal.");
+      }
 
       const res = await fetch("/api/auth/callback/credentials", {
         method: "POST",

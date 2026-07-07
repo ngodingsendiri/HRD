@@ -76,7 +76,15 @@ export const authOptions: NextAuthConfig = {
 };
 
 /** NextAuth v5 result — provides handlers and auth helper. */
-const nextAuthResult = NextAuth(authOptions);
+let nextAuthResult: ReturnType<typeof NextAuth> | null = null;
+let nextAuthInitError: any = null;
+
+try {
+  nextAuthResult = NextAuth(authOptions);
+} catch (e: any) {
+  nextAuthInitError = e;
+  console.error("NextAuth Init Error:", e);
+}
 
 // ─── Vercel Node.js adapter ──────────────────────────────────────────────────
 // NextAuth v5 handlers expect Web API `NextRequest` / `Response`, but Vercel
@@ -165,6 +173,9 @@ function nextResponseToVercel(webRes: Response, res: VercelResponse): void {
 
 /** Vercel-compatible GET handler for /api/auth/[...auth] */
 export async function authGet(req: VercelRequest, res: VercelResponse) {
+  if (nextAuthInitError || !nextAuthResult) {
+    return res.status(500).json({ error: "NextAuth Init Error", message: String(nextAuthInitError) });
+  }
   try {
     const webReq = vercelRequestToWebRequest(req);
     // NextAuth v5 handlers type-expect NextRequest; Web Request is structurally
@@ -179,6 +190,9 @@ export async function authGet(req: VercelRequest, res: VercelResponse) {
 
 /** Vercel-compatible POST handler for /api/auth/[...auth] */
 export async function authPost(req: VercelRequest, res: VercelResponse) {
+  if (nextAuthInitError || !nextAuthResult) {
+    return res.status(500).json({ error: "NextAuth Init Error", message: String(nextAuthInitError) });
+  }
   try {
     const webReq = vercelRequestToWebRequest(req);
     const webRes = await nextAuthResult.handlers.POST(webReq as never);
