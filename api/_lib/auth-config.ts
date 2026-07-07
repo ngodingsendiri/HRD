@@ -1,12 +1,12 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import NextAuth, { type NextAuthConfig } from "next-auth";
-import Credentials from "next-auth/providers/credentials";
+import { Auth, type AuthConfig } from "@auth/core";
+import Credentials from "@auth/core/providers/credentials";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "../../src/lib/db.js";
 import bcrypt from "bcryptjs";
 
 /**
- * Auth.js (NextAuth v5) configuration, serverless-friendly.
+ * Auth.js configuration, serverless-friendly.
  * Uses the Prisma adapter to persist users/sessions/accounts in Neon.
  *
  * Provider: Credentials (Email/Password).
@@ -18,10 +18,11 @@ import bcrypt from "bcryptjs";
  *   ADMIN_EMAILS=admin@example.com,hr@example.com
  */
 
-export const authOptions: NextAuthConfig = {
+export const authOptions: AuthConfig = {
   secret: process.env.AUTH_SECRET || "fallback_secret_hrcube_dev_only_9999",
   adapter: PrismaAdapter(prisma),
   session: { strategy: "jwt" },
+  basePath: "/api/auth",
   providers: [
     Credentials({
       name: "Credentials",
@@ -75,25 +76,14 @@ export const authOptions: NextAuthConfig = {
   trustHost: true,
 };
 
-/** NextAuth v5 result — provides handlers and auth helper. */
-let nextAuthResult: ReturnType<typeof NextAuth> | null = null;
-let nextAuthInitError: any = null;
-
-try {
-  nextAuthResult = NextAuth(authOptions);
-} catch (e: any) {
-  nextAuthInitError = e;
-  console.error("NextAuth Init Error:", e);
-}
-
 // ─── Vercel Node.js adapter ──────────────────────────────────────────────────
-// NextAuth v5 handlers expect Web API `NextRequest` / `Response`, but Vercel
+// Auth.js expects Web API `Request` / `Response`, but Vercel
 // Node.js serverless functions use Node.js `IncomingMessage` / `ServerResponse`.
 // We bridge the two with lightweight adapters below.
 
 /**
  * Convert a Node.js IncomingMessage (VercelRequest) into a Web API Request.
- * Reads the body into the Request init so NextAuth can parse form/json payloads.
+ * Reads the body into the Request init so Auth.js can parse form/json payloads.
  */
 function vercelRequestToWebRequest(req: VercelRequest): Request {
   const url = `https://${req.headers.host || "localhost"}${req.url || "/"}`;
@@ -111,14 +101,14 @@ function vercelRequestToWebRequest(req: VercelRequest): Request {
 
   let body: BodyInit | undefined;
 
-  // Extract body — Vercel parses JSON/form body into req.body, but NextAuth
+  // Extract body — Vercel parses JSON/form body into req.body, but Auth.js
   // credentials callback reads form-encoded POST body from the Request.
   if (req.method === "POST" || req.method === "PUT" || req.method === "PATCH") {
     if (typeof req.body === "string") {
       body = req.body;
     } else if (req.body && typeof req.body === "object") {
       // If Vercel parsed the body as an object, serialize it as form-encoded
-      // (NextAuth credentials expects application/x-www-form-urlencoded).
+      // (Auth.js credentials expects application/x-www-form-urlencoded).
       body = new URLSearchParams(
         Object.entries(req.body).map(([k, v]) => [k, String(v ?? "")]),
       ).toString();
@@ -173,33 +163,25 @@ function nextResponseToVercel(webRes: Response, res: VercelResponse): void {
 
 /** Vercel-compatible GET handler for /api/auth/[...auth] */
 export async function authGet(req: VercelRequest, res: VercelResponse) {
-  if (nextAuthInitError || !nextAuthResult) {
-    return res.status(500).json({ error: "NextAuth Init Error", message: String(nextAuthInitError) });
-  }
   try {
     const webReq = vercelRequestToWebRequest(req);
-    // NextAuth v5 handlers type-expect NextRequest; Web Request is structurally
-    // compatible at runtime. Cast via unknown to satisfy the type checker.
-    const webRes = await nextAuthResult.handlers.GET(webReq as never);
+    const webRes = await Auth(webReq, authOptions);
     nextResponseToVercel(webRes, res);
   } catch (error: any) {
-    console.error("NextAuth GET Error:", error);
-    res.status(500).json({ error: error?.message || "Internal NextAuth Error" });
+    console.error("Auth GET Error:", error);
+    res.status(500).json({ error: error?.message || "Internal Auth Error" });
   }
 }
 
 /** Vercel-compatible POST handler for /api/auth/[...auth] */
 export async function authPost(req: VercelRequest, res: VercelResponse) {
-  if (nextAuthInitError || !nextAuthResult) {
-    return res.status(500).json({ error: "NextAuth Init Error", message: String(nextAuthInitError) });
-  }
   try {
     const webReq = vercelRequestToWebRequest(req);
-    const webRes = await nextAuthResult.handlers.POST(webReq as never);
+    const webRes = await Auth(webReq, authOptions);
     nextResponseToVercel(webRes, res);
   } catch (error: any) {
-    console.error("NextAuth POST Error:", error);
-    res.status(500).json({ error: error?.message || "Internal NextAuth Error" });
+    console.error("Auth POST Error:", error);
+    res.status(500).json({ error: error?.message || "Internal Auth Error" });
   }
 }
 
@@ -215,7 +197,7 @@ interface SessionPayload {
 }
 
 /**
- * Fetch the current session by calling the internal NextAuth handler
+ * Fetch the current session by calling the internal Auth handler
  * via a synthetic GET /api/auth/session request.
  */
 export async function getServerSession(
@@ -232,9 +214,10 @@ export async function getServerSession(
   });
 
   try {
-    const webRes = await nextAuthResult.handlers.GET(webReq as never);
+    const webRes = await Auth(webReq, authOptions);
     if (!webRes.ok) return null;
-    return (await webRes.json()) as SessionPayload;
+    const data = await webRes.json();
+    return data && Object.keys(data).length > 0 ? (data as SessionPayload) : null;
   } catch {
     return null;
   }
