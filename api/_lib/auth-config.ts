@@ -99,6 +99,10 @@ function vercelRequestToWebRequest(req: VercelRequest): Request {
     }
   }
 
+  // Remove headers that should be computed automatically or could break proxying
+  headers.delete("content-length");
+  headers.delete("transfer-encoding");
+
   let body: BodyInit | undefined;
 
   // Extract body — Vercel parses JSON/form body into req.body, but Auth.js
