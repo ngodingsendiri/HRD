@@ -74,15 +74,23 @@ export default function App() {
         }),
       });
 
-      const data = await res.json();
-      if (data?.error) {
-        toast.error("Login gagal", { description: "Email atau password salah." });
+      let data;
+      try {
+        const text = await res.text();
+        data = text ? JSON.parse(text) : {};
+      } catch (e) {
+        throw new Error(`Gagal membaca respons dari server (Status: ${res.status}). Respons bukan JSON.`);
+      }
+
+      if (!res.ok || data?.error) {
+        toast.error("Login gagal", { description: data?.error || `Server merespons dengan status ${res.status}` });
       } else {
         toast.success("Login berhasil");
         window.location.reload(); // Refresh to let auth provider fetch session
       }
-    } catch (err) {
-      toast.error("Terjadi kesalahan sistem saat login.");
+    } catch (err: any) {
+      console.error("Detail error login:", err);
+      toast.error("Terjadi kesalahan saat login.", { description: err?.message || String(err) });
     } finally {
       setIsSubmitting(false);
     }
