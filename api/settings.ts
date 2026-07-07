@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { getSettings, upsertSettings } from "../src/lib/queries";
-import { AppSettingsSchema } from "../src/lib/schemas";
-import { requireAdmin } from "./_lib/auth";
+import { getSettings, upsertSettings } from "../src/lib/queries.js";
+import { AppSettingsSchema } from "../src/lib/schemas.js";
+import { requireAdmin } from "./_lib/auth.js";
 
 /**
  * GET /api/settings → singleton settings

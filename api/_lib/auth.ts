@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { getServerSession } from "./auth-config";
+import { getServerSession } from "./auth-config.js";
 
 /**
  * Allowlist of emails permitted to use the admin app.

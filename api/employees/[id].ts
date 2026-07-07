@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { getEmployee, updateEmployee, deleteEmployee } from "../../src/lib/queries";
-import { EmployeeSchema } from "../../src/lib/schemas";
-import { requireAdmin } from "../_lib/auth";
+import { getEmployee, updateEmployee, deleteEmployee } from "../../src/lib/queries.js";
+import { EmployeeSchema } from "../../src/lib/schemas.js";
+import { requireAdmin } from "../_lib/auth.js";
 
 /**
  * GET    /api/employees/:id  → get one

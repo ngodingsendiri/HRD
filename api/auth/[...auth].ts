@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { authGet, authPost } from "../_lib/auth-config";
+import { authGet, authPost } from "../_lib/auth-config.js";
 
 /**
  * Auth.js catch-all route handler for Vercel Node.js serverless.

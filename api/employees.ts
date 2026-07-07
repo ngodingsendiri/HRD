@@ -7,9 +7,9 @@ import {
   deleteEmployee,
   deleteEmployees,
   bulkUpsertEmployees,
-} from "../src/lib/queries";
-import { EmployeeSchema } from "../src/lib/schemas";
-import { requireAdmin } from "./_lib/auth";
+} from "../src/lib/queries.js";
+import { EmployeeSchema } from "../src/lib/schemas.js";
+import { requireAdmin } from "./_lib/auth.js";
 
 /**
  * GET    /api/employees         → list all
