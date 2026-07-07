@@ -1,4 +1,4 @@
-import { DEFAULT_KAMUS } from "../constants";
+import { DEFAULT_KAMUS } from "../constants.js";
 
 /**
  * Pure kamus (job-grade dictionary) lookup.

@@ -1,20 +1,19 @@
 /**
  * Data access layer — the ONLY place that touches Prisma directly.
- * Data access layer — the ONLY place that touches Prisma directly.
  * Computed fields (masaKerja, kelasJabatan,
  * bebanKerja, pensiun) are attached at read time, never persisted.
  */
-import { prisma } from "./db";
+import { prisma } from "./db.js";
 import {
   EmployeeSchema,
   AppSettingsSchema,
   type EmployeeT,
   type AppSettingsT,
   type FamilyMemberT,
-} from "./schemas";
-import { DEFAULT_KAMUS } from "../constants";
-import { calculateMasaKerja } from "./employeeUtils";
-import { lookupKamus } from "./kamus";
+} from "./schemas.js";
+import { DEFAULT_KAMUS } from "../constants.js";
+import { calculateMasaKerja } from "./employeeUtils.js";
+import { lookupKamus } from "./kamus.js";
 
 // Re-export for backwards compatibility (server code may import from here).
 export { lookupKamus };
