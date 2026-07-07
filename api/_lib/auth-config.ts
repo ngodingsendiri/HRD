@@ -19,6 +19,7 @@ import bcrypt from "bcryptjs";
  */
 
 export const authOptions: NextAuthConfig = {
+  secret: process.env.AUTH_SECRET || "fallback_secret_hrcube_dev_only_9999",
   adapter: PrismaAdapter(prisma),
   session: { strategy: "jwt" },
   providers: [

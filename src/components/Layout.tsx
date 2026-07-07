@@ -18,7 +18,6 @@ import { AnimatePresence, motion } from "motion/react";
 
 export default function Layout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const location = useLocation();
   const { user, signOut } = useAuth();
 
@@ -49,27 +48,19 @@ export default function Layout() {
       {/* Sidebar */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 bg-white border-r border-slate-100 transform transition-all duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 flex flex-col h-full print:hidden",
-          isSidebarOpen ? "translate-x-0" : "-translate-x-full",
-          isSidebarCollapsed ? "w-20" : "w-64",
+          "fixed inset-y-0 left-0 z-50 bg-white border-r border-slate-100 transform transition-all duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 flex flex-col h-full w-64 print:hidden",
+          isSidebarOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
         {/* Logo Area */}
-        <div
-          className={cn(
-            "flex items-center h-16 shrink-0 px-6",
-            isSidebarCollapsed && "justify-center px-0",
-          )}
-        >
+        <div className="flex items-center h-16 shrink-0 px-6">
           <div className="flex items-center gap-3 overflow-hidden">
             <div className="w-8 h-8 bg-slate-900 rounded-lg flex items-center justify-center shrink-0">
               <Users className="w-4 h-4 text-white" />
             </div>
-            {!isSidebarCollapsed && (
-              <span className="text-base font-bold tracking-tight text-slate-900">
-                HRCube
-              </span>
-            )}
+            <span className="text-base font-bold tracking-tight text-slate-900">
+              HRCube
+            </span>
           </div>
         </div>
 
@@ -84,25 +75,21 @@ export default function Layout() {
                   to={item.href}
                   onClick={() => setIsSidebarOpen(false)}
                   className={cn(
-                    "flex items-center rounded-lg transition-colors group",
-                    isSidebarCollapsed
-                      ? "justify-center p-3"
-                      : "px-3 py-2 text-[13px] font-medium",
+                    "flex items-center rounded-lg transition-colors group px-3 py-2 text-[13px] font-medium",
                     isActive
                       ? "bg-slate-50 text-slate-900 "
-                      : "text-slate-500 hover:text-slate-900 hover:bg-slate-50/50",
+                      : "text-slate-500 hover:text-slate-900 hover:bg-slate-50/50"
                   )}
                 >
                   <item.icon
                     className={cn(
-                      "w-4 h-4 transition-colors",
-                      !isSidebarCollapsed && "mr-3",
+                      "w-4 h-4 transition-colors mr-3",
                       isActive
                         ? "text-slate-900"
-                        : "text-slate-400 group-hover:text-slate-600",
+                        : "text-slate-400 group-hover:text-slate-600"
                     )}
                   />
-                  {!isSidebarCollapsed && item.name}
+                  {item.name}
                 </Link>
               );
             })}
@@ -111,12 +98,7 @@ export default function Layout() {
 
         {/* User Profile */}
         <div className="p-4 border-t border-slate-50">
-          <div
-            className={cn(
-              "flex items-center gap-3",
-              isSidebarCollapsed ? "justify-center" : "px-2",
-            )}
-          >
+          <div className="flex items-center gap-3 px-2">
             <div className="relative shrink-0">
               {user?.image ? (
                 <img
@@ -131,26 +113,22 @@ export default function Layout() {
                 </div>
               )}
             </div>
-            {!isSidebarCollapsed && (
-              <div className="overflow-hidden flex-1">
-                <div className="text-[12px] font-semibold text-slate-900 truncate">
-                  {user?.name || user?.email?.split("@")[0]}
-                </div>
-                <div className="text-[10px] font-medium text-slate-400 truncate">
-                  Administrator
-                </div>
+            <div className="overflow-hidden flex-1">
+              <div className="text-[12px] font-semibold text-slate-900 truncate">
+                {user?.name || user?.email?.split("@")[0]}
               </div>
-            )}
-            {!isSidebarCollapsed && (
-              <button
-                type="button"
-                onClick={signOut}
-                aria-label="Logout"
-                className="p-1.5 text-slate-400 hover:text-slate-900 rounded-lg transition-colors"
-              >
-                <LogOut className="w-4 h-4" />
-              </button>
-            )}
+              <div className="text-[10px] font-medium text-slate-400 truncate">
+                Administrator
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={signOut}
+              aria-label="Logout"
+              className="p-1.5 text-slate-400 hover:text-slate-900 rounded-lg transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
           </div>
         </div>
       </aside>
