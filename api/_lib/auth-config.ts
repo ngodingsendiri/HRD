@@ -164,18 +164,28 @@ function nextResponseToVercel(webRes: Response, res: VercelResponse): void {
 
 /** Vercel-compatible GET handler for /api/auth/[...auth] */
 export async function authGet(req: VercelRequest, res: VercelResponse) {
-  const webReq = vercelRequestToWebRequest(req);
-  // NextAuth v5 handlers type-expect NextRequest; Web Request is structurally
-  // compatible at runtime. Cast via unknown to satisfy the type checker.
-  const webRes = await nextAuthResult.handlers.GET(webReq as never);
-  nextResponseToVercel(webRes, res);
+  try {
+    const webReq = vercelRequestToWebRequest(req);
+    // NextAuth v5 handlers type-expect NextRequest; Web Request is structurally
+    // compatible at runtime. Cast via unknown to satisfy the type checker.
+    const webRes = await nextAuthResult.handlers.GET(webReq as never);
+    nextResponseToVercel(webRes, res);
+  } catch (error: any) {
+    console.error("NextAuth GET Error:", error);
+    res.status(500).json({ error: error?.message || "Internal NextAuth Error" });
+  }
 }
 
 /** Vercel-compatible POST handler for /api/auth/[...auth] */
 export async function authPost(req: VercelRequest, res: VercelResponse) {
-  const webReq = vercelRequestToWebRequest(req);
-  const webRes = await nextAuthResult.handlers.POST(webReq as never);
-  nextResponseToVercel(webRes, res);
+  try {
+    const webReq = vercelRequestToWebRequest(req);
+    const webRes = await nextAuthResult.handlers.POST(webReq as never);
+    nextResponseToVercel(webRes, res);
+  } catch (error: any) {
+    console.error("NextAuth POST Error:", error);
+    res.status(500).json({ error: error?.message || "Internal NextAuth Error" });
+  }
 }
 
 // ─── Session helper for requireAdmin ─────────────────────────────────────────
