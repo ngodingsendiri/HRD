@@ -27,20 +27,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const fetchSession = () => {
-    fetch("/api/auth/session")
+    fetch("/api/auth/me")
       .then(async (r) => {
-        if (!r.ok) {
-          console.warn("Session fetch failed:", r.status, r.statusText);
-          return null;
-        }
-        // Guard: handler crash can return non-JSON (e.g. HTML error page)
-        const text = await r.text();
-        try {
-          return text ? JSON.parse(text) : null;
-        } catch {
-          console.warn("Session response was not valid JSON");
-          return null;
-        }
+        if (!r.ok) return null;
+        return r.json();
       })
       .then((data: { user?: SessionUser } | null) => {
         setUser(data?.user ?? null);
@@ -60,16 +50,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     try {
-      const csrfRes = await fetch("/api/auth/csrf");
-      const { csrfToken } = await csrfRes.json();
-      // Auth.js signout also responds with a 303 redirect; use manual mode
-      // so the cookie gets cleared on the response without the browser
-      // navigating away to follow the redirect.
-      await fetch("/api/auth/signout", {
+      await fetch("/api/auth/logout", {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ csrfToken }),
-        redirect: "manual",
         credentials: "same-origin",
       });
       setUser(null);

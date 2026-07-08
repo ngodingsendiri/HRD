@@ -60,75 +60,22 @@ export default function App() {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      let csrfToken;
-      try {
-        const csrfRes = await fetch("/api/auth/csrf");
-        const csrfData = await csrfRes.json();
-        csrfToken = csrfData.csrfToken;
-      } catch (e) {
-        throw new Error("Gagal terhubung ke server (CSRF Init Failed). Server mungkin sedang down atau mengalami error internal.");
-      }
-
-      const res = await fetch("/api/auth/callback/credentials", {
+      const res = await fetch("/api/auth/login", {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          email,
-          password,
-          csrfToken,
-          redirect: "false",
-        }),
-        // Auth.js always responds to credential POSTs with a 303/302 redirect
-        // (to "/" on success, to "/api/auth/error?error=..." on failure). If we
-        // let fetch follow it, the browser GETs the SPA index.html and we get
-        // HTML back here, which looks like an opaque "non-JSON" failure.
-        // Manual mode lets us inspect the redirect target instead.
-        redirect: "manual",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ email, password }),
       });
 
-      // `redirect: "manual"` returns an opaque response (type "opaqueredirect")
-      // with status 0 and no readable body/headers. The only signal we get is
-      // `res.type`. A successful Auth.js flow returns a normal redirect; a
-      // server-side crash returns a real error status.
-      if (res.type === "opaqueredirect") {
-        // Auth.js processed the request and redirected. On success it sets the
-        // session cookie and redirects to "/"; on failure it redirects to an
-        // error URL. Verify by fetching the session.
-        const sessionRes = await fetch("/api/auth/session", { credentials: "same-origin" });
-        let loggedIn = false;
-        if (sessionRes.ok) {
-          try {
-            const session = await sessionRes.json();
-            loggedIn = Boolean(session?.user);
-          } catch {
-            loggedIn = false;
-          }
-        }
-        if (loggedIn) {
-          toast.success("Login berhasil");
-          window.location.reload();
-        } else {
-          toast.error("Login gagal", { description: "Email atau password salah." });
-        }
-      } else if (!res.ok) {
-        // Real server error (500, 404, etc.) — try to parse a JSON message.
-        let detail = `Server merespons dengan status ${res.status}`;
-        try {
-          const text = await res.text();
-          if (text) {
-            try {
-              detail = JSON.parse(text)?.error || detail;
-            } catch {
-              detail = text.slice(0, 200);
-            }
-          }
-        } catch {
-          /* ignore body read errors */
-        }
-        toast.error("Login gagal", { description: detail });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok || !data?.user) {
+        toast.error("Login gagal", {
+          description: data?.error || `Server merespons dengan status ${res.status}`,
+        });
       } else {
-        // Unexpected non-redirect, non-error response — treat as failure.
-        toast.error("Login gagal", { description: "Respons server tidak terduga." });
+        toast.success("Login berhasil");
+        setUser(data.user);
       }
     } catch (err: any) {
       console.error("Detail error login:", err);

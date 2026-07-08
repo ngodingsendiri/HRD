@@ -82,6 +82,6 @@ export const api = {
   // ============ Auth ============
 
   async getSession(): Promise<{ user: { email: string; name?: string; image?: string } | null }> {
-    return request("/api/auth/session");
+    return request("/api/auth/me");
   },
 };

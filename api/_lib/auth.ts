@@ -1,41 +1,9 @@
-import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { getServerSession } from "./auth-config.js";
-
 /**
- * Allowlist of emails permitted to use the admin app.
- * Set via ADMIN_EMAILS env var (comma-separated), e.g.:
- *   ADMIN_EMAILS=admin@example.com,hr@example.com
+ * Backwards-compatible re-export of the auth guard.
+ *
+ * Data handlers (api/employees.ts, api/settings.ts, …) import
+ * `requireAdmin` from "./_lib/auth.js". The real implementation now lives in
+ * session.ts; this file keeps the old import path working so those handlers
+ * require zero changes.
  */
-function adminEmails(): Set<string> {
-  const raw = process.env.ADMIN_EMAILS || "";
-  return new Set(raw.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean));
-}
-
-export interface AdminUser {
-  id?: string;
-  name?: string | null;
-  email?: string;
-  image?: string | null;
-}
-
-/**
- * Throws if the request is not from an authenticated admin. The caller is
- * expected to `try { await requireAdmin(...) } catch { return; }` because
- * requireAdmin writes the 401 response itself.
- */
-export async function requireAdmin(req: VercelRequest, res: VercelResponse): Promise<AdminUser> {
-  const session = await getServerSession(req, res);
-  const email = session?.user?.email;
-
-  if (!session || !email || !adminEmails().has(email.toLowerCase())) {
-    res.status(401).json({ error: "Unauthorized: Email not registered as admin" });
-    throw new Error("Unauthorized");
-  }
-
-  const u = session?.user;
-  if (!u) {
-    res.status(401).json({ error: "Unauthorized: No session user" });
-    throw new Error("Unauthorized");
-  }
-  return { id: u.id, name: u.name, email: u.email, image: u.image };
-}
+export { requireAdmin, type AdminUser } from "./session.js";
