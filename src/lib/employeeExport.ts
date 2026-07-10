@@ -1,4 +1,4 @@
-import type { FamilyMember } from "../types";
+import type { FamilyMember } from "../types.js";
 
 /**
  * Build the flat family-related columns for Excel export.

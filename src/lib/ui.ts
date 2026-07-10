@@ -2,7 +2,7 @@
  * Design system tokens for HRCube (see AGENTS.md).
  * Prefer these helpers over one-off class strings so pages stay consistent.
  */
-import { cn } from "./utils";
+import { cn } from "./utils.js";
 
 // ─── Motion (motion/react) ───────────────────────────────────────────────────
 

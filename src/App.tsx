@@ -87,14 +87,22 @@ export default function App() {
             : typeof data?.message === "string"
               ? data.message
               : null;
+        const detail =
+          typeof data?.detail === "string" ? data.detail : null;
+        const code = typeof data?.code === "string" ? data.code : null;
         toast.error("Login gagal", {
-          description:
+          description: [
             serverMsg ||
-            (res.status === 404
-              ? "Endpoint API tidak ditemukan (routing). Redeploy / cek vercel.json."
-              : res.status === 503
-                ? "Server belum siap (cek AUTH_SECRET / database di Vercel)."
-                : `Server merespons dengan status ${res.status}`),
+              (res.status === 404
+                ? "Endpoint API tidak ditemukan (routing)."
+                : res.status === 503
+                  ? "Server belum siap (AUTH_SECRET / database)."
+                  : `Status ${res.status}`),
+            code ? `[${code}]` : null,
+            detail,
+          ]
+            .filter(Boolean)
+            .join(" · "),
         });
       } else {
         toast.success("Login berhasil");

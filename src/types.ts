@@ -8,7 +8,7 @@ import type {
   EmployeeT,
   EmployeeStatusT,
   AppSettingsT,
-} from "./lib/schemas";
+} from "./lib/schemas.js";
 
 export type FamilyMember = FamilyMemberT;
 export type Employee = EmployeeT;

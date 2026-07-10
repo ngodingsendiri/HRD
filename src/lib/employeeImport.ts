@@ -9,15 +9,15 @@
  * - masaKerjaGolonganRuang is auto-filled from tmtGolonganRuang when empty.
  * - Match key for upsert: NIP first, else NIK.
  */
-import type { Employee, EmployeeStatus, FamilyMember } from "../types";
+import type { Employee, EmployeeStatus, FamilyMember } from "../types.js";
 import {
   calculateMasaKerja,
   validateAndExtractNIP,
   calculateBUP,
   checkKGBandKP,
-} from "./employeeUtils";
-import { buildFamilyExportFields } from "./employeeExport";
-import { mapExcelHeaders } from "./excelMapping";
+} from "./employeeUtils.js";
+import { buildFamilyExportFields } from "./employeeExport.js";
+import { mapExcelHeaders } from "./excelMapping.js";
 
 // ─── Column definition (template header ↔ app field) ─────────────────────────
 

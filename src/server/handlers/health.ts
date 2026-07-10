@@ -3,7 +3,7 @@ import { pingDatabase } from "../../lib/db.js";
 
 /**
  * GET /api/health
- * Liveness + DB connectivity probe (no auth).
+ * Liveness + DB probe + config flags (no secrets leaked).
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "GET" && req.method !== "HEAD") {
@@ -12,14 +12,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const db = await pingDatabase();
+  const authSecretSet = Boolean(
+    process.env.AUTH_SECRET && process.env.AUTH_SECRET.length >= 16,
+  );
   const body = {
-    status: db.ok ? "ok" : "degraded",
+    status: db.ok && authSecretSet ? "ok" : "degraded",
     db: db.ok ? "up" : "down",
     latencyMs: db.latencyMs,
+    authSecret: authSecretSet ? "set" : "missing",
+    api: "index",
     time: new Date().toISOString(),
     ...(db.ok ? {} : { error: "database_unreachable" }),
+    ...(!authSecretSet && process.env.VERCEL
+      ? { hint: "Set AUTH_SECRET in Vercel env (min 16 chars) and Redeploy" }
+      : {}),
   };
 
   res.setHeader("Cache-Control", "no-store");
-  return res.status(db.ok ? 200 : 503).json(body);
+  // Health stays 200 if process is up; degraded fields tell the story
+  return res.status(200).json(body);
 }

@@ -2,8 +2,8 @@
  * Browser-side API client — single gateway to /api/*.
  * Never import Prisma from the client bundle.
  */
-import type { Employee, AppSettings } from "../types";
-import type { DashboardStats } from "./dashboardStats";
+import type { Employee, AppSettings } from "../types.js";
+import type { DashboardStats } from "./dashboardStats.js";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {

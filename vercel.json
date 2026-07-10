@@ -6,7 +6,7 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "/api?path=$1"
+      "destination": "/api/index?path=$1"
     },
     {
       "source": "/((?!api/).*)",
@@ -39,7 +39,8 @@
   ],
   "functions": {
     "api/index.ts": {
-      "maxDuration": 30
+      "maxDuration": 30,
+      "includeFiles": "{prisma/**,node_modules/.prisma/**,node_modules/@prisma/client/**}"
     }
   }
 }

@@ -6,19 +6,16 @@ import { writeAuditLog } from "../../../lib/audit.js";
 import {
   clientIp,
   ensureRequestId,
+  rateLimit,
   sendError,
   withErrorBoundary,
 } from "../../../../api/_lib/http.js";
-import { rateLimitDb } from "../../../../api/_lib/rateLimitDb.js";
 
 /**
  * POST /api/auth/login
  * Body: { email, password }
  *
- * Access:
- *   - Valid credentials in `users`
- *   - role ADMIN | VIEWER (default ADMIN), or email on ADMIN_EMAILS
- * Write (canWrite): role ADMIN or ADMIN_EMAILS allowlist
+ * Keep this path lean: in-memory rate limit (no extra DB table), clear step errors.
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {
@@ -29,9 +26,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   return withErrorBoundary(res, "login", async () => {
     const requestId = ensureRequestId(req, res);
     const ip = clientIp(req);
-    // Distributed (Neon) — works across Vercel isolates
-    const limited = await rateLimitDb(`login:${ip}`, {
-      limit: 10,
+
+    // In-memory only — avoids failing login when rate_limit_buckets missing / Prisma lag
+    const limited = rateLimit(`login:${ip}`, {
+      limit: 20,
       windowMs: 15 * 60 * 1000,
     });
     if (!limited.ok) {
@@ -39,7 +37,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return sendError(res, 429, "Terlalu banyak percobaan login. Coba lagi nanti.");
     }
 
-    // Body may be object or raw string depending on runtime / rewrite
     let body: Record<string, unknown> = {};
     if (req.body && typeof req.body === "object" && !Array.isArray(req.body)) {
       body = req.body as Record<string, unknown>;
@@ -59,8 +56,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return sendError(res, 400, "Email dan password wajib diisi");
     }
 
-    const emailLimited = await rateLimitDb(`login-email:${email}`, {
-      limit: 10,
+    const emailLimited = rateLimit(`login-email:${email}`, {
+      limit: 20,
       windowMs: 15 * 60 * 1000,
     });
     if (!emailLimited.ok) {
@@ -68,16 +65,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return sendError(res, 429, "Terlalu banyak percobaan login. Coba lagi nanti.");
     }
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    let user;
+    try {
+      user = await prisma.user.findUnique({ where: { email } });
+    } catch (err) {
+      console.error("[login] db findUnique", err);
+      return sendError(res, 503, "Database tidak tersedia. Coba lagi sebentar.", {
+        code: "LOGIN_DB",
+      });
+    }
 
-    // Valid bcrypt hash of a random string — keeps compare timing similar when user missing
     const dummyHash =
       "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy";
     const passwordHash = user?.password ?? dummyHash;
     let isValid = false;
     try {
       isValid = await bcrypt.compare(password, passwordHash);
-    } catch {
+    } catch (err) {
+      console.error("[login] bcrypt", err);
       isValid = false;
     }
 
@@ -90,8 +95,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return sendError(res, 403, "Akun tidak memiliki akses");
     }
 
-    await createSession(res, user.id);
-    await writeAuditLog({
+    try {
+      await createSession(res, user.id);
+    } catch (err) {
+      console.error("[login] createSession", err);
+      const msg = err instanceof Error ? err.message : "";
+      if (/AUTH_SECRET/i.test(msg)) {
+        return sendError(
+          res,
+          503,
+          "AUTH_SECRET belum di-set di Vercel (min 16 karakter). Set env → Redeploy.",
+          { code: "LOGIN_AUTH_SECRET" },
+        );
+      }
+      return sendError(res, 500, "Gagal membuat sesi login.", {
+        code: "LOGIN_SESSION",
+        detail: msg.slice(0, 120),
+      });
+    }
+
+    // Best-effort audit — never fail login
+    void writeAuditLog({
       actor: { id: user.id, email: user.email },
       action: "auth.login",
       entityType: "session",

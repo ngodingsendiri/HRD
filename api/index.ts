@@ -1,12 +1,8 @@
 /**
- * Single Vercel Serverless Function for the entire /api/* surface.
+ * Single Vercel Serverless Function for entire /api/* surface.
  *
- * Why static imports (not dynamic import to api/_*):
- * - Vercel may not ship underscore folders as loose files
- * - Dynamic import() often fails at runtime → 500 "Terjadi kesalahan internal"
- * - Static imports guarantee the bundler includes every handler
- *
- * Routing: vercel.json rewrites /api/(.*) → /api?path=$1
+ * vercel.json: /api/(.*) → /api/index?path=$1
+ * Handlers: src/server/handlers/** (static imports so NFT bundles them)
  */
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
@@ -18,19 +14,45 @@ import health from "../src/server/handlers/health.js";
 import stats from "../src/server/handlers/stats.js";
 import settings from "../src/server/handlers/settings.js";
 import employees from "../src/server/handlers/employees.js";
-import employeeById from "../src/server/handlers/employees/[id].js";
+import employeeById from "../src/server/handlers/employees/byId.js";
 import v1Openapi from "../src/server/handlers/v1/openapi.js";
 import v1Stats from "../src/server/handlers/v1/stats.js";
 import v1Settings from "../src/server/handlers/v1/settings.js";
 import v1Employees from "../src/server/handlers/v1/employees.js";
-import v1EmployeeById from "../src/server/handlers/v1/employees/[id].js";
+import v1EmployeeById from "../src/server/handlers/v1/employees/byId.js";
 import v1Keys from "../src/server/handlers/v1/keys.js";
-import v1KeyById from "../src/server/handlers/v1/keys/[id].js";
+import v1KeyById from "../src/server/handlers/v1/keys/byId.js";
 
 type Handler = (
   req: VercelRequest,
   res: VercelResponse,
 ) => unknown | Promise<unknown>;
+
+function asHandler(mod: unknown, name: string): Handler {
+  if (typeof mod === "function") return mod as Handler;
+  const d = (mod as { default?: unknown } | null)?.default;
+  if (typeof d === "function") return d as Handler;
+  throw new Error(`Handler export invalid: ${name}`);
+}
+
+const H = {
+  login: asHandler(login, "login"),
+  logout: asHandler(logout, "logout"),
+  me: asHandler(me, "me"),
+  register: asHandler(register, "register"),
+  health: asHandler(health, "health"),
+  stats: asHandler(stats, "stats"),
+  settings: asHandler(settings, "settings"),
+  employees: asHandler(employees, "employees"),
+  employeeById: asHandler(employeeById, "employeeById"),
+  v1Openapi: asHandler(v1Openapi, "v1Openapi"),
+  v1Stats: asHandler(v1Stats, "v1Stats"),
+  v1Settings: asHandler(v1Settings, "v1Settings"),
+  v1Employees: asHandler(v1Employees, "v1Employees"),
+  v1EmployeeById: asHandler(v1EmployeeById, "v1EmployeeById"),
+  v1Keys: asHandler(v1Keys, "v1Keys"),
+  v1KeyById: asHandler(v1KeyById, "v1KeyById"),
+};
 
 type Route =
   | { kind: "exact"; path: string; handler: Handler }
@@ -42,40 +64,39 @@ type Route =
     };
 
 const routes: Route[] = [
-  { kind: "exact", path: "auth/login", handler: login },
-  { kind: "exact", path: "auth/logout", handler: logout },
-  { kind: "exact", path: "auth/me", handler: me },
-  { kind: "exact", path: "auth/register", handler: register },
-  { kind: "exact", path: "health", handler: health },
-  { kind: "exact", path: "stats", handler: stats },
-  { kind: "exact", path: "settings", handler: settings },
-  { kind: "exact", path: "employees", handler: employees },
+  { kind: "exact", path: "auth/login", handler: H.login },
+  { kind: "exact", path: "auth/logout", handler: H.logout },
+  { kind: "exact", path: "auth/me", handler: H.me },
+  { kind: "exact", path: "auth/register", handler: H.register },
+  { kind: "exact", path: "health", handler: H.health },
+  { kind: "exact", path: "stats", handler: H.stats },
+  { kind: "exact", path: "settings", handler: H.settings },
+  { kind: "exact", path: "employees", handler: H.employees },
   {
     kind: "param",
     pattern: /^employees\/([^/]+)$/,
     params: ["id"],
-    handler: employeeById,
+    handler: H.employeeById,
   },
-  { kind: "exact", path: "v1/openapi", handler: v1Openapi },
-  { kind: "exact", path: "v1/stats", handler: v1Stats },
-  { kind: "exact", path: "v1/settings", handler: v1Settings },
-  { kind: "exact", path: "v1/employees", handler: v1Employees },
+  { kind: "exact", path: "v1/openapi", handler: H.v1Openapi },
+  { kind: "exact", path: "v1/stats", handler: H.v1Stats },
+  { kind: "exact", path: "v1/settings", handler: H.v1Settings },
+  { kind: "exact", path: "v1/employees", handler: H.v1Employees },
   {
     kind: "param",
     pattern: /^v1\/employees\/([^/]+)$/,
     params: ["id"],
-    handler: v1EmployeeById,
+    handler: H.v1EmployeeById,
   },
-  { kind: "exact", path: "v1/keys", handler: v1Keys },
+  { kind: "exact", path: "v1/keys", handler: H.v1Keys },
   {
     kind: "param",
     pattern: /^v1\/keys\/([^/]+)$/,
     params: ["id"],
-    handler: v1KeyById,
+    handler: H.v1KeyById,
   },
 ];
 
-/** Ensure JSON body is an object (Vercel usually parses; harden for rewrites). */
 function ensureJsonBody(req: VercelRequest): void {
   if (req.body == null) return;
   if (typeof req.body === "string") {
@@ -85,10 +106,18 @@ function ensureJsonBody(req: VercelRequest): void {
       req.body = {};
     }
   }
+  // Sometimes body is a Buffer
+  if (Buffer.isBuffer(req.body)) {
+    try {
+      req.body = JSON.parse(req.body.toString("utf8") || "{}");
+    } catch {
+      req.body = {};
+    }
+  }
 }
 
-/** Extract path after /api/ from the request (rewrite puts it in ?path=). */
 export function resolveApiPath(req: VercelRequest): string {
+  // Prefer rewrite query: /api/index?path=auth/login
   if (typeof req.query.path === "string" && req.query.path) {
     return String(req.query.path).replace(/^\/+|\/+$/g, "");
   }
@@ -104,9 +133,14 @@ export function resolveApiPath(req: VercelRequest): string {
     if (pathQ) return pathQ.replace(/^\/+|\/+$/g, "");
 
     let p = url.pathname || "";
+    // /api/index → empty path (no route); /api/auth/login if not rewritten
+    if (p === "/api/index" || p === "/api/index/") p = "";
     if (p.startsWith("/api/")) p = p.slice(5);
     else if (p.startsWith("api/")) p = p.slice(4);
     else if (p === "/api") p = "";
+    // strip leading index/
+    if (p.startsWith("index/")) p = p.slice(6);
+    if (p === "index") p = "";
     return p.replace(/^\/+|\/+$/g, "");
   } catch {
     return "";
@@ -118,7 +152,6 @@ export function matchRoute(pathname: string): {
   params: Record<string, string>;
 } | null {
   const path = pathname.replace(/^\/+|\/+$/g, "");
-
   for (const r of routes) {
     if (r.kind === "exact" && r.path === path) {
       return { handler: r.handler, params: {} };
@@ -177,14 +210,21 @@ export default async function handler(
   } catch (err) {
     if (res.headersSent) return;
     console.error("[api]", pathname, err);
-    const msg = err instanceof Error ? err.message : "";
+    const msg = err instanceof Error ? err.message : String(err);
     if (/AUTH_SECRET/i.test(msg)) {
       res.status(503).json({
         error:
-          "Konfigurasi server belum lengkap (AUTH_SECRET). Hubungi administrator.",
+          "AUTH_SECRET belum di-set di Vercel (min 16 karakter). Set env → Redeploy.",
+        code: "AUTH_SECRET",
       });
       return;
     }
-    res.status(500).json({ error: "Terjadi kesalahan internal" });
+    res.status(500).json({
+      error: "Terjadi kesalahan internal",
+      code: "API_UNCAUGHT",
+      // short safe detail to diagnose production without stack traces
+      detail: msg.replace(/[A-Za-z0-9+/]{20,}/g, "[redacted]").slice(0, 160),
+      route: pathname,
+    });
   }
 }
