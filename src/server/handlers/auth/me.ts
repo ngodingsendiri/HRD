@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { getSession } from "../../_lib/session.js";
-import { sendError, withErrorBoundary } from "../../_lib/http.js";
+import { getSession } from "../../../../api/_lib/session.js";
+import { sendError, withErrorBoundary } from "../../../../api/_lib/http.js";
 
 /**
  * GET /api/auth/me → { user } | { user: null }

@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { requireApiKey } from "../../_lib/apiKey.js";
-import { getSettings, type SettingsInclude } from "../../../src/lib/queries.js";
+import { requireApiKey } from "../../../../api/_lib/apiKey.js";
+import { getSettings, type SettingsInclude } from "../../../lib/queries.js";
 import {
   applyPublicApiCors,
   clientIp,
@@ -8,7 +8,7 @@ import {
   rateLimit,
   sendError,
   withErrorBoundary,
-} from "../../_lib/http.js";
+} from "../../../../api/_lib/http.js";
 
 /**
  * GET /api/v1/settings?include=core,logo,kamus,peta

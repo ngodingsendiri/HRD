@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { pingDatabase } from "../../src/lib/db.js";
+import { pingDatabase } from "../../lib/db.js";
 
 /**
  * GET /api/health

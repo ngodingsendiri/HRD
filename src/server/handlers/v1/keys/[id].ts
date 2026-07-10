@@ -1,13 +1,13 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { requireAdmin } from "../../../_lib/session.js";
-import { revokeApiKey } from "../../../../src/lib/apiKeys.js";
-import { pathParamId } from "../../../_lib/apiKey.js";
-import { writeAuditLog } from "../../../../src/lib/audit.js";
+import { requireAdmin } from "../../../../../api/_lib/session.js";
+import { revokeApiKey } from "../../../../lib/apiKeys.js";
+import { pathParamId } from "../../../../../api/_lib/apiKey.js";
+import { writeAuditLog } from "../../../../lib/audit.js";
 import {
   ensureRequestId,
   sendError,
   withErrorBoundary,
-} from "../../../_lib/http.js";
+} from "../../../../../api/_lib/http.js";
 
 /**
  * DELETE /api/v1/keys/:id — revoke API key (session admin).

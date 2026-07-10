@@ -122,6 +122,19 @@ export async function withErrorBoundary(
   } catch (err) {
     if (res.headersSent) return;
     console.error(`[${label}]`, err);
+    const msg = err instanceof Error ? err.message : "";
+    if (/AUTH_SECRET/i.test(msg)) {
+      sendError(
+        res,
+        503,
+        "Konfigurasi server belum lengkap (AUTH_SECRET). Hubungi administrator.",
+      );
+      return;
+    }
+    if (/DATABASE_URL|Can't reach database|P1001|P1017/i.test(msg)) {
+      sendError(res, 503, "Database tidak tersedia. Coba lagi sebentar.");
+      return;
+    }
     sendError(res, 500, "Terjadi kesalahan internal");
   } finally {
     try {

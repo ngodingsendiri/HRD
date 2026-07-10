@@ -1,19 +1,19 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { requireAdmin } from "../../_lib/session.js";
-import { createApiKey, listApiKeys } from "../../../src/lib/apiKeys.js";
+import { requireAdmin } from "../../../../api/_lib/session.js";
+import { createApiKey, listApiKeys } from "../../../lib/apiKeys.js";
 import {
   API_SCOPES,
   MAX_EXPIRES_DAYS,
   MIN_EXPIRES_DAYS,
-} from "../../_lib/apiKey.js";
-import { writeAuditLog } from "../../../src/lib/audit.js";
+} from "../../../../api/_lib/apiKey.js";
+import { writeAuditLog } from "../../../lib/audit.js";
 import {
   clientIp,
   ensureRequestId,
   sendError,
   withErrorBoundary,
-} from "../../_lib/http.js";
-import { rateLimitDb } from "../../_lib/rateLimitDb.js";
+} from "../../../../api/_lib/http.js";
+import { rateLimitDb } from "../../../../api/_lib/rateLimitDb.js";
 
 /**
  * Manage API keys (session admin only — not API-key authenticated).

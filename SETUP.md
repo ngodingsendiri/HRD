@@ -113,13 +113,14 @@ Proyek ini sengaja memakai **1 function** saja:
 
 | Path | Peran |
 |------|--------|
-| `api/index.ts` | Satu-satunya Serverless Function |
-| `api/_handlers/**` | Implementasi handler (folder `_` = **bukan** function terpisah) |
-| `api/_lib/**` | Shared helpers (bukan function) |
+| `api/index.ts` | Satu-satunya Serverless Function (static import semua handler) |
+| `src/server/handlers/**` | Implementasi route (bukan function terpisah) |
+| `api/_lib/**` | Shared helpers |
 
-`vercel.json` me-rewrite `/api/(.*)` → `/api?path=$1` (Vite tidak mendukung catch-all Next.js `[...path]`).  
-URL publik tetap `/api/auth/login`, `/api/employees`, …  
-Jangan menambah file `api/*.ts` di root — daftarkan route di `api/index.ts` + handler di `_handlers`.
+`vercel.json`: `/api/(.*)` → `/api?path=$1`.  
+URL publik tetap `/api/auth/login`, dll.  
+
+**Env wajib production:** `DATABASE_URL`, `DIRECT_URL`, `AUTH_SECRET` (min 16 char). Tanpa `AUTH_SECRET` login → 503.
 
 ### Checklist
 

@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { requireApiKey } from "../../_lib/apiKey.js";
-import { getEmployeesPage } from "../../../src/lib/queries.js";
+import { requireApiKey } from "../../../../api/_lib/apiKey.js";
+import { getEmployeesPage } from "../../../lib/queries.js";
 import {
   DEFAULT_EMPLOYEES_PAGE,
   MAX_EMPLOYEES_PAGE,
@@ -10,7 +10,7 @@ import {
   sendError,
   withErrorBoundary,
   applyPublicApiCors,
-} from "../../_lib/http.js";
+} from "../../../../api/_lib/http.js";
 
 /**
  * GET /api/v1/employees

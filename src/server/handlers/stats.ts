@@ -1,65 +1,32 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { requireApiKey } from "../../_lib/apiKey.js";
-import { prisma } from "../../../src/lib/db.js";
+import { prisma } from "../../lib/db.js";
 import {
   buildKgbList,
   buildKpList,
   buildPensiunList,
   normalizeBidangLabel,
-} from "../../../src/lib/dashboardStats.js";
-import { fetchAllTimelineRows } from "../../../src/lib/statsTimeline.js";
-import {
-  clientIp,
-  ensureRequestId,
-  rateLimit,
-  sendError,
-  withErrorBoundary,
-  applyPublicApiCors,
-} from "../../_lib/http.js";
+  type DashboardStats,
+} from "../../lib/dashboardStats.js";
+import { fetchAllTimelineRows } from "../../lib/statsTimeline.js";
+import { requireStaff } from "../../../api/_lib/session.js";
+import { ensureRequestId, sendError, withErrorBoundary } from "../../../api/_lib/http.js";
 
 /**
- * GET /api/v1/stats — same payload as session /api/stats (API key + stats:read).
+ * GET /api/stats — aggregates via SQL groupBy + full timeline scan.
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   ensureRequestId(req, res);
 
-  return withErrorBoundary(res, "v1/stats", async () => {
-    // Preflight before auth (browser may not send key on OPTIONS)
-    if (req.method === "OPTIONS") {
-      applyPublicApiCors(req, res);
-      return;
-    }
-
+  return withErrorBoundary(res, "stats", async () => {
     if (req.method !== "GET") {
-      res.setHeader("Allow", "GET, OPTIONS");
+      res.setHeader("Allow", "GET");
       return sendError(res, 405, "Method Not Allowed");
     }
 
-    const limited = rateLimit(`v1:${clientIp(req)}`, {
-      limit: 60,
-      windowMs: 60_000,
-    });
-    if (!limited.ok) {
-      res.setHeader("Retry-After", String(limited.retryAfterSec));
-      return sendError(res, 429, "Rate limit exceeded");
-    }
-
-    let principal;
     try {
-      principal = await requireApiKey(req, res, "stats:read");
+      await requireStaff(req, res);
     } catch {
       return;
-    }
-
-    applyPublicApiCors(req, res, principal.allowedOrigins);
-
-    const keyLimited = rateLimit(`v1key:${principal.id}`, {
-      limit: 120,
-      windowMs: 60_000,
-    });
-    if (!keyLimited.ok) {
-      res.setHeader("Retry-After", String(keyLimited.retryAfterSec));
-      return sendError(res, 429, "Rate limit exceeded for this API key");
     }
 
     const [byStatus, byBidangRaw, timeline] = await Promise.all([
@@ -124,8 +91,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }, [])
       .sort((a, b) => b.value - a.value);
 
-    res.setHeader("Cache-Control", "private, max-age=45");
-    return res.status(200).json({
+    const stats: DashboardStats & { truncated?: boolean } = {
       totals,
       byBidang,
       kgb: buildKgbList(timelineRows as never),
@@ -133,6 +99,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       pensiun: buildPensiunList(timelineRows as never),
       generatedAt: new Date().toISOString(),
       truncated: timeline.truncated,
-    });
+    };
+
+    res.setHeader("Cache-Control", "private, max-age=45");
+    return res.status(200).json(stats);
   });
 }

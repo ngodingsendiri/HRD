@@ -37,8 +37,10 @@ describe("resolveApiPath", () => {
 });
 
 describe("matchRoute", () => {
-  it("matches auth/login", () => {
-    expect(matchRoute("auth/login")).not.toBeNull();
+  it("matches auth/login with handler", () => {
+    const m = matchRoute("auth/login");
+    expect(m).not.toBeNull();
+    expect(typeof m!.handler).toBe("function");
   });
 
   it("matches employees/:id", () => {

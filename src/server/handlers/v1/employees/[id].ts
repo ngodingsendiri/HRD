@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { pathParamId, requireApiKey } from "../../../_lib/apiKey.js";
-import { getEmployee } from "../../../../src/lib/queries.js";
+import { pathParamId, requireApiKey } from "../../../../../api/_lib/apiKey.js";
+import { getEmployee } from "../../../../lib/queries.js";
 import {
   clientIp,
   ensureRequestId,
@@ -8,7 +8,7 @@ import {
   sendError,
   withErrorBoundary,
   applyPublicApiCors,
-} from "../../../_lib/http.js";
+} from "../../../../../api/_lib/http.js";
 
 /**
  * GET /api/v1/employees/:id

@@ -3,9 +3,9 @@ import {
   destroySession,
   destroySessionAndMaybeAll,
   getSession,
-} from "../../_lib/session.js";
-import { writeAuditLog } from "../../../src/lib/audit.js";
-import { ensureRequestId, sendError, withErrorBoundary } from "../../_lib/http.js";
+} from "../../../../api/_lib/session.js";
+import { writeAuditLog } from "../../../lib/audit.js";
+import { ensureRequestId, sendError, withErrorBoundary } from "../../../../api/_lib/http.js";
 
 /**
  * POST /api/auth/logout

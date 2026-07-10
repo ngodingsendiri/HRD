@@ -5,10 +5,10 @@ import {
   deleteEmployees,
   bulkUpsertEmployees,
   findEmployeeIdByNipOrNik,
-} from "../../src/lib/queries.js";
-import { EmployeeSchema } from "../../src/lib/schemas.js";
-import { requireAdmin, requireStaff } from "../_lib/session.js";
-import { writeAuditLog } from "../../src/lib/audit.js";
+} from "../../lib/queries.js";
+import { EmployeeSchema } from "../../lib/schemas.js";
+import { requireAdmin, requireStaff } from "../../../api/_lib/session.js";
+import { writeAuditLog } from "../../lib/audit.js";
 import {
   DEFAULT_EMPLOYEES_PAGE,
   MAX_BULK_DELETE_IDS,
@@ -17,7 +17,7 @@ import {
   ensureRequestId,
   sendError,
   withErrorBoundary,
-} from "../_lib/http.js";
+} from "../../../api/_lib/http.js";
 
 /**
  * GET    /api/employees  → { data, total, limit, offset }

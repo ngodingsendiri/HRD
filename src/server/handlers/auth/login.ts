@@ -1,15 +1,15 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import bcrypt from "bcryptjs";
-import { prisma } from "../../../src/lib/db.js";
-import { createSession, resolveAccess } from "../../_lib/session.js";
-import { writeAuditLog } from "../../../src/lib/audit.js";
+import { prisma } from "../../../lib/db.js";
+import { createSession, resolveAccess } from "../../../../api/_lib/session.js";
+import { writeAuditLog } from "../../../lib/audit.js";
 import {
   clientIp,
   ensureRequestId,
   sendError,
   withErrorBoundary,
-} from "../../_lib/http.js";
-import { rateLimitDb } from "../../_lib/rateLimitDb.js";
+} from "../../../../api/_lib/http.js";
+import { rateLimitDb } from "../../../../api/_lib/rateLimitDb.js";
 
 /**
  * POST /api/auth/login
@@ -39,8 +39,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return sendError(res, 429, "Terlalu banyak percobaan login. Coba lagi nanti.");
     }
 
-    const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
-    const password = typeof req.body?.password === "string" ? req.body.password : "";
+    // Body may be object or raw string depending on runtime / rewrite
+    let body: Record<string, unknown> = {};
+    if (req.body && typeof req.body === "object" && !Array.isArray(req.body)) {
+      body = req.body as Record<string, unknown>;
+    } else if (typeof req.body === "string") {
+      try {
+        body = JSON.parse(req.body || "{}") as Record<string, unknown>;
+      } catch {
+        body = {};
+      }
+    }
+
+    const email =
+      typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+    const password = typeof body.password === "string" ? body.password : "";
 
     if (!email || !password) {
       return sendError(res, 400, "Email dan password wajib diisi");

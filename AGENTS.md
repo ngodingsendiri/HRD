@@ -16,13 +16,13 @@ Browser (src/)  →  fetch /api/*  →  Vercel catch-all (1 function)  →  hand
 | API client | `src/lib/api.ts` | Only gateway from React to backend |
 | Domain pure | `src/lib/employeeImport.ts`, `dashboardStats.ts`, `employeeUtils.ts`, `schemas.ts` | Shared, unit-tested; no HTTP |
 | Data access | `src/lib/queries.ts` | Only place that calls Prisma (except audit/db helpers) |
-| HTTP entry | `api/index.ts` | **Single** Serverless Function (Hobby ≤12 limit) |
-| Handlers | `api/_handlers/**` | Private modules; not separate Vercel functions |
+| HTTP entry | `api/index.ts` | **Single** Serverless Function (Hobby ≤12 limit); **static** imports |
+| Handlers | `src/server/handlers/**` | Route implementations (not Vercel functions) |
 | Shared API libs | `api/_lib/**` | session, http, apiKey, rateLimitDb |
 | Auth | `api/_lib/session.ts`, `authEnv.ts` | Cookie session + RBAC |
 
-**Do not** add new top-level `api/foo.ts` endpoints — register routes in `api/index.ts` and put handlers under `api/_handlers/`.  
-Vite+Vercel: all `/api/*` are **rewritten** to `/api?path=…` (see `vercel.json`).
+**Do not** add new top-level `api/foo.ts` endpoints — register in `api/index.ts` + handler under `src/server/handlers/`.  
+Vite+Vercel: `/api/(.*)` → `/api?path=$1` (`vercel.json`).
 
 ---
 
