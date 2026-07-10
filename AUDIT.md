@@ -1,132 +1,138 @@
-# Rekap Audit & Perbaikan HRCube
+# Audit HRCube — Laporan & Status Perbaikan
 
-> Tanggal: 7 Juli 2026
-> Branch: `main`
-> Status: `npm run lint` ✅ **0 error**
-
----
-
-## Ringkasan Eksekusi
-
-Hari ini dilakukan **audit menyeluruh** terhadap aplikasi HRCube, diikuti perbaikan kode dan pembersihan file. Total: **11 temuan audit diperbaiki**, **3 file yatim dihapus**, **2 dokumen baru dibuat**.
+> **Tanggal audit ulang:** 10 Juli 2026  
+> **Branch:** `main`  
+> **Scope:** keamanan, API, data model, frontend, ops  
+> **Status verifikasi:** `npm run lint` + `npm test` (jalankan setelah merge)
 
 ---
 
-## 1. Perbaikan Bug & Kode
+## Ringkasan eksekutif
 
-### 🔴 Kritis — Login Gagal
+HRCube adalah SPA internal (Vite/React) + API serverless Vercel + Neon/Prisma.
+Arsitektur dasar sudah tepat (client tidak menyentuh Prisma; auth session custom
+cocok untuk Vercel Node). Audit awal menemukan celah kritis (kredensial di git,
+fallback `AUTH_SECRET`, tanpa rate limit, validasi longgar, tanpa migrasi).
 
-| # | File | Masalah | Perbaikan |
-|---|------|---------|-----------|
-| 1 | `api/_lib/auth-config.ts` | `NextAuth(authOptions)` mengembalikan `NextAuthResult` (bukan fungsi), tapi dipanggil sebagai `Auth(req, res)` → runtime crash | Rewrite: gunakan `handlers.GET/POST` dari NextAuth v5 + tulis adapter `(VercelRequest → Web Request)` dan `(Web Response → VercelResponse)` |
-| 2 | `api/auth/[...auth].ts` | `export default Auth` mengekspor object, bukan handler `(req, res)` → semua route auth crash | Diganti jadi handler fungsi yang mendelegasi ke `authGet()`/`authPost()` |
-| 3 | `api/_lib/auth.ts` | `requireAdmin` bergantung pada `getServerSession` yang rusak | Diadaptasi ke signature `getServerSession` baru + null guard pada `session.user` |
-
-### 🟡 Sedang — TypeScript & Robustness
-
-| # | File | Masalah | Perbaikan |
-|---|------|---------|-----------|
-| 4 | `api/_lib/auth-config.ts` | Callbacks `jwt`/`session` punya tipe `any` implisit | Gunakan `NextAuthConfig` type — TS infer otomatis |
-| 5 | `src/lib/auth.tsx` | `fetchSession` langsung `.json()` tanpa cek response — crash diam jika handler error | Guard `!r.ok`, parse manual `text` → `JSON.parse`, `console.warn` untuk debugging |
-| 6 | `src/lib/queries.ts:116` | Parameter `r` implisit `any` | Tambah tipe eksplisit `PrismaEmployee` |
-| 7 | `src/pages/Print.tsx` | `<strike>` bukan elemen JSX valid; sort function tidak return di semua cabang | `<strike>` → `<s>`; tambah `return localeCompare()` sebagai default |
-| 8 | `src/pages/Employees.tsx:1639` | `error.message` pada tipe `never` (narrowing bingung) | Cast `(error as Error).message` |
+**Batch perbaikan 10 Juli 2026** mengimplementasikan rekomendasi di bawah.
+Dokumen audit sebelumnya (7 Juli) **usang** — masih mereferensi NextAuth yang
+sudah diganti custom session di `api/_lib/session.ts`.
 
 ---
 
-## 2. Fitur Baru (dari plan.md)
+## Status temuan
 
-| Fitur | File | Deskripsi |
-|-------|------|-----------|
-| Auto-hitung MKG | `EmployeeForm.tsx` | `masaKerjaGolonganRuang` otomatis terisi saat `tmtGolonganRuang` diubah |
-| Badge KP/KGB | `employeeUtils.ts`, `Employees.tsx` | Fungsi `checkKGBandKP` diperkaya (overdue/due/daysLeft). Badge kuning (H-90) & merah (lewat) ditampilkan di tabel desktop dan kartu mobile |
-| Kolom Peringatan | `Employees.tsx` | Kolom baru "Peringatan" di tabel desktop setelah Nama, menampilkan badge KP/KGB |
-
----
-
-## 3. File Dihapus (Yatim/Redundan)
-
-| File | Alasan |
-|------|--------|
-| `src/pages/Ecosystem.tsx` | Tidak terdaftar di routing `App.tsx`, tidak di-import mana pun |
-| `src/components/PrintTemplates.tsx` | Tidak di-import di mana pun — komponen `Print.tsx` punya template cetak sendiri |
-| `scripts/add-column.ts` | Redundan — kolom `password` sudah didefinisikan di `prisma/schema.prisma:107`. Migrasi sudah ditangani oleh `prisma migrate` |
-
----
-
-## 4. Dokumen Baru
-
-| File | Isi |
-|------|-----|
-| `SETUP.md` | Panduan setup env vars, database, dan pembuatan akun admin. Termasuk troubleshooting |
-| `AUDIT.md` | Laporan detail 11 temuan audit awal (sebelum perbaikan) |
+| Prioritas | Temuan | Status | Perbaikan |
+|-----------|--------|--------|-----------|
+| 🔴 Critical | Password admin hardcoded di repo | ✅ Fixed | `scripts/create-admin.ts` hanya dari env; password dihapus dari docs |
+| 🔴 Critical | Fallback `AUTH_SECRET` di production | ✅ Fixed | `getAuthSecret()` throw di production; dev-only fallback |
+| 🟠 High | Tidak ada rate limit login | ✅ Fixed | In-memory limit 10 / 15 mnt per IP & email (`api/_lib/http.ts`) |
+| 🟠 High | Login tanpa cek admin allowlist | ✅ Fixed | Login + `/me` enforce `ADMIN_EMAILS` |
+| 🟠 High | Tidak ada Prisma migrations | ✅ Fixed | `prisma/migrations/...` + partial unique NIP/NIK |
+| 🟠 High | Bulk/list tanpa batas | ✅ Fixed | Cap 500 bulk, 2000 list, optional `?q=&limit=&offset=` |
+| 🟡 Medium | NIP/NIK tidak unique | ✅ Fixed | Partial unique SQL + `findEmployeeIdByNipOrNik` (409) |
+| 🟡 Medium | Zod terlalu longgar | ✅ Fixed | `nama` wajib; NIK 16 digit / kosong; NIP 8–25 digit / kosong |
+| 🟡 Medium | Error 500 bocor detail | ✅ Fixed | `withErrorBoundary` + pesan generik |
+| 🟡 Medium | API tanpa try/catch DB | ✅ Fixed | Semua handler data di-wrap |
+| 🟡 Medium | Security headers | ✅ Fixed | HSTS, X-Frame-Options, nosniff, Referrer-Policy di `vercel.json` |
+| 🟡 Medium | Logo base64 unbounded di API | ✅ Fixed | Max length di Zod + settings handler |
+| 🟢 Low | Nav Chat WIP | ✅ Fixed | Route & nav disembunyikan |
+| 🟢 Low | README kosong | ✅ Fixed | README + SETUP diperbarui |
+| 🟢 Low | Tidak ada unit test | ✅ Partial | Vitest: schemas, rateLimit, authEnv |
+| ⚪ Later | Pecah monolit Print/Employees | ⏳ Deferred | File ~1500+ baris; refactor terpisah |
+| ⚪ Later | Role model di DB | ⏳ Deferred | Masih env allowlist (cukup single-tenant) |
+| ⚪ Later | Pagination UI penuh | ⏳ Partial | API siap; UI masih load batch (max 2000) |
+| ⚪ Later | Rate limit terdistribusi (Redis/KV) | ⏳ Deferred | In-memory per instance serverless |
 
 ---
 
-## 5. File Tidak Diubah (Sudah Benar)
+## Perubahan file (batch 10 Juli 2026)
 
-| File | Status |
-|------|--------|
-| `api/employees.ts`, `api/employees/[id].ts` | Handler sudah benar, pakai `requireAdmin` |
-| `api/settings.ts` | Handler sudah benar |
-| `api/auth/register.ts` | Registrasi credentials sudah benar |
-| `src/lib/db.ts` | Prisma singleton pattern sudah tepat |
-| `src/lib/schemas.ts` | Zod schemas sudah konsisten |
-| `src/lib/kamus.ts`, `excelMapping.ts`, `employeeExport.ts` | Digunakan dan berfungsi |
-| `src/lib/api.ts` | Client API gateway sudah benar |
-| `src/lib/error.ts` | Centralized error handling sudah tepat |
-| `src/lib/holidays.ts` | Digunakan di `Print.tsx` |
-| `src/lib/utils.ts` | Digunakan di 4 komponen |
-| `src/constants.ts` | Digunakan di 4 file |
-| `scripts/create-admin.ts` | Masih diperlukan untuk setup admin |
-| `scripts/fetch-fonts.md` | Masih relevan (di-referensi `index.css:3`) |
-| `prisma/seed.ts` | Terdaftar di `npm run db:seed` |
-| `prisma/schema.prisma` | Skema sudah lengkap |
+### Baru
+
+- `api/_lib/http.ts` — rate limit, error boundary, limits
+- `api/_lib/authEnv.ts` — pure env helpers (testable)
+- `api/_lib/*.test.ts`, `src/lib/schemas.test.ts`
+- `prisma/migrations/20260710000000_init_and_partial_unique/`
+- `vitest.config.ts`
+
+### Diubah (keamanan / API)
+
+- `api/_lib/session.ts` — secret fail-hard, re-export authEnv
+- `api/auth/login.ts` — rate limit + admin gate + generic errors
+- `api/auth/logout.ts`, `api/auth/me.ts` — error boundary; me filter admin
+- `api/employees.ts`, `api/employees/[id].ts` — limits, duplikat 409, search/pagination
+- `api/settings.ts` — logo size guard
+- `src/lib/schemas.ts` — validasi lebih ketat
+- `src/lib/queries.ts` — search, findByNip/Nik, getEmployees options
+- `scripts/create-admin.ts` — credentials dari env saja
+- `vercel.json` — security headers
+- `src/App.tsx`, `src/components/Layout.tsx` — hide Chat
+- `package.json` — `test`, `db:deploy`, `create-admin`
+- `.env.example`, `SETUP.md`, `README.md`, `AUDIT.md`
 
 ---
 
-## 6. Yang Perlu Dilakukan Pengguna
-
-Sebelum deploy, pastikan:
-
-1. **`AUTH_SECRET`** di-generate dan diset di Vercel
-2. **`AUTH_TRUST_HOST=true`** diset di Vercel
-3. **`ADMIN_EMAILS`** menyertakan email admin
-4. **`scripts/create-admin.ts`** dijalankan terhadap DB produksi (Neon)
-
-Detail lengkap di [`SETUP.md`](./SETUP.md).
+## Arsitektur auth (saat ini)
 
 ```
-Email    : ngerjaindiri@gmail.com
-Password : sekretariat
+POST /api/auth/login
+  → rate limit
+  → bcrypt verify
+  → isAdminEmail(ADMIN_EMAILS)?
+  → createSession (cookie HttpOnly + hash di DB)
+
+GET /api/auth/me
+  → session valid + admin allowlist → user | null
+
+/api/employees|settings
+  → requireAdmin (session + allowlist)
 ```
+
+Cookie: `hrcube_session` = `selector.hmac(verifier).verifier`  
+DB menyimpan hash verifier, bukan token mentah.
 
 ---
 
-## 7. Daftar File yang Berubah
+## Checklist post-deploy (wajib)
 
-```
-Modified:
-  api/_lib/auth-config.ts    — rewrite total (adapter NextAuth v5)
-  api/_lib/auth.ts           — adaptasi getServerSession + null guard
-  api/auth/[...auth].ts      — handler fungsi baru (authGet/authPost)
-  src/lib/auth.tsx           — fetchSession robust
-  src/lib/queries.ts         — fix implicit any
-  src/lib/employeeUtils.ts   — KP/KGB badges + formatKPLabel
-  src/components/EmployeeForm.tsx — auto-hitung MKG + placeholder
-  src/pages/Employees.tsx    — kolom Peringatan + badge KP/KGB + error.message fix
-  src/pages/Print.tsx        — <s> tag + sort return fix
-
-Deleted:
-  src/pages/Ecosystem.tsx
-  src/components/PrintTemplates.tsx
-  scripts/add-column.ts
-
-New:
-  AUDIT.md
-  SETUP.md
-```
+1. **Rotate password** jika kredensial lama pernah ada di git history  
+2. Set `AUTH_SECRET` baru (random ≥ 32 bytes) di Vercel  
+3. Set `ADMIN_EMAILS`  
+4. `npx prisma migrate deploy` di production  
+5. Buat ulang admin: `ADMIN_EMAIL=... ADMIN_PASSWORD=... npm run create-admin`  
+6. Verifikasi login + CRUD pegawai  
+7. Opsional: rewrite git history / rotate jika secret pernah ter-push
 
 ---
 
-*Sudah cukup untuk hari ini. Push dan deploy ke Vercel, lalu ikuti langkah di SETUP.md untuk menyelesaikan setup admin.*
+## Skor (setelah perbaikan)
+
+| Area | Sebelum | Sesudah (estimasi) |
+|------|---------|---------------------|
+| Keamanan | 4/10 | **7.5/10** |
+| Arsitektur | 7/10 | **7.5/10** |
+| Validasi data | 5/10 | **7/10** |
+| Maintainability | 4/10 | **5.5/10** |
+| Ops / Deploy | 5/10 | **7/10** |
+| Testing | 1/10 | **4/10** |
+
+Sisa risiko utama: rate limit in-memory (bukan global), monolit UI, data sensitif
+di internet tanpa VPN — pertimbangkan IP allowlist / SSO institusi untuk
+hardening lanjutan.
+
+---
+
+## Catatan histori (7 Juli 2026) — arsip
+
+Audit 7 Juli fokusbaiki NextAuth bridge yang crash di Vercel dan menambahkan
+badge KP/KGB. Auth tersebut **sudah diganti** custom session (commit
+`Replace Auth.js with custom DB-backed sessions`). Jangan ikuti langkah
+`AUTH_TRUST_HOST` / NextAuth dari dokumen lama.
+
+**Peringatan:** versi AUDIT/SETUP lama sempat memuat password contoh di plaintext.
+Anggap terkompromi → ganti password & `AUTH_SECRET`.
+
+---
+
+*Diperbarui otomatis seiring batch perbaikan keamanan 10 Juli 2026.*

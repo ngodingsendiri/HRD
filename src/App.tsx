@@ -9,7 +9,6 @@ import Dashboard from "./pages/Dashboard";
 import Employees from "./pages/Employees";
 import Settings from "./pages/Settings";
 import Print from "./pages/Print";
-import Chat from "./pages/Chat";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { useEffect, useState } from "react";
 import { LogIn } from "lucide-react";
@@ -174,7 +173,6 @@ export default function App() {
             <Route path="employees" element={<Employees />} />
             <Route path="print" element={<Print />} />
             <Route path="settings" element={<Settings />} />
-            <Route path="chat" element={<Chat />} />
           </Route>
         </Routes>
       </BrowserRouter>

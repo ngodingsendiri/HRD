@@ -80,6 +80,9 @@ model Employee {
   // Derived fields (masaKerja, kelasJabatan, bebanKerja, pensiun) are
   // intentionally NOT stored — they are computed at read time.
 
+  // Uniqueness of non-empty NIP/NIK is enforced via partial unique indexes
+  // in the SQL migration (empty strings are allowed for incomplete records).
+  // Application layer also checks findEmployeeIdByNipOrNik on write.
   @@index([nip])
   @@index([nik])
   @@index([status])

@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { destroySession } from "../_lib/session.js";
+import { sendError, withErrorBoundary } from "../_lib/http.js";
 
 /**
  * POST /api/auth/logout
@@ -12,14 +13,11 @@ import { destroySession } from "../_lib/session.js";
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
-    return res.status(405).json({ error: "Method Not Allowed" });
+    return sendError(res, 405, "Method Not Allowed");
   }
 
-  try {
+  return withErrorBoundary(res, "logout", async () => {
     await destroySession(req, res);
     return res.status(200).json({ ok: true });
-  } catch (error: any) {
-    console.error("Logout Error:", error);
-    return res.status(500).json({ error: error?.message || "Internal Server Error" });
-  }
+  });
 }

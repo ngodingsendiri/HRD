@@ -73,7 +73,17 @@ function rowToEmployee(row: PrismaEmployee, kamusCsv?: string): EmployeeT {
     updatedAt: row.updatedAt as number | undefined,
   });
   // If status union fails, coerce to "Lainnya" rather than throwing.
-  const emp = parsed.success ? parsed.data : { ...row, status: "Lainnya" } as EmployeeT;
+  const emp = parsed.success
+    ? parsed.data
+    : ({
+        ...row,
+        nama: String(row.nama ?? ""),
+        nik: String(row.nik ?? ""),
+        nip: String(row.nip ?? ""),
+        status: "Lainnya",
+        dataKeluarga: (row.dataKeluarga as FamilyMemberT[]) ?? [],
+        jumlahTertanggung: Number(row.jumlahTertanggung ?? 0),
+      } as EmployeeT);
 
   // --- Attach computed fields (never persisted) ---
   (emp as EmployeeT & { masaKerja: string }).masaKerja =
@@ -98,7 +108,10 @@ function computeMasaKerja(emp: EmployeeT): string | null {
       if (!isNaN(y) && !isNaN(m) && y > 1900 && y <= now.getFullYear() && m >= 1 && m <= 12) {
         let years = now.getFullYear() - y;
         let months = now.getMonth() + 1 - m;
-        if (months < 0) { years--; months += 12; }
+        if (months < 0) {
+          years--;
+          months += 12;
+        }
         return `${years} Tahun ${months} Bulan`;
       }
     }
@@ -110,8 +123,38 @@ function computeMasaKerja(emp: EmployeeT): string | null {
 
 // ============ Employees ============
 
-export async function getEmployees(kamusCsv?: string): Promise<EmployeeT[]> {
-  const rows = await prisma.employee.findMany({ orderBy: { nama: "asc" } });
+export interface GetEmployeesOptions {
+  q?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export async function getEmployees(
+  kamusCsv?: string,
+  opts?: GetEmployeesOptions,
+): Promise<EmployeeT[]> {
+  const q = opts?.q?.trim();
+  const take = opts?.limit;
+  const skip = opts?.offset;
+
+  const rows = await prisma.employee.findMany({
+    orderBy: { nama: "asc" },
+    ...(take != null ? { take } : {}),
+    ...(skip != null ? { skip } : {}),
+    ...(q
+      ? {
+          where: {
+            OR: [
+              { nama: { contains: q, mode: "insensitive" } },
+              { nip: { contains: q, mode: "insensitive" } },
+              { nik: { contains: q, mode: "insensitive" } },
+              { jabatan: { contains: q, mode: "insensitive" } },
+              { bidang: { contains: q, mode: "insensitive" } },
+            ],
+          },
+        }
+      : {}),
+  });
   return rows.map((r: PrismaEmployee) => rowToEmployee(r, kamusCsv));
 }
 
@@ -121,10 +164,44 @@ export async function getEmployee(id: string, kamusCsv?: string): Promise<Employ
   return rowToEmployee(row as unknown as PrismaEmployee, kamusCsv);
 }
 
+/**
+ * Find an employee id by NIP or NIK (non-empty keys only).
+ * When `excludeId` is set, ignores that row (for update conflict checks).
+ */
+export async function findEmployeeIdByNipOrNik(
+  nip?: string | null,
+  nik?: string | null,
+  excludeId?: string,
+): Promise<string | null> {
+  const nipKey = nip?.trim() || "";
+  const nikKey = nik?.trim() || "";
+  if (!nipKey && !nikKey) return null;
+
+  const or: Array<{ nip?: string; nik?: string }> = [];
+  if (nipKey) or.push({ nip: nipKey });
+  if (nikKey) or.push({ nik: nikKey });
+
+  const row = await prisma.employee.findFirst({
+    where: {
+      OR: or,
+      ...(excludeId ? { NOT: { id: excludeId } } : {}),
+    },
+    select: { id: true },
+  });
+  return row?.id ?? null;
+}
+
 /** Strip computed fields before persisting (they are re-derived on read). */
 function toPersistence(emp: Partial<EmployeeT>) {
-  const { masaKerja, kelasJabatan, bebanKerja, pensiun, id, ...rest } = emp as Record<string, unknown>;
-  void masaKerja; void kelasJabatan; void bebanKerja; void pensiun; void id;
+  const { masaKerja, kelasJabatan, bebanKerja, pensiun, id, ...rest } = emp as Record<
+    string,
+    unknown
+  >;
+  void masaKerja;
+  void kelasJabatan;
+  void bebanKerja;
+  void pensiun;
+  void id;
   return rest;
 }
 
@@ -153,10 +230,8 @@ export async function deleteEmployees(ids: string[]): Promise<void> {
  * Bulk import: match each incoming row against existing employees by nip/nik,
  * update if found, create otherwise. Returns counts.
  *
- * Input rows are NOT yet validated against EmployeeSchema — the import handler
- * in the client pre-maps Excel columns to the field names. We validate here
- * too and skip invalid rows (counted in `errors`) to avoid a single bad row
- * aborting the whole import.
+ * Invalid rows are skipped (counted in `errors`) so one bad row does not abort
+ * the whole import.
  */
 export async function bulkUpsertEmployees(
   rows: Record<string, unknown>[],
@@ -165,13 +240,15 @@ export async function bulkUpsertEmployees(
   let updated = 0;
   let errors = 0;
 
-  // Build lookup maps for existing rows
+  // Build lookup maps for existing rows (only non-empty keys)
   const existingByNip = new Map<string, string>();
   const existingByNik = new Map<string, string>();
   const all = await prisma.employee.findMany({ select: { id: true, nip: true, nik: true } });
   for (const e of all) {
-    if (e.nip) existingByNip.set(String(e.nip).trim(), e.id);
-    if (e.nik) existingByNik.set(String(e.nik).trim(), e.id);
+    const nip = String(e.nip ?? "").trim();
+    const nik = String(e.nik ?? "").trim();
+    if (nip) existingByNip.set(nip, e.id);
+    if (nik) existingByNik.set(nik, e.id);
   }
 
   for (const row of rows) {
@@ -181,9 +258,10 @@ export async function bulkUpsertEmployees(
       continue;
     }
     const emp = parsed.data;
-    const nipKey = emp.nip?.trim();
-    const nikKey = emp.nik?.trim();
-    const existingId = (nipKey && existingByNip.get(nipKey)) || (nikKey && existingByNik.get(nikKey));
+    const nipKey = emp.nip?.trim() || "";
+    const nikKey = emp.nik?.trim() || "";
+    const existingId =
+      (nipKey && existingByNip.get(nipKey)) || (nikKey && existingByNik.get(nikKey)) || undefined;
 
     try {
       if (existingId) {
@@ -225,7 +303,9 @@ export async function getSettings(): Promise<AppSettingsT> {
   const row = await prisma.settings.findUnique({ where: { id: "app" } });
   if (!row) return SETTINGS_DEFAULT;
   const parsed = AppSettingsSchema.safeParse(row.data);
-  return parsed.success ? { ...SETTINGS_DEFAULT, ...parsed.data } : { ...SETTINGS_DEFAULT, ...(row.data as object) };
+  return parsed.success
+    ? { ...SETTINGS_DEFAULT, ...parsed.data }
+    : { ...SETTINGS_DEFAULT, ...(row.data as object) };
 }
 
 export async function upsertSettings(settings: AppSettingsT): Promise<AppSettingsT> {

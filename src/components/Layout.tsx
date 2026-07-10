@@ -9,7 +9,6 @@ import {
   ChevronRight,
   Settings,
   Printer,
-  MessageSquare,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../lib/utils";
@@ -21,12 +20,12 @@ export default function Layout() {
   const location = useLocation();
   const { user, signOut } = useAuth();
 
+  // Chat route hidden until the feature ships (see src/pages/Chat.tsx).
   const navigation = [
     { name: "Dasbor", href: "/", icon: LayoutDashboard },
     { name: "Direktori Pegawai", href: "/employees", icon: Users },
     { name: "Pencetakan Dokumen", href: "/print", icon: Printer },
     { name: "Pengaturan Sistem", href: "/settings", icon: Settings },
-    { name: "Pesan Internal", href: "/chat", icon: MessageSquare },
   ];
 
   return (
@@ -136,7 +135,7 @@ export default function Layout() {
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden print:block print:overflow-visible">
         {/* Mobile Header */}
-        <header className="lg:hidden bg-white/80 backdrop-blur-md border-b border-slate-100 h-14 px-4 flex items-center justify-between shrink-0 sticky top-0 z-30 print:hidden">
+        <header className="lg:hidden bg-white border-b border-slate-100 h-14 px-4 flex items-center justify-between shrink-0 sticky top-0 z-30 print:hidden">
           <div className="flex items-center gap-3">
             <div className="w-7 h-7 rounded-lg bg-slate-900 flex items-center justify-center">
               <Users className="w-3.5 h-3.5 text-white" />
@@ -167,14 +166,13 @@ export default function Layout() {
         </main>
 
         {/* BOTTOM NAV (Mobile Only) */}
-        <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-md border-t border-slate-100 px-2 py-2 safe-bottom z-30 grid grid-cols-5 gap-1 print:hidden">
+        <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 px-2 py-2 safe-bottom z-30 grid grid-cols-4 gap-1 print:hidden">
           {navigation.map((item) => {
             const isActive = location.pathname === item.href;
             const shortLabel =
               item.name === "Direktori Pegawai" ? "Pegawai"
               : item.name === "Pencetakan Dokumen" ? "Cetak"
               : item.name === "Pengaturan Sistem" ? "Sistem"
-              : item.name === "Pesan Internal" ? "Pesan"
               : item.name.split(" ")[0];
             return (
               <Link

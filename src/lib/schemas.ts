@@ -6,14 +6,50 @@ import { z } from "zod";
  * Prisma schema (prisma/schema.prisma) and API validation also follow this.
  */
 
+/** Trim + allow empty, or non-empty after trim. */
+const optionalText = z.string().transform((s) => s.trim());
+
+/** Required non-empty text after trim. */
+const requiredText = z
+  .string()
+  .transform((s) => s.trim())
+  .pipe(z.string().min(1, "Wajib diisi"));
+
+/**
+ * NIK: empty (e.g. incomplete import) or exactly 16 digits.
+ * Spaces/dashes stripped before check.
+ */
+export function isValidNik(value: string): boolean {
+  const digits = value.replace(/\D/g, "");
+  return digits.length === 0 || digits.length === 16;
+}
+
+/**
+ * NIP: empty or 8–25 digits (spaces ignored). Covers classic 18-digit NIP and shorter codes.
+ */
+export function isValidNip(value: string): boolean {
+  const digits = value.replace(/\D/g, "");
+  return digits.length === 0 || (digits.length >= 8 && digits.length <= 25);
+}
+
+const nikField = z
+  .string()
+  .transform((s) => s.trim())
+  .refine(isValidNik, { message: "NIK harus 16 digit angka (atau kosong)" });
+
+const nipField = z
+  .string()
+  .transform((s) => s.trim())
+  .refine(isValidNip, { message: "NIP harus 8–25 digit angka (atau kosong)" });
+
 // --- Family member (nested object, stored as JSONB in Postgres) ---
 export const FamilyMemberSchema = z.object({
-  name: z.string(),
+  name: optionalText, // allow empty for legacy imports; form UI still prompts
   relation: z.enum(["Istri", "Suami", "Anak"]),
-  birthDate: z.string().optional(),
-  marriageDate: z.string().optional(),
-  occupation: z.string().optional(),
-  description: z.string().optional(),
+  birthDate: optionalText.optional(),
+  marriageDate: optionalText.optional(),
+  occupation: optionalText.optional(),
+  description: optionalText.optional(),
 });
 
 // --- Employment status: unified union enforced across app and API layers ---
@@ -41,61 +77,61 @@ export const EmployeeSchema = z.object({
   id: z.string().optional(),
 
   // --- Identity ---
-  nik: z.string(),
-  nama: z.string(),
-  nip: z.string(),
+  nik: nikField,
+  nama: requiredText,
+  nip: nipField,
   jk: GenderSchema,
-  tempatLahir: z.string(),
-  tanggalLahir: z.string(),
+  tempatLahir: optionalText,
+  tanggalLahir: optionalText,
 
   // --- Address ---
-  jalanDusun: z.string(),
-  rt: z.string(),
-  rw: z.string(),
-  desaKelurahan: z.string(),
-  kecamatan: z.string(),
-  kabupaten: z.string(),
+  jalanDusun: optionalText,
+  rt: optionalText,
+  rw: optionalText,
+  desaKelurahan: optionalText,
+  kecamatan: optionalText,
+  kabupaten: optionalText,
 
   // --- Position ---
-  jabatan: z.string(),
-  bidang: z.string(),
+  jabatan: optionalText,
+  bidang: optionalText,
   status: EmployeeStatusSchema,
-  tmtKerja: z.string(),
+  tmtKerja: optionalText,
 
   // --- Rank / grade ---
-  pangkat: z.string(),
-  gol: z.string(),
-  pangkatGolongan: z.string(),
-  tmtGolonganRuang: z.string(),
-  masaKerjaGolonganRuang: z.string(),
-  tanggalBerkalaTerakhir: z.string(),
+  pangkat: optionalText,
+  gol: optionalText,
+  pangkatGolongan: optionalText,
+  tmtGolonganRuang: optionalText,
+  masaKerjaGolonganRuang: optionalText,
+  tanggalBerkalaTerakhir: optionalText,
 
   // --- Salary ---
-  gajiPokok: z.string(),
-  besaranGajiKotor: z.string(),
-  digajiMenurut: z.string(),
-  noRekeningBank: z.string(),
-  npwp: z.string(),
+  gajiPokok: optionalText,
+  besaranGajiKotor: optionalText,
+  digajiMenurut: optionalText,
+  noRekeningBank: optionalText,
+  npwp: optionalText,
 
   // --- Administrative ---
-  nomorKarpeg: z.string(),
-  pendidikan: z.string(),
-  jurusan: z.string(),
-  diklatJenjang: z.string(),
-  tahunDiklat: z.string(),
-  statusKawin: z.string(),
-  agama: z.string(),
-  nomorHp: z.string(),
+  nomorKarpeg: optionalText,
+  pendidikan: optionalText,
+  jurusan: optionalText,
+  diklatJenjang: optionalText,
+  tahunDiklat: optionalText,
+  statusKawin: optionalText,
+  agama: optionalText,
+  nomorHp: optionalText,
 
   // --- Leave ---
-  sisaCutiN: z.string(),
-  sisaCutiN1: z.string(),
-  sisaCutiN2: z.string(),
-  skTerakhir: z.string(),
+  sisaCutiN: optionalText,
+  sisaCutiN1: optionalText,
+  sisaCutiN2: optionalText,
+  skTerakhir: optionalText,
 
   // --- Family / dependents ---
-  jumlahTertanggung: z.number(),
-  dataKeluarga: z.array(FamilyMemberSchema),
+  jumlahTertanggung: z.number().int().min(0).max(50),
+  dataKeluarga: z.array(FamilyMemberSchema).max(50),
 
   // --- Derived (NOT persisted; tolerated for legacy compatibility) ---
   masaKerja: z.string().optional(),
@@ -113,21 +149,22 @@ export const EmployeeSchema = z.object({
 export const EmployeeFormSchema = EmployeeSchema.extend({
   jk: GenderSchema.default("L"),
   status: EmployeeStatusSchema.default("PNS"),
-  jumlahTertanggung: z.number().default(0),
-}).catchall(z.string().default(""));
+  jumlahTertanggung: z.number().int().min(0).max(50).default(0),
+  dataKeluarga: z.array(FamilyMemberSchema).max(50).default([]),
+});
 
 // --- App settings (single shared document) ---
 export const AppSettingsSchema = z.object({
-  sekdaNama: z.string(),
-  sekdaNip: z.string(),
-  bupatiNama: z.string(),
-  kopLine1: z.string().optional(),
-  kopLine2: z.string().optional(),
-  kopLine3: z.string().optional(),
-  kopLine4: z.string().optional(),
-  logoBase64: z.string().optional(),
-  jabatanKamusCsv: z.string().optional(),
-  petaJabatanCsv: z.string().optional(),
+  sekdaNama: optionalText,
+  sekdaNip: optionalText,
+  bupatiNama: optionalText,
+  kopLine1: optionalText.optional(),
+  kopLine2: optionalText.optional(),
+  kopLine3: optionalText.optional(),
+  kopLine4: optionalText.optional(),
+  logoBase64: z.string().max(1_500_000).optional(),
+  jabatanKamusCsv: z.string().max(5_000_000).optional(),
+  petaJabatanCsv: z.string().max(5_000_000).optional(),
 });
 
 export type FamilyMemberT = z.infer<typeof FamilyMemberSchema>;

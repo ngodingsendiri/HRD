@@ -1,6 +1,9 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { prisma } from "../../src/lib/db.js";
+import { getAuthSecret, isAdminEmail } from "./authEnv.js";
+
+export { getAuthSecret, isAdminEmail, adminEmails } from "./authEnv.js";
 
 /**
  * Custom session-based authentication for Vercel Node.js serverless.
@@ -31,15 +34,6 @@ const SESSION_MAX_AGE_MS = SESSION_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
 // The cookie carries the raw verifier, but signed with AUTH_SECRET so the
 // server can detect tampering without a DB lookup. The DB stores only the
 // SHA-256 hash of the verifier, so a DB leak does not expose live sessions.
-
-function getAuthSecret(): string {
-  const secret = process.env.AUTH_SECRET;
-  if (!secret || secret.length < 16) {
-    // Fall back in dev so local usage still works; production MUST set this.
-    return "dev_fallback_secret_DO_NOT_USE_IN_PRODUCTION_xxxxxx";
-  }
-  return secret;
-}
 
 function sign(verifier: string): string {
   return createHmac("sha256", getAuthSecret()).update(verifier).digest("hex");
@@ -210,16 +204,6 @@ export async function destroySession(req: VercelRequest, res: VercelResponse): P
 
 // ─── Admin guard ─────────────────────────────────────────────────────────────
 
-function adminEmails(): Set<string> {
-  const raw = process.env.ADMIN_EMAILS || "";
-  return new Set(
-    raw
-      .split(",")
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean),
-  );
-}
-
 export interface AdminUser {
   id?: string;
   name?: string | null;
@@ -239,7 +223,7 @@ export async function requireAdmin(req: VercelRequest, res: VercelResponse): Pro
   const session = await getSession(req);
   const email = session?.user?.email;
 
-  if (!session || !email || !adminEmails().has(email.toLowerCase())) {
+  if (!session || !email || !isAdminEmail(email)) {
     res.status(401).json({ error: "Unauthorized: Email not registered as admin" });
     throw new Error("Unauthorized");
   }
