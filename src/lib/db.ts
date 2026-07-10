@@ -1,37 +1,40 @@
-import { PrismaClient } from "@prisma/client";
-
 /**
- * Prisma singleton for serverless + local (Neon / Vercel).
+ * Prisma + Neon for Vercel serverless.
  *
- * Neon tips for Vercel:
- * - DATABASE_URL = pooled (-pooler) + pgbouncer=true
- * - DIRECT_URL = non-pooler (migrations only)
- * - Strip channel_binding=require (can break serverless Prisma)
+ * Why adapter-neon?
+ * Classic Prisma TCP to Neon pooler often fails from Vercel with:
+ *   "Can't reach database server at ep-...-pooler...:5432"
+ * Neon serverless driver uses WebSockets (works on Vercel).
+ *
+ * Env:
+ * - DATABASE_URL = Neon **pooled** connection string (runtime)
+ * - DIRECT_URL   = Neon **unpooled** (migrations only, schema.prisma)
  */
+import { PrismaClient } from "@prisma/client";
+import { PrismaNeon } from "@prisma/adapter-neon";
+import { neonConfig } from "@neondatabase/serverless";
+import ws from "ws";
+
+// Required for Node.js (Vercel functions) — browser has WebSocket built-in
+neonConfig.webSocketConstructor = ws;
+
+/** Normalize Neon URL for runtime (pooler + ssl, no channel_binding). */
 export function getDatabaseUrl(): string | undefined {
   let url = process.env.DATABASE_URL?.trim();
   if (!url) return undefined;
 
-  // channel_binding=require often breaks Node serverless drivers
   url = url
     .replace(/([?&])channel_binding=require&?/gi, "$1")
     .replace(/[?&]$/, "")
     .replace(/\?&/, "?");
 
-  const hasQuery = url.includes("?");
-  const join = hasQuery ? "&" : "?";
-
   if (!/[?&]sslmode=/.test(url)) {
-    url += `${join}sslmode=require`;
+    url += (url.includes("?") ? "&" : "?") + "sslmode=require";
   }
 
-  // Prisma + Neon pooler
-  if (url.includes("-pooler.") && !/[?&]pgbouncer=true/.test(url)) {
-    url += (url.includes("?") ? "&" : "?") + "pgbouncer=true";
-  }
-
+  // Longer timeout — Neon may cold-start (wake from idle)
   if (!/[?&]connect_timeout=/.test(url)) {
-    url += (url.includes("?") ? "&" : "?") + "connect_timeout=15";
+    url += (url.includes("?") ? "&" : "?") + "connect_timeout=30";
   }
 
   return url;
@@ -42,13 +45,17 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 function createPrisma(): PrismaClient {
-  const url = getDatabaseUrl();
+  const connectionString = getDatabaseUrl();
+  if (!connectionString) {
+    // Still construct client so imports don't crash; queries will fail clearly
+    return new PrismaClient({
+      log: ["error"],
+    });
+  }
+
+  const adapter = new PrismaNeon({ connectionString });
   return new PrismaClient({
-    datasources: url
-      ? {
-          db: { url },
-        }
-      : undefined,
+    adapter,
     log:
       process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
   });
@@ -65,11 +72,7 @@ export async function pingDatabase(): Promise<{
 }> {
   const start = Date.now();
   if (!process.env.DATABASE_URL?.trim()) {
-    return {
-      ok: false,
-      latencyMs: 0,
-      error: "DATABASE_URL_missing",
-    };
+    return { ok: false, latencyMs: 0, error: "DATABASE_URL_missing" };
   }
   try {
     await prisma.$queryRaw`SELECT 1`;
@@ -78,7 +81,7 @@ export async function pingDatabase(): Promise<{
     return {
       ok: false,
       latencyMs: Date.now() - start,
-      error: err instanceof Error ? err.message.slice(0, 200) : "db_unreachable",
+      error: err instanceof Error ? err.message.slice(0, 220) : "db_unreachable",
     };
   }
 }
