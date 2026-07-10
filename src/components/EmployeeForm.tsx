@@ -3,6 +3,7 @@ import { Employee, AppSettings } from "../types";
 import { Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { validateAndExtractNIP, calculateBUP, calculateMasaKerja } from "../lib/employeeUtils";
+import { btnPrimary, btnSecondary, input, label } from "../lib/ui";
 
 interface EmployeeFormProps {
   initialData?: Employee;
@@ -223,73 +224,73 @@ export function EmployeeForm({
 
       <div className="h-[60vh] sm:h-[65vh] overflow-y-auto pr-2 pb-4 space-y-6">
         {/* Tab 1: Identitas Pribadi */}
-        <div className={activeTab === 1 ? "space-y-6 animate-in fade-in duration-300 block" : "hidden"}>
+        <div className={activeTab === 1 ? "space-y-6 block" : "hidden"}>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-900">NIP</label>
+                <label className={label}>NIP</label>
                 <input
                   {...register("nip")}
-                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                  className={input}
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-900">NIK *</label>
+                <label className={label}>NIK *</label>
                 <input
                   {...register("nik", { required: true })}
-                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                  className={input}
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-900">Nama Lengkap (Sesuai KTP) *</label>
+                <label className={label}>Nama Lengkap (Sesuai KTP) *</label>
                 <input
                   {...register("nama", { required: true })}
-                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                  className={input}
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-900">Jenis Kelamin</label>
+                <label className={label}>Jenis Kelamin</label>
                 <select
                   {...register("jk")}
-                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all cursor-pointer"
+                  className={`${input} cursor-pointer`}
                 >
                   <option value="L">Laki-laki</option>
                   <option value="P">Perempuan</option>
                 </select>
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-900">Kota / Kab. Kelahiran</label>
+                <label className={label}>Kota / Kab. Kelahiran</label>
                 <input
                   {...register("tempatLahir")}
-                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                  className={input}
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-900">Tanggal Lahir</label>
+                <label className={label}>Tanggal Lahir</label>
                 <input
                   type="date"
                   {...register("tanggalLahir")}
-                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                  className={input}
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-900">Agama</label>
+                <label className={label}>Agama</label>
                 <input
                   {...register("agama")}
-                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                  className={input}
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-900">Status Kawin</label>
+                <label className={label}>Status Kawin</label>
                 <input
                   {...register("statusKawin")}
-                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                  className={input}
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-900">Nomor HP</label>
+                <label className={label}>Nomor HP</label>
                 <input
                   {...register("nomorHp")}
-                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                  className={input}
                 />
               </div>
             </div>
@@ -298,47 +299,47 @@ export function EmployeeForm({
               <h4 className="text-sm font-semibold text-slate-800 mb-4">Informasi Alamat & Domisili</h4>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="space-y-1.5 md:col-span-2">
-                  <label className="text-sm font-medium text-slate-900">Alamat Lengkap (Jalan/Dusun)</label>
+                  <label className={label}>Alamat Lengkap (Jalan/Dusun)</label>
                   <input
                     {...register("jalanDusun")}
-                    className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                    className={input}
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-slate-900">RT</label>
+                    <label className={label}>RT</label>
                     <input
                       {...register("rt")}
-                      className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                      className={input}
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-slate-900">RW</label>
+                    <label className={label}>RW</label>
                     <input
                       {...register("rw")}
-                      className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                      className={input}
                     />
                   </div>
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-slate-900">Desa / Kelurahan</label>
+                  <label className={label}>Desa / Kelurahan</label>
                   <input
                     {...register("desaKelurahan")}
-                    className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                    className={input}
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-slate-900">Kecamatan</label>
+                  <label className={label}>Kecamatan</label>
                   <input
                     {...register("kecamatan")}
-                    className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                    className={input}
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-slate-900">Kabupaten</label>
+                  <label className={label}>Kabupaten</label>
                   <input
                     {...register("kabupaten")}
-                    className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                    className={input}
                   />
                 </div>
               </div>
@@ -346,13 +347,13 @@ export function EmployeeForm({
           </div>
 
         {/* Tab 2: Jabatan & Penempatan */}
-        <div className={activeTab === 2 ? "space-y-6 animate-in fade-in duration-300 block" : "hidden"}>
+        <div className={activeTab === 2 ? "space-y-6 block" : "hidden"}>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-900">Status Hubungan Kerja</label>
+                <label className={label}>Status Hubungan Kerja</label>
                 <select
                   {...register("status")}
-                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all cursor-pointer"
+                  className={`${input} cursor-pointer`}
                 >
                   <option value="PNS">PNS</option>
                   <option value="CPNS">CPNS</option>
@@ -361,10 +362,10 @@ export function EmployeeForm({
                 </select>
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-900">Jabatan</label>
+                <label className={label}>Jabatan</label>
                 <select
                   {...register("jabatan")}
-                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all cursor-pointer"
+                  className={`${input} cursor-pointer`}
                 >
                   <option value="">Pilih Jabatan...</option>
                   {kamusJabatanList.map((jab) => (
@@ -375,10 +376,10 @@ export function EmployeeForm({
                 </select>
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-900">Unit Kerja / Bidang</label>
+                <label className={label}>Unit Kerja / Bidang</label>
                 <select
                   {...register("bidang")}
-                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all cursor-pointer"
+                  className={`${input} cursor-pointer`}
                 >
                   <option value="">Pilih Unit Kerja / Bidang...</option>
                   <option value="Sekretariat">Sekretariat</option>
@@ -389,7 +390,7 @@ export function EmployeeForm({
                 </select>
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-900">Kelas Jabatan</label>
+                <label className={label}>Kelas Jabatan</label>
                 <input
                   {...register("kelasJabatan")}
                   className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all cursor-not-allowed text-slate-500"
@@ -398,7 +399,7 @@ export function EmployeeForm({
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-900">Beban Kerja</label>
+                <label className={label}>Beban Kerja</label>
                 <input
                   {...register("bebanKerja")}
                   className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all cursor-not-allowed text-slate-500"
@@ -407,10 +408,10 @@ export function EmployeeForm({
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-900">SK Terakhir</label>
+                <label className={label}>SK Terakhir</label>
                 <input
                   {...register("skTerakhir")}
-                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                  className={input}
                 />
               </div>
             </div>
@@ -419,31 +420,31 @@ export function EmployeeForm({
               <h4 className="text-sm font-semibold text-slate-800 mb-4">Riwayat Pendidikan & Pelatihan</h4>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-slate-900">Pendidikan Terakhir</label>
+                  <label className={label}>Pendidikan Terakhir</label>
                   <input
                     {...register("pendidikan")}
-                    className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                    className={input}
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-slate-900">Jurusan</label>
+                  <label className={label}>Jurusan</label>
                   <input
                     {...register("jurusan")}
-                    className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                    className={input}
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-slate-900">Diklat Jenjang</label>
+                  <label className={label}>Diklat Jenjang</label>
                   <input
                     {...register("diklatJenjang")}
-                    className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                    className={input}
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-slate-900">Tahun Diklat</label>
+                  <label className={label}>Tahun Diklat</label>
                   <input
                     {...register("tahunDiklat")}
-                    className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                    className={input}
                   />
                 </div>
               </div>
@@ -451,145 +452,145 @@ export function EmployeeForm({
           </div>
 
         {/* Tab 3: Kepangkatan & Gaji */}
-        <div className={activeTab === 3 ? "space-y-6 animate-in fade-in duration-300 block" : "hidden"}>
+        <div className={activeTab === 3 ? "space-y-6 block" : "hidden"}>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-900">Pangkat</label>
+                <label className={label}>Pangkat</label>
                 <input
                   {...register("pangkat")}
-                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                  className={input}
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-900">Golongan</label>
+                <label className={label}>Golongan</label>
                 <input
                   {...register("gol")}
-                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                  className={input}
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-900">TMT Golongan Ruang</label>
+                <label className={label}>TMT Golongan Ruang</label>
                 <input
                   type="date"
                   {...register("tmtGolonganRuang")}
-                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                  className={input}
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-900">Masa Kerja Golongan Ruang (MKG)</label>
+                <label className={label}>Masa Kerja Golongan Ruang (MKG)</label>
                 <input
                   {...register("masaKerjaGolonganRuang")}
                   placeholder="Terhitung otomatis"
-                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                  className={input}
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-900">TMT Kerja</label>
+                <label className={label}>TMT Kerja</label>
                 <input
                   type="date"
                   {...register("tmtKerja")}
-                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                  className={input}
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-900">Masa Kerja</label>
+                <label className={label}>Masa Kerja</label>
                 <input
                   {...register("masaKerja")}
                   placeholder="Terhitung otomatis"
-                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                  className={input}
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-900">Tanggal Berkala Terakhir</label>
+                <label className={label}>Tanggal Berkala Terakhir</label>
                 <input
                   type="date"
                   {...register("tanggalBerkalaTerakhir")}
-                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                  className={input}
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-900">Gaji Pokok</label>
+                <label className={label}>Gaji Pokok</label>
                 <input
                   {...register("gajiPokok")}
-                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                  className={input}
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-900">Besaran Gaji Kotor</label>
+                <label className={label}>Besaran Gaji Kotor</label>
                 <input
                   {...register("besaranGajiKotor")}
-                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                  className={input}
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-900">Digaji Menurut PP/SK</label>
+                <label className={label}>Digaji Menurut PP/SK</label>
                 <input
                   {...register("digajiMenurut")}
-                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                  className={input}
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-900">No. Rekening Bank</label>
+                <label className={label}>No. Rekening Bank</label>
                 <input
                   {...register("noRekeningBank")}
-                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                  className={input}
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-900">NPWP</label>
+                <label className={label}>NPWP</label>
                 <input
                   {...register("npwp")}
-                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                  className={input}
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-900">Nomor Karpeg</label>
+                <label className={label}>Nomor Karpeg</label>
                 <input
                   {...register("nomorKarpeg")}
-                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                  className={input}
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-900">TMT Pensiun (BUP)</label>
+                <label className={label}>TMT Pensiun (BUP)</label>
                 <input
                   {...register("pensiun")}
                   placeholder="Terhitung otomatis"
-                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                  className={input}
                 />
               </div>
             </div>
           </div>
 
         {/* Tab 4: Keluarga & Cuti */}
-        <div className={activeTab === 4 ? "space-y-6 animate-in fade-in duration-300 block" : "hidden"}>
+        <div className={activeTab === 4 ? "space-y-6 block" : "hidden"}>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-900">Sisa Cuti N</label>
+                <label className={label}>Sisa Cuti N</label>
                 <input
                   {...register("sisaCutiN")}
-                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                  className={input}
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-900">Sisa Cuti N-1</label>
+                <label className={label}>Sisa Cuti N-1</label>
                 <input
                   {...register("sisaCutiN1")}
-                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                  className={input}
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-900">Sisa Cuti N-2</label>
+                <label className={label}>Sisa Cuti N-2</label>
                 <input
                   {...register("sisaCutiN2")}
-                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                  className={input}
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-900">Jumlah Tertanggung</label>
+                <label className={label}>Jumlah Tertanggung</label>
                 <input
                   type="number"
                   {...register("jumlahTertanggung", { valueAsNumber: true })}
-                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                  className={input}
                 />
               </div>
             </div>
@@ -701,7 +702,7 @@ export function EmployeeForm({
             <button
               type="button"
               onClick={() => setActiveTab(activeTab - 1)}
-              className="px-6 py-2.5 text-sm font-medium text-slate-900 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all active:scale-95"
+              className={`${btnSecondary} px-5 py-2.5 text-sm`}
             >
               Kembali
             </button>
@@ -711,7 +712,7 @@ export function EmployeeForm({
           <button
             type="button"
             onClick={onCancel}
-            className="px-6 py-2.5 text-sm font-medium text-slate-900 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all active:scale-95"
+            className={`${btnSecondary} px-5 py-2.5 text-sm`}
           >
             Batal
           </button>
@@ -719,15 +720,12 @@ export function EmployeeForm({
             <button
               type="button"
               onClick={() => setActiveTab(activeTab + 1)}
-              className="px-6 py-2.5 text-sm font-medium text-slate-900 bg-slate-100 border border-slate-200 rounded-lg hover:bg-slate-200 transition-all active:scale-95"
+              className={`${btnSecondary} px-5 py-2.5 text-sm bg-slate-50`}
             >
               Selanjutnya
             </button>
           ) : (
-            <button
-              type="submit"
-              className="px-6 py-2.5 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-all active:scale-95"
-            >
+            <button type="submit" className={`${btnPrimary} px-5 py-2.5 text-sm`}>
               Simpan Rekam Data
             </button>
           )}

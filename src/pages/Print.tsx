@@ -4,6 +4,15 @@ import { Printer, Users, FileText, ChevronDown } from "lucide-react";
 import { api } from "../lib/api";
 import { lookupKamus } from "../lib/kamus";
 import { countWorkingDays } from "../lib/holidays";
+import { PageHeader } from "../components/PageHeader";
+import { motion } from "motion/react";
+import {
+  btnPrimary,
+  chip,
+  pageContainerVariants,
+  pageItemVariants,
+  pageShellWide,
+} from "../lib/ui";
 
 type PrintType =
   | "absen_global"
@@ -292,103 +301,112 @@ export default function Print() {
     kadisEmp?.pangkatGolongan || "Pangkat Golongan ..........................";
   const ttdNip = kadisEmp?.nip || "........................................";
 
+  const handlePrintClick = async () => {
+    if (printType === "surat_cuti" && cutiJenis.startsWith("1")) {
+      if (
+        !window.confirm(
+          "Cetak surat cuti akan memotong sisa cuti pegawai secara otomatis. Lanjutkan?",
+        )
+      ) {
+        return;
+      }
+      try {
+        const emp = employees.find((e) => e.id === cutiEmployeeId);
+        if (emp) {
+          const sisaN = parseInt(emp.sisaCutiN || "0") || 0;
+          const sisaN1 = parseInt(emp.sisaCutiN1 || "0") || 0;
+          const sisaN2 = parseInt(emp.sisaCutiN2 || "0") || 0;
+
+          let toDeduct = cutiLamaHari;
+          let newN = sisaN;
+          let newN1 = sisaN1;
+          let newN2 = sisaN2;
+
+          if (toDeduct <= newN2) {
+            newN2 -= toDeduct;
+          } else {
+            toDeduct -= newN2;
+            newN2 = 0;
+            if (toDeduct <= newN1) {
+              newN1 -= toDeduct;
+            } else {
+              toDeduct -= newN1;
+              newN1 = 0;
+              if (toDeduct <= newN) {
+                newN -= toDeduct;
+              } else {
+                newN = 0;
+              }
+            }
+          }
+
+          await api.updateEmployee(emp.id!, {
+            sisaCutiN: String(newN),
+            sisaCutiN1: String(newN1),
+            sisaCutiN2: String(newN2),
+          });
+
+          setEmployees(
+            employees.map((e) =>
+              e.id === emp.id
+                ? {
+                    ...e,
+                    sisaCutiN: String(newN),
+                    sisaCutiN1: String(newN1),
+                    sisaCutiN2: String(newN2),
+                  }
+                : e,
+            ),
+          );
+        }
+        setTimeout(() => window.print(), 300);
+      } catch (err) {
+        console.error("Gagal mengurangi sisa cuti", err);
+        alert("Terjadi kesalahan saat mengurangi sisa cuti.");
+      }
+      return;
+    }
+
+    try {
+      window.print();
+    } catch {
+      alert(
+        "Perintah otomatis terblokir oleh browser. Silakan tekan Ctrl+P atau Cmd+P untuk mencetak secara manual.",
+      );
+    }
+  };
+
   return (
-    <div className="max-w-[1400px] mx-auto space-y-6 md:space-y-8 p-4 sm:p-0 sm:py-8 pb-12 antialiased">
+    <motion.div
+      initial="hidden"
+      animate="visible"
+      variants={pageContainerVariants}
+      className={pageShellWide}
+    >
       {/* Control Panel (Hidden on Print) */}
       <div className="print-hidden space-y-5 md:space-y-6">
-        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 lg:gap-6 border-b border-slate-100 pb-5 md:pb-8">
-          <div className="w-full lg:w-auto">
-            <h1 className="text-xl font-bold tracking-tight text-slate-900">
-              Pusat Pencetakan Dokumen
-            </h1>
-            <p className="mt-1 text-[13px] text-slate-500">
-              Konfigurasi pratinjau tabel pracetak dan detail dokumen Anda.
-            </p>
-          </div>
-          <button
-            onClick={async () => {
-              if (printType === "surat_cuti" && cutiJenis.startsWith("1")) {
-                if (
-                  window.confirm(
-                    "Cetak surat cuti akan memotong sisa cuti pegawai secara otomatis. Lanjutkan?",
-                  )
-                ) {
-                  try {
-                    const emp = employees.find((e) => e.id === cutiEmployeeId);
-                    if (emp) {
-                      const sisaN = parseInt(emp.sisaCutiN || "0") || 0;
-                      const sisaN1 = parseInt(emp.sisaCutiN1 || "0") || 0;
-                      const sisaN2 = parseInt(emp.sisaCutiN2 || "0") || 0;
+        <motion.div variants={pageItemVariants}>
+          <PageHeader
+            title="Pusat Pencetakan Dokumen"
+            description="Konfigurasi pratinjau tabel pracetak dan detail dokumen Anda."
+            actions={
+              <button
+                type="button"
+                onClick={handlePrintClick}
+                className={`${btnPrimary} w-full lg:w-auto`}
+                title="Klik untuk cetak atau tekan Ctrl+P"
+              >
+                <Printer className="w-4 h-4" />
+                Cetak Dokumen Sekarang
+              </button>
+            }
+          />
+        </motion.div>
 
-                      let toDeduct = cutiLamaHari;
-                      let newN = sisaN;
-                      let newN1 = sisaN1;
-                      let newN2 = sisaN2;
-
-                      // Deduct logic: Usually deduct from N first or N-2 first? Most rules deduct from N-2 first, then N-1, then N.
-                      if (toDeduct <= newN2) {
-                        newN2 -= toDeduct;
-                      } else {
-                        toDeduct -= newN2;
-                        newN2 = 0;
-                        if (toDeduct <= newN1) {
-                          newN1 -= toDeduct;
-                        } else {
-                          toDeduct -= newN1;
-                          newN1 = 0;
-                          if (toDeduct <= newN) {
-                            newN -= toDeduct;
-                          } else {
-                            newN = 0; // Cut off, max available cuti taken
-                          }
-                        }
-                      }
-
-                      await api.updateEmployee(emp.id!, {
-                        sisaCutiN: String(newN),
-                        sisaCutiN1: String(newN1),
-                        sisaCutiN2: String(newN2),
-                      });
-
-                      // Refresh local state without reloading whole page to show updated preview
-                      setEmployees(
-                        employees.map((e) =>
-                          e.id === emp.id
-                            ? {
-                                ...e,
-                                sisaCutiN: String(newN),
-                                sisaCutiN1: String(newN1),
-                                sisaCutiN2: String(newN2),
-                              }
-                            : e,
-                        ),
-                      );
-                    }
-                    setTimeout(() => window.print(), 300);
-                  } catch (err) {
-                    console.error("Gagal mengurangi sisa cuti", err);
-                    alert("Terjadi kesalahan saat mengurangi sisa cuti.");
-                  }
-                }
-              } else {
-                try {
-                  window.print();
-                } catch (e) {
-                  alert(
-                    "Perintah otomatis terblokir oleh browser. Silakan tekan Ctrl+P atau Cmd+P untuk mencetak secara manual.",
-                  );
-                }
-              }
-            }}
-            className="flex items-center gap-2 px-6 py-2.5 text-[13px] font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors active:scale-95 w-full lg:w-auto justify-center"
-            title="Klik untuk cetak atau tekan Ctrl+P"
-          >
-            <Printer className="w-4 h-4" />
-            Cetak Dokumen Sekarang
-          </button>
-        </div>
-
-        <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg text-[12px] text-amber-800 flex items-center gap-3">
+        <motion.div
+          variants={pageItemVariants}
+          className="bg-amber-50 border border-amber-100 p-3 rounded-xl text-[12px] text-amber-800 flex items-center gap-3"
+        >
           <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center shrink-0">
             <svg
               className="w-4 h-4 text-amber-600"
@@ -409,7 +427,7 @@ export default function Print() {
             tekan <strong>Ctrl+P</strong> (Windows) atau <strong>Cmd+P</strong>{" "}
             (Mac) langsung pada keyboard Anda.
           </p>
-        </div>
+        </motion.div>
 
         <div className="flex bg-slate-100 p-1 rounded-lg w-full sm:w-max">
           <button
@@ -444,7 +462,7 @@ export default function Print() {
                   setCustomTitle("DAFTAR HADIR / ABSENSI PEGAWAI");
                   setSelectedBidang("Semua");
                 }}
-                className={`px-4 py-2 rounded-lg text-[12px] font-bold transition-colors border ${printType === "absen_global" || printType === "absen_bidang" ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300"}`}
+                className={chip(printType === "absen_global" || printType === "absen_bidang")}
               >
                 Daftar Hadir / Absensi
               </button>
@@ -453,7 +471,7 @@ export default function Print() {
                   setPrintType("tanda_terima");
                   setCustomTitle("DAFTAR TANDA TERIMA ......................");
                 }}
-                className={`px-4 py-2 rounded-lg text-[12px] font-bold transition-colors border ${printType === "tanda_terima" ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300"}`}
+                className={chip(printType === "tanda_terima")}
               >
                 Tanda Terima
               </button>
@@ -462,7 +480,7 @@ export default function Print() {
                   setPrintType("duk");
                   setCustomTitle("DAFTAR URUT KEPANGKATAN (DUK)");
                 }}
-                className={`px-4 py-2 rounded-lg text-[12px] font-bold transition-colors border ${printType === "duk" ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300"}`}
+                className={chip(printType === "duk")}
               >
                 Data Urut Kepangkatan
               </button>
@@ -476,7 +494,7 @@ export default function Print() {
                   setPrintType("surat_cuti");
                   setCustomTitle("SURAT IZIN CUTI PEGAWAI");
                 }}
-                className={`px-4 py-2 rounded-lg text-[12px] font-bold transition-colors border ${printType === "surat_cuti" ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300"}`}
+                className={chip(printType === "surat_cuti")}
               >
                 Surat Cuti
               </button>
@@ -487,7 +505,7 @@ export default function Print() {
                     "SURAT KETERANGAN UNTUK MENDAPATKAN PEMBAYARAN TUNJANGAN KELUARGA",
                   );
                 }}
-                className={`px-4 py-2 rounded-lg text-[12px] font-bold transition-colors border ${printType === "model_dk" ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300"}`}
+                className={chip(printType === "model_dk")}
               >
                 Model DK
               </button>
@@ -496,7 +514,7 @@ export default function Print() {
                   setPrintType("anjab");
                   setCustomTitle("DOKUMEN ANALISIS JABATAN (ANJAB)");
                 }}
-                className={`px-4 py-2 rounded-lg text-[12px] font-bold transition-colors border opacity-60 ${printType === "anjab" ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"}`}
+                className={chip(printType === "anjab", { muted: true })}
               >
                 ANJAB (WIP)
               </button>
@@ -505,7 +523,7 @@ export default function Print() {
                   setPrintType("bezetting");
                   setCustomTitle("DAFTAR SUSUNAN BEZETTING PEGAWAI");
                 }}
-                className={`px-4 py-2 rounded-lg text-[12px] font-bold transition-colors border opacity-60 ${printType === "bezetting" ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"}`}
+                className={chip(printType === "bezetting", { muted: true })}
               >
                 Bezetting (WIP)
               </button>
@@ -514,7 +532,7 @@ export default function Print() {
                   setPrintType("usulan_kgb");
                   setCustomTitle("USULAN KENAIKAN GAJI BERKALA (KGB)");
                 }}
-                className={`px-4 py-2 rounded-lg text-[12px] font-bold transition-colors border opacity-60 ${printType === "usulan_kgb" ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"}`}
+                className={chip(printType === "usulan_kgb", { muted: true })}
               >
                 Usulan KGB (WIP)
               </button>
@@ -523,7 +541,7 @@ export default function Print() {
                   setPrintType("usulan_kp");
                   setCustomTitle("USULAN KENAIKAN PANGKAT (KP)");
                 }}
-                className={`px-4 py-2 rounded-lg text-[12px] font-bold transition-colors border opacity-60 ${printType === "usulan_kp" ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"}`}
+                className={chip(printType === "usulan_kp", { muted: true })}
               >
                 Usulan KP (WIP)
               </button>
@@ -1759,6 +1777,6 @@ export default function Print() {
  `,
         }}
       />
-    </div>
+    </motion.div>
   );
 }

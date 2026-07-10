@@ -14,23 +14,22 @@ import { KamusManager } from "../components/KamusManager";
 import { PetaManager } from "../components/PetaManager";
 import { FileSpreadsheet } from "lucide-react";
 import { DEFAULT_KAMUS } from "../constants";
-import { motion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import { api } from "../lib/api";
-
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.1,
-    },
-  },
-};
-
-const itemVariants = {
-  hidden: { opacity: 0, y: 15 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.4 } },
-};
+import { PageHeader } from "../components/PageHeader";
+import {
+  alertError,
+  alertSuccess,
+  btnPrimary,
+  card,
+  easeOut,
+  input,
+  navTab,
+  pageContainerVariants,
+  pageItemVariants,
+  pageShell,
+} from "../lib/ui";
+import { cn } from "../lib/utils";
 
 export default function Settings() {
   const [settings, setSettings] = useState<AppSettings>({
@@ -138,111 +137,115 @@ export default function Settings() {
     );
   }
 
+  const hasUnsaved =
+    initialSettingsRef.current !== null &&
+    JSON.stringify(settings) !== initialSettingsRef.current;
+
   return (
     <motion.div
       initial="hidden"
       animate="visible"
-      variants={containerVariants}
-      className="max-w-5xl mx-auto space-y-6 md:space-y-8 p-4 sm:p-0 sm:py-8 pb-12 antialiased"
+      variants={pageContainerVariants}
+      className={pageShell}
     >
-      <motion.div
-        variants={itemVariants}
-        className="sticky top-0 z-20 bg-slate-50/90 backdrop-blur-md flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 py-4 sm:py-6 gap-4 -mx-4 px-4 sm:-mx-0 sm:px-0"
-      >
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-            Pengaturan Sistem
-          </h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Konfigurasi identitas instansi, atribut tata naskah, otoritas
-            penandatangan, dan manajemen kamus data.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={saving}
-          aria-label="Simpan pengaturan"
-          className="w-full sm:w-auto inline-flex items-center justify-center px-6 py-2.5 text-[13px] font-bold text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-all active:scale-95 disabled:opacity-50 shrink-0"
-        >
-          {saving ? (
-            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-          ) : (
-            <Save className="w-4 h-4 mr-2" />
-          )}
-          {saving
-            ? "Menyimpan..."
-            : initialSettingsRef.current !== null &&
-              JSON.stringify(settings) !== initialSettingsRef.current
-              ? "Simpan Perubahan"
-              : "Tersimpan"}
-        </button>
+      <motion.div variants={pageItemVariants}>
+        <PageHeader
+          title="Pengaturan Sistem"
+          description="Konfigurasi identitas instansi, atribut tata naskah, otoritas penandatangan, dan manajemen kamus data."
+          actions={
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving}
+              aria-label="Simpan pengaturan"
+              className={`${btnPrimary} w-full sm:w-auto shrink-0`}
+            >
+              {saving ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Save className="w-4 h-4" />
+              )}
+              {saving ? "Menyimpan..." : hasUnsaved ? "Simpan Perubahan" : "Tersimpan"}
+            </button>
+          }
+        />
       </motion.div>
 
-      {message && (
-        <div
-          className={`p-4 rounded-xl text-sm font-semibold flex items-center gap-3 animate-in fade-in slide-in-from-top-2 ${message.type === "success" ? "bg-emerald-50 text-emerald-700 border border-emerald-100" : "bg-red-50 text-red-700 border border-red-100"}`}
-        >
-          <div
-            className={`w-2 h-2 rounded-full ${message.type === "success" ? "bg-emerald-500" : "bg-red-500"}`}
-          />
-          {message.text}
-        </div>
-      )}
+      <AnimatePresence mode="wait">
+        {message && (
+          <motion.div
+            key={message.text}
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={easeOut}
+            className={message.type === "success" ? alertSuccess : alertError}
+            role="status"
+          >
+            <div
+              className={cn(
+                "w-2 h-2 rounded-full shrink-0",
+                message.type === "success" ? "bg-emerald-500" : "bg-red-500",
+              )}
+            />
+            {message.text}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      <div className="flex flex-col md:flex-row gap-8">
+      <motion.div variants={pageItemVariants} className="flex flex-col md:flex-row gap-6 md:gap-8">
         {/* Sidebar Nav */}
         <div className="w-full md:w-64 shrink-0">
-          <nav className="flex md:flex-col gap-2 overflow-x-auto pb-4 md:pb-0 scrollbar-hide snap-x">
+          <nav className="flex md:flex-col gap-2 overflow-x-auto pb-2 md:pb-0 scrollbar-hide snap-x">
             <button
+              type="button"
               onClick={() => setActiveTab("identitas")}
-              className={`snap-center flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all whitespace-nowrap active:scale-95 ${
-                activeTab === "identitas"
-                  ? "bg-slate-100 text-slate-900 ring-1 ring-slate-200"
-                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-              }`}
+              className={navTab(activeTab === "identitas")}
             >
               <User
-                className={`w-4 h-4 ${activeTab === "identitas" ? "text-slate-900" : "text-slate-400"}`}
+                className={cn(
+                  "w-4 h-4",
+                  activeTab === "identitas" ? "text-slate-900" : "text-slate-400",
+                )}
               />
               Otoritas Penandatangan
             </button>
             <button
+              type="button"
               onClick={() => setActiveTab("cetak")}
-              className={`snap-center flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all whitespace-nowrap active:scale-95 ${
-                activeTab === "cetak"
-                  ? "bg-slate-100 text-slate-900 ring-1 ring-slate-200"
-                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-              }`}
+              className={navTab(activeTab === "cetak")}
             >
               <Printer
-                className={`w-4 h-4 ${activeTab === "cetak" ? "text-slate-900" : "text-slate-400"}`}
+                className={cn(
+                  "w-4 h-4",
+                  activeTab === "cetak" ? "text-slate-900" : "text-slate-400",
+                )}
               />
               Tata Naskah & Identitas
             </button>
             <button
+              type="button"
               onClick={() => setActiveTab("kamus")}
-              className={`snap-center flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all whitespace-nowrap active:scale-95 ${
-                activeTab === "kamus"
-                  ? "bg-slate-100 text-slate-900 ring-1 ring-slate-200"
-                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-              }`}
+              className={navTab(activeTab === "kamus")}
             >
               <Database
-                className={`w-4 h-4 ${activeTab === "kamus" ? "text-slate-900" : "text-slate-400"}`}
+                className={cn(
+                  "w-4 h-4",
+                  activeTab === "kamus" ? "text-slate-900" : "text-slate-400",
+                )}
               />
               Kamus Jabatan
             </button>
             <button
+              type="button"
               onClick={() => setActiveTab("peta")}
-              className={`snap-center flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all whitespace-nowrap active:scale-95 ${
-                activeTab === "peta"
-                  ? "bg-slate-100 text-slate-900 ring-1 ring-slate-200"
-                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-              }`}
+              className={navTab(activeTab === "peta")}
             >
               <FileSpreadsheet
-                className={`w-4 h-4 ${activeTab === "peta" ? "text-slate-900" : "text-slate-400"}`}
+                className={cn(
+                  "w-4 h-4",
+                  activeTab === "peta" ? "text-slate-900" : "text-slate-400",
+                )}
               />
               Master Peta Jabatan
             </button>
@@ -250,11 +253,17 @@ export default function Settings() {
         </div>
 
         {/* Content Area */}
-        <div className="flex-1 bg-white rounded-xl border border-slate-100 min-h-[500px]">
+        <div className={`flex-1 ${card} min-h-[500px]`}>
           <form onSubmit={handleSave} className="p-4 sm:p-6 md:p-8">
             {/* TAB IDENTITAS */}
             {activeTab === "identitas" && (
-              <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <motion.div
+                key="identitas"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={easeOut}
+                className="space-y-8"
+              >
                 <div className="border-b border-slate-100 pb-4">
                   <h2 className="text-lg font-bold text-slate-800">
                     Otoritas Pengesahan Teratas
@@ -267,7 +276,7 @@ export default function Settings() {
 
                 <div className="space-y-6">
                   {/* Sekda Section */}
-                  <div className="p-4 sm:p-5 rounded-xl border border-slate-100 bg-slate-50/50 space-y-5">
+                  <div className="p-4 sm:p-5 rounded-xl border border-slate-200 bg-slate-50 space-y-5">
                     <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
                       <ShieldCheck className="w-3.5 h-3.5" /> Sekretaris Daerah
                     </h3>
@@ -278,7 +287,7 @@ export default function Settings() {
                         </label>
                         <input
                           type="text"
-                          className="block w-full px-4 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                          className={input}
                           value={settings.sekdaNama}
                           onChange={(e) =>
                             setSettings({
@@ -295,7 +304,7 @@ export default function Settings() {
                         </label>
                         <input
                           type="text"
-                          className="block w-full px-4 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all font-mono"
+                          className={`${input} font-mono`}
                           value={settings.sekdaNip}
                           onChange={(e) =>
                             setSettings({
@@ -310,7 +319,7 @@ export default function Settings() {
                   </div>
 
                   {/* Bupati Section */}
-                  <div className="p-4 sm:p-5 rounded-xl border border-slate-100 bg-slate-50/50 space-y-5">
+                  <div className="p-4 sm:p-5 rounded-xl border border-slate-200 bg-slate-50 space-y-5">
                     <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
                       <ShieldCheck className="w-3.5 h-3.5" /> Kepala Daerah
                     </h3>
@@ -321,7 +330,7 @@ export default function Settings() {
                         </label>
                         <input
                           type="text"
-                          className="block w-full px-4 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                          className={input}
                           value={settings.bupatiNama}
                           onChange={(e) =>
                             setSettings({
@@ -335,12 +344,18 @@ export default function Settings() {
                     </div>
                   </div>
                 </div>
-              </div>
+              </motion.div>
             )}
 
             {/* TAB CETAK & KOP */}
             {activeTab === "cetak" && (
-              <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <motion.div
+                key="cetak"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={easeOut}
+                className="space-y-8"
+              >
                 <div className="border-b border-slate-100 pb-4">
                   <h2 className="text-lg font-bold text-slate-800">
                     Tata Naskah Dinas & Identitas Visual
@@ -360,7 +375,7 @@ export default function Settings() {
                       </label>
                       <input
                         type="text"
-                        className="block w-full px-4 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all font-bold text-center"
+                        className={`${input} font-bold text-center`}
                         value={settings.kopLine1 || ""}
                         onChange={(e) =>
                           setSettings({ ...settings, kopLine1: e.target.value })
@@ -374,7 +389,7 @@ export default function Settings() {
                       </label>
                       <input
                         type="text"
-                        className="block w-full px-4 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all font-bold text-center text-lg"
+                        className={`${input} font-bold text-center text-lg`}
                         value={settings.kopLine2 || ""}
                         onChange={(e) =>
                           setSettings({ ...settings, kopLine2: e.target.value })
@@ -388,7 +403,7 @@ export default function Settings() {
                       </label>
                       <input
                         type="text"
-                        className="block w-full px-4 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all text-center"
+                        className={`${input} text-center`}
                         value={settings.kopLine3 || ""}
                         onChange={(e) =>
                           setSettings({ ...settings, kopLine3: e.target.value })
@@ -402,7 +417,7 @@ export default function Settings() {
                       </label>
                       <input
                         type="text"
-                        className="block w-full px-4 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all text-center"
+                        className={`${input} text-center`}
                         value={settings.kopLine4 || ""}
                         onChange={(e) =>
                           setSettings({ ...settings, kopLine4: e.target.value })
@@ -458,12 +473,17 @@ export default function Settings() {
                     </div>
                   </div>
                 </div>
-              </div>
+              </motion.div>
             )}
 
             {/* TAB KAMUS JABATAN */}
             {activeTab === "kamus" && (
-              <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <motion.div
+                key="kamus"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={easeOut}
+              >
                 <div className="border-b border-slate-100 pb-4 mb-6">
                   <h2 className="text-lg font-bold text-slate-800">
                     Data Kamus Jabatan
@@ -479,20 +499,25 @@ export default function Settings() {
                   onChange={(newCsv) =>
                     setSettings({ ...settings, jabatanKamusCsv: newCsv })
                   }
-                  
                 />
-              </div>
+              </motion.div>
             )}
-            
+
             {/* TAB PETA JABATAN */}
             {activeTab === "peta" && (
-              <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <motion.div
+                key="peta"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={easeOut}
+              >
                 <div className="border-b border-slate-100 pb-4 mb-6">
                   <h2 className="text-lg font-bold text-slate-800">
                     Master Peta Jabatan (Kebutuhan & Bezetting)
                   </h2>
                   <p className="text-sm text-slate-500 mt-1">
-                    Data referensi master untuk perhitungan kebutuhan pegawai dan analisis selisih/bezetting per Bidang/Unit Kerja.
+                    Data referensi master untuk perhitungan kebutuhan pegawai dan
+                    analisis selisih/bezetting per Bidang/Unit Kerja.
                   </p>
                 </div>
 
@@ -501,13 +526,12 @@ export default function Settings() {
                   onChange={(newCsv) =>
                     setSettings({ ...settings, petaJabatanCsv: newCsv })
                   }
-                  
                 />
-              </div>
+              </motion.div>
             )}
           </form>
         </div>
-      </div>
+      </motion.div>
     </motion.div>
   );
 }

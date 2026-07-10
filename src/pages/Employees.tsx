@@ -24,6 +24,19 @@ import { api } from "../lib/api";
 import { mapExcelHeaders } from "../lib/excelMapping";
 import { buildFamilyExportFields } from "../lib/employeeExport";
 import { motion, AnimatePresence } from "motion/react";
+import { PageHeader } from "../components/PageHeader";
+import { EmptyState } from "../components/EmptyState";
+import {
+  btnDanger,
+  btnPrimary,
+  btnSecondary,
+  card,
+  listItemMotion,
+  pageContainerVariants,
+  pageItemVariants,
+  pageShellWide,
+  statusBadge,
+} from "../lib/ui";
 
 import { DEFAULT_KAMUS } from "../constants";
 import {
@@ -31,21 +44,6 @@ import {
   formatKPLabel,
   type KPStatus,
 } from "../lib/employeeUtils";
-
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.05,
-    },
-  },
-};
-
-const itemVariants = {
-  hidden: { opacity: 0, y: 15 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.3 } },
-};
 
 /** Badge peringatan KP/KGB. Warna merah = lewat, kuning = mendekati. */
 function KPBadge({ kind, status }: { kind: "KP" | "KGB"; status: KPStatus }) {
@@ -1051,86 +1049,84 @@ export default function Employees() {
     <motion.div
       initial="hidden"
       animate="visible"
-      variants={containerVariants}
-      className="space-y-5 md:space-y-10 max-w-[1400px] mx-auto p-4 sm:p-0 pb-12 antialiased"
+      variants={pageContainerVariants}
+      className={pageShellWide}
     >
-      {/* Page Header */}
-      <motion.div
-        variants={itemVariants}
-        className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 lg:gap-6 border-b border-slate-100 pb-5 md:pb-8"
-      >
-        <div className="w-full lg:w-auto">
-          <h1 className="text-xl font-bold tracking-tight text-slate-900">
-            Direktori Pegawai
-          </h1>
-          <p className="text-[13px] text-slate-500 mt-1">
-            Kelola informasi induk pegawai, penempatan, dan rekam jejak karir
-            secara terpusat.
-          </p>
-        </div>
-        <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 sm:gap-3 w-full lg:w-auto mt-3 lg:mt-0 sm:justify-end">
-          {selectedIds.size > 0 && (
-            <button
-              onClick={() => setIsBulkDeleteModalOpen(true)}
-              className="w-full sm:w-auto justify-center group inline-flex items-center px-4 py-2 text-[12px] font-bold text-white bg-red-600 rounded-lg hover:bg-red-700 transition-all active:scale-95"
-            >
-              <Trash2 className="w-3.5 h-3.5 mr-1.5" />
-              Hapus {selectedIds.size} Data
-            </button>
-          )}
+      <motion.div variants={pageItemVariants}>
+        <PageHeader
+          title="Direktori Pegawai"
+          description="Kelola informasi induk pegawai, penempatan, dan rekam jejak karir secara terpusat."
+          actions={
+            <>
+              {selectedIds.size > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setIsBulkDeleteModalOpen(true)}
+                  className={`${btnDanger} w-full sm:w-auto`}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Hapus {selectedIds.size} Data
+                </button>
+              )}
 
-          <div className="grid grid-cols-2 sm:flex sm:flex-row w-full sm:w-auto gap-2">
-            <button
-              onClick={handleDownloadTemplate}
-              className="w-full justify-center group inline-flex items-center px-3 py-2 text-[12px] font-bold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all active:scale-95"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5 mr-1.5 text-emerald-600" />
-              Template
-            </button>
+              <div className="grid grid-cols-2 sm:flex sm:flex-row w-full sm:w-auto gap-2">
+                <button
+                  type="button"
+                  onClick={handleDownloadTemplate}
+                  className={`${btnSecondary} w-full`}
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                  Template
+                </button>
 
-            <label className="w-full justify-center group inline-flex items-center px-3 py-2 text-[12px] font-bold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all active:scale-95 cursor-pointer">
-              <Upload className="w-3.5 h-3.5 mr-1.5" />
-              Impor
-              <input
-                type="file"
-                accept=".xlsx, .xls"
-                className="hidden"
-                onChange={handleImport}
-              />
-            </label>
-          </div>
+                <label className={`${btnSecondary} w-full cursor-pointer`}>
+                  <Upload className="w-3.5 h-3.5" />
+                  Impor
+                  <input
+                    type="file"
+                    accept=".xlsx, .xls"
+                    className="hidden"
+                    onChange={handleImport}
+                  />
+                </label>
+              </div>
 
-          <div className="grid grid-cols-2 sm:flex sm:flex-row w-full sm:w-auto gap-2">
-            <button
-              onClick={handleExport}
-              className="w-full justify-center group inline-flex items-center px-3 py-2 text-[12px] font-bold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all active:scale-95"
-            >
-              <Download className="w-3.5 h-3.5 mr-1.5 text-blue-600" />
-              Ekspor
-            </button>
-            <button
-              onClick={handleExportBezetting}
-              className="w-full justify-center group inline-flex items-center px-3 py-2 text-[12px] font-bold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all active:scale-95"
-            >
-              <Download className="w-3.5 h-3.5 mr-1.5 text-amber-600" />
-              Bezetting
-            </button>
-          </div>
+              <div className="grid grid-cols-2 sm:flex sm:flex-row w-full sm:w-auto gap-2">
+                <button
+                  type="button"
+                  onClick={handleExport}
+                  className={`${btnSecondary} w-full`}
+                >
+                  <Download className="w-3.5 h-3.5 text-blue-600" />
+                  Ekspor
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportBezetting}
+                  className={`${btnSecondary} w-full`}
+                >
+                  <Download className="w-3.5 h-3.5 text-amber-600" />
+                  Bezetting
+                </button>
+              </div>
 
-          <button
-            onClick={() => {
-              setEditingEmployee(undefined);
-              setIsModalOpen(true);
-            }}
-            className="w-full sm:w-auto justify-center group inline-flex items-center px-4 py-2 text-[12px] font-bold text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-all active:scale-95 mt-1 sm:mt-0 shadow-sm"
-          >
-            <Plus className="w-3.5 h-3.5 mr-1.5" />
-            Tambah
-          </button>
-        </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingEmployee(undefined);
+                  setIsModalOpen(true);
+                }}
+                className={`${btnPrimary} w-full sm:w-auto`}
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Tambah
+              </button>
+            </>
+          }
+        />
       </motion.div>
 
-      <motion.div variants={itemVariants} className="space-y-4 md:space-y-6">
+      <motion.div variants={pageItemVariants} className="space-y-4 md:space-y-6">
         {/* Search Row */}
         <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 items-stretch sm:items-center justify-between">
           <div className="relative w-full sm:flex-1 md:w-96 group">
@@ -1162,7 +1158,7 @@ export default function Employees() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl border border-slate-100 overflow-hidden flex flex-col h-[600px] ">
+        <div className={`${card} overflow-hidden flex flex-col h-[min(600px,70vh)]`}>
           {/* Desktop Table View */}
           <div className="hidden lg:block flex-1 overflow-auto bg-slate-50">
             <table className="min-w-[1500px] w-full border-collapse bg-white">
@@ -1295,12 +1291,12 @@ export default function Employees() {
                 <AnimatePresence initial={false}>
                   {displayedEmployees.map((emp, index) => (
                     <motion.tr
-                      initial={{ opacity: 0, y: -10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.95 }}
-                      transition={{ duration: 0.2 }}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.15 }}
                       key={emp.id}
-                      className="group hover:bg-slate-50 transition-colors duration-150 border-b border-slate-100 last:border-0"
+                      className="group hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-0"
                     >
                       <td className="sticky left-0 z-10 bg-white group-hover:bg-slate-50 px-4 py-3 border-b border-r border-slate-100 whitespace-nowrap text-[10px] font-bold text-slate-400">
                         <div className="flex items-center gap-2">
@@ -1360,16 +1356,7 @@ export default function Employees() {
                         {val(emp.bidang)}
                       </td>
                       <td className="px-4 py-3 border-b border-slate-100 whitespace-nowrap">
-                        <span
-                          className={`px-2 py-0.5 inline-flex text-[9px] font-bold uppercase tracking-wider rounded-lg border
- ${
-   emp.status === "PNS"
-     ? "bg-slate-900 text-white border-slate-900"
-     : emp.status === "PPPK"
-       ? "bg-white text-slate-900 border-slate-200"
-       : "bg-slate-100 text-slate-600 border-slate-200"
- }`}
-                        >
+                        <span className={statusBadge(emp.status)}>
                           {val(emp.status)}
                         </span>
                       </td>
@@ -1384,22 +1371,11 @@ export default function Employees() {
                 </AnimatePresence>
                 {filteredEmployees.length === 0 && (
                   <tr>
-                    <td
-                      colSpan={17}
-                      className="px-6 py-16 text-center bg-white"
-                    >
-                      <div className="flex flex-col items-center justify-center">
-                        <div className="w-14 h-14 bg-slate-50 rounded-full flex items-center justify-center mb-4 ring-4 ring-white border border-slate-100">
-                          <Search className="w-6 h-6 text-slate-400" />
-                        </div>
-                        <h3 className="text-sm font-semibold text-slate-900">
-                          Data belum tersedia
-                        </h3>
-                        <p className="text-xs text-slate-500 mt-1 max-w-sm">
-                          Coba sesuaikan kata kunci pencarian atau tambahkan
-                          data kepegawaian baru.
-                        </p>
-                      </div>
+                    <td colSpan={17} className="px-6 py-8 text-center bg-white">
+                      <EmptyState
+                        title="Data belum tersedia"
+                        description="Coba sesuaikan kata kunci pencarian atau tambahkan data kepegawaian baru."
+                      />
                     </td>
                   </tr>
                 )}
@@ -1412,12 +1388,9 @@ export default function Employees() {
             <AnimatePresence initial={false}>
               {displayedEmployees.map((emp, index) => (
                 <motion.div
-                  initial={{ opacity: 0, scale: 0.95, y: -10 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  transition={{ duration: 0.2 }}
+                  {...listItemMotion}
                   key={emp.id}
-                  className="bg-white rounded-xl border border-slate-200 overflow-hidden"
+                  className={`${card} overflow-hidden`}
                 >
                   <div className="p-3 sm:p-4 border-b border-slate-100">
                     <div className="flex justify-between items-start gap-3">
@@ -1430,20 +1403,7 @@ export default function Employees() {
                         </div>
                         <KPKGBBadges emp={emp} />
                       </div>
-                      <span
-                        className={`px-2 py-1 inline-flex text-[10px] font-bold uppercase tracking-wider rounded-lg border shrink-0
- ${
-   emp.status === "PNS"
-     ? "bg-emerald-50 text-emerald-700 border-emerald-100"
-     : emp.status === "CPNS"
-       ? "bg-sky-50 text-sky-700 border-sky-100"
-       : emp.status === "PPPK"
-         ? "bg-indigo-50 text-indigo-700 border-indigo-100"
-         : emp.status === "PPPKPW"
-           ? "bg-violet-50 text-violet-700 border-violet-100"
-           : "bg-slate-50 text-slate-700 border-slate-100"
- }`}
-                      >
+                      <span className={`${statusBadge(emp.status)} shrink-0`}>
                         {emp.status || "-"}
                       </span>
                     </div>
@@ -1495,7 +1455,7 @@ export default function Employees() {
                     </button>
                     <button
                       onClick={() => handleDeleteClick(emp.id!)}
-                      className="flex-1 sm:flex-none inline-flex justify-center items-center px-4 py-2 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 rounded-xl transition-colors"
+                      className="flex-1 sm:flex-none inline-flex justify-center items-center px-4 py-2 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 rounded-lg border border-red-100 transition-colors active:scale-[0.98]"
                     >
                       <Trash2 className="w-3.5 h-3.5 mr-1.5" />
                       Hapus
@@ -1505,16 +1465,11 @@ export default function Employees() {
               ))}
             </AnimatePresence>
             {filteredEmployees.length === 0 && (
-              <div className="text-center py-16 bg-white rounded-xl border border-slate-100 flex flex-col items-center justify-center">
-                <div className="w-14 h-14 bg-slate-50 rounded-full flex items-center justify-center mb-4 ring-4 ring-white border border-slate-100">
-                  <Search className="w-6 h-6 text-slate-400" />
-                </div>
-                <h3 className="text-[13px] font-bold text-slate-900">
-                  Tidak ada data ditemukan
-                </h3>
-                <p className="text-[12px] text-slate-500 mt-1 max-w-sm">
-                  Coba sesuaikan kata kunci pencarian Anda atau tambah pegawai baru.
-                </p>
+              <div className={`${card} py-4`}>
+                <EmptyState
+                  title="Tidak ada data ditemukan"
+                  description="Coba sesuaikan kata kunci pencarian Anda atau tambah pegawai baru."
+                />
               </div>
             )}
           </div>
@@ -1539,6 +1494,7 @@ export default function Employees() {
         isOpen={isDeleteModalOpen}
         onClose={() => setIsDeleteModalOpen(false)}
         title="Konfirmasi Hapus"
+        size="md"
       >
         <div className="space-y-6">
           <div className="bg-red-50 border border-red-100 rounded-xl p-4 flex gap-4">
@@ -1560,7 +1516,7 @@ export default function Employees() {
             <button
               onClick={() => setIsDeleteModalOpen(false)}
               disabled={isDeleting}
-              className="flex-1 px-4 py-3 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-all disabled:opacity-50"
+              className={`${btnSecondary} flex-1 py-2.5 rounded-lg`}
             >
               Batal
             </button>
@@ -1587,6 +1543,7 @@ export default function Employees() {
         isOpen={isBulkDeleteModalOpen}
         onClose={() => setIsBulkDeleteModalOpen(false)}
         title="Konfirmasi Hapus Kolektif"
+        size="md"
       >
         <div className="space-y-6">
           <div className="bg-red-50 border border-red-100 rounded-xl p-4 flex gap-4">
@@ -1609,7 +1566,7 @@ export default function Employees() {
             <button
               onClick={() => setIsBulkDeleteModalOpen(false)}
               disabled={isDeletingBulk}
-              className="flex-1 px-4 py-3 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-all disabled:opacity-50"
+              className={`${btnSecondary} flex-1 py-2.5 rounded-lg`}
             >
               Batal
             </button>
@@ -1633,18 +1590,27 @@ export default function Employees() {
 
       {/* Error Toast / Alert */}
       {error && (
-        <div className="fixed bottom-6 right-6 z-50 animate-in fade-in slide-in-from-bottom-4 duration-300">
-          <div className="bg-red-600 text-white px-6 py-4 rounded-xl flex items-center gap-3">
-            <AlertCircle className="w-5 h-5" />
-            <div className="text-sm font-medium">{(error as Error).message}</div>
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 10 }}
+          className="fixed bottom-6 right-6 z-50 max-w-sm"
+        >
+          <div className="bg-white border border-red-100 text-red-700 px-4 py-3 rounded-xl flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 shrink-0 text-red-600" />
+            <div className="text-sm font-medium flex-1">
+              {(error as Error).message}
+            </div>
             <button
+              type="button"
               onClick={() => setError(null)}
-              className="ml-4 p-1 hover:bg-white/20 rounded-lg transition-colors"
+              className="p-1 hover:bg-red-50 rounded-lg transition-colors"
+              aria-label="Tutup"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
-        </div>
+        </motion.div>
       )}
     </motion.div>
   );

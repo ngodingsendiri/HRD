@@ -29,6 +29,16 @@ import {
 } from "recharts";
 import { Employee } from "../types";
 import { motion, AnimatePresence } from "motion/react";
+import { PageHeader } from "../components/PageHeader";
+import {
+  btnGhost,
+  card,
+  cardHeader,
+  pageContainerVariants,
+  pageItemVariants,
+  pageShell,
+  sectionRule,
+} from "../lib/ui";
 
 interface KgbInfo {
   id: string;
@@ -66,11 +76,6 @@ interface PensiunInfo {
   isOverdue: boolean;
   tanggalLahir: string;
 }
-
-const itemVariants = {
-  hidden: { opacity: 0, y: 15 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.4 } },
-};
 
 export default function Dashboard() {
   const [stats, setStats] = useState({
@@ -342,57 +347,38 @@ export default function Dashboard() {
     ? pensiunList
     : pensiunList.slice(0, 5);
 
-  const containerVariants = {
-    hidden: { opacity: 0 },
-    visible: {
-      opacity: 1,
-      transition: {
-        staggerChildren: 0.1,
-      },
-    },
-  };
-
   return (
     <motion.div
       initial="hidden"
       animate="visible"
-      variants={containerVariants}
-      className="space-y-4 md:space-y-10 max-w-[1200px] mx-auto p-2 sm:p-0 pb-12"
+      variants={pageContainerVariants}
+      className={pageShell}
     >
-      {/* Header */}
-      <motion.div
-        variants={itemVariants}
-        className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 pb-4 md:pb-8"
-      >
-        <div>
-          <h1 className="text-xl font-bold tracking-tight text-slate-900">
-            Dasbor Kepegawaian
-          </h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Ringkasan statistik kepegawaian dan alokasi penempatan secara
-            seketika.
-          </p>
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="h-9 px-4 bg-slate-900 text-white rounded-lg text-[12px] font-semibold flex items-center justify-center cursor-default transition-all hover:bg-slate-800">
-            {new Date().toLocaleDateString("id-ID", {
-              day: "numeric",
-              month: "long",
-              year: "numeric",
-            })}
-          </div>
-        </div>
+      <motion.div variants={pageItemVariants}>
+        <PageHeader
+          title="Dasbor Kepegawaian"
+          description="Ringkasan statistik kepegawaian dan alokasi penempatan secara seketika."
+          actions={
+            <div className="h-9 px-4 bg-slate-900 text-white rounded-lg text-[12px] font-semibold flex items-center justify-center">
+              {new Date().toLocaleDateString("id-ID", {
+                day: "numeric",
+                month: "long",
+                year: "numeric",
+              })}
+            </div>
+          }
+        />
       </motion.div>
 
       {/* Basic Stats Grid */}
       <motion.div
-        variants={itemVariants}
-        className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4 md:gap-6"
+        variants={pageItemVariants}
+        className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4"
       >
         {statCards.map((item) => (
           <div
             key={item.name}
-            className="bg-white border border-slate-100 p-3 sm:p-6 rounded-xl hover:border-slate-300 transition-colors"
+            className={`${card} p-3 sm:p-5 hover:border-slate-300 transition-colors`}
           >
             <div className="flex items-center gap-2 sm:gap-3 mb-1.5 sm:mb-3 text-slate-400">
               <item.icon className="w-4 h-4" />
@@ -415,8 +401,8 @@ export default function Dashboard() {
         
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
           {/* Chart Card */}
-          <div className="bg-white border border-slate-100 rounded-xl overflow-hidden flex flex-col xl:col-span-1">
-            <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50">
+          <div className={`${card} overflow-hidden flex flex-col xl:col-span-1`}>
+            <div className={cardHeader}>
               <h3 className="text-sm font-semibold text-slate-800">Visualisasi Komposisi</h3>
             </div>
             <div className="p-6 flex flex-col items-center justify-center flex-1">
@@ -458,8 +444,8 @@ export default function Dashboard() {
           </div>
 
           {/* List Card */}
-          <div className="bg-white border border-slate-100 rounded-xl overflow-hidden flex flex-col xl:col-span-2">
-            <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+          <div className={`${card} overflow-hidden flex flex-col xl:col-span-2`}>
+            <div className={`${cardHeader} flex justify-between items-center`}>
               <h3 className="text-sm font-semibold text-slate-800">Rincian Alokasi per Unit Kerja</h3>
               <span className="text-[10px] font-medium text-slate-400 bg-white border border-slate-200 px-2 py-1 rounded-md">
                 Total: {stats.total} Pegawai
@@ -476,7 +462,7 @@ export default function Dashboard() {
               <div className="divide-y divide-slate-50 flex-1 overflow-y-auto" style={{ maxHeight: "400px" }}>
                 {bidangStats.map((bidang, index) => (
                   <motion.div
-                    variants={itemVariants}
+                    variants={pageItemVariants}
                     key={bidang.name}
                     className="grid grid-cols-12 gap-4 px-5 py-3.5 hover:bg-slate-50/50 transition-colors group items-center"
                   >
@@ -504,7 +490,7 @@ export default function Dashboard() {
       </div>
 
 {/* KGB Countdown Section */}
-      <div className="space-y-6 pt-10 sm:pt-14 mt-8 sm:mt-12 border-t-2 border-slate-100">
+      <div className="space-y-6 pt-8 sm:pt-10 mt-6 sm:mt-8 border-t border-slate-200">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h2 className="text-sm border-l-2 pl-3 border-sky-500 font-bold text-slate-800 uppercase tracking-wide flex items-center gap-2">
@@ -519,7 +505,7 @@ export default function Dashboard() {
           {kgbList.length > 5 && (
             <button
               onClick={() => setShowAllKgb(!showAllKgb)}
-              className="text-xs font-semibold text-slate-600 hover:text-slate-900 border border-slate-200 bg-white hover:bg-slate-50 rounded-lg px-4 py-2 flex items-center justify-center gap-2 transition-all active:scale-95"
+              className={btnGhost}
             >
               {showAllKgb ? (
                 <>
@@ -535,7 +521,7 @@ export default function Dashboard() {
           )}
         </div>
 
-        <div className="bg-white border border-slate-100 rounded-xl overflow-hidden">
+        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-[13px] whitespace-nowrap">
               <thead className="bg-slate-50/50 border-b border-slate-100 uppercase text-[9px] sm:text-[10px] tracking-widest font-bold text-slate-500">
@@ -561,7 +547,7 @@ export default function Dashboard() {
                 <AnimatePresence>
                   {displayedKgb.map((kgb) => (
                     <motion.tr
-                      variants={itemVariants}
+                      variants={pageItemVariants}
                       initial="hidden"
                       animate="visible"
                       exit="hidden"
@@ -650,7 +636,7 @@ export default function Dashboard() {
       </div>
 
       {/* Kenaikan Pangkat (KP) Countdown Section */}
-      <div className="space-y-6 pt-10 sm:pt-14 mt-8 sm:mt-12 border-t-2 border-slate-100">
+      <div className="space-y-6 pt-8 sm:pt-10 mt-6 sm:mt-8 border-t border-slate-200">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h2 className="text-sm border-l-2 pl-3 border-emerald-500 font-bold text-slate-800 uppercase tracking-wide flex items-center gap-2">
@@ -665,7 +651,7 @@ export default function Dashboard() {
           {kpList.length > 5 && (
             <button
               onClick={() => setShowAllKp(!showAllKp)}
-              className="text-xs font-semibold text-slate-600 hover:text-slate-900 border border-slate-200 bg-white hover:bg-slate-50 rounded-lg px-4 py-2 flex items-center justify-center gap-2 transition-all active:scale-95"
+              className={btnGhost}
             >
               {showAllKp ? (
                 <>
@@ -681,7 +667,7 @@ export default function Dashboard() {
           )}
         </div>
 
-        <div className="bg-white border border-slate-100 rounded-xl overflow-hidden">
+        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-[13px] whitespace-nowrap">
               <thead className="bg-slate-50/50 border-b border-slate-100 uppercase text-[9px] sm:text-[10px] tracking-widest font-bold text-slate-500">
@@ -707,7 +693,7 @@ export default function Dashboard() {
                 <AnimatePresence>
                   {displayedKp.map((kp) => (
                     <motion.tr
-                      variants={itemVariants}
+                      variants={pageItemVariants}
                       initial="hidden"
                       animate="visible"
                       exit="hidden"
@@ -792,7 +778,7 @@ export default function Dashboard() {
         </div>
 
         {/* Pensiun List */}
-        <div className="space-y-6 pt-10 sm:pt-14 mt-8 sm:mt-12 border-t-2 border-slate-100">
+        <div className="space-y-6 pt-8 sm:pt-10 mt-6 sm:mt-8 border-t border-slate-200">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-3 px-1">
             <div>
               <h2 className="text-sm border-l-2 pl-3 border-amber-500 font-bold text-slate-800 uppercase tracking-wide flex items-center gap-2">
@@ -807,7 +793,7 @@ export default function Dashboard() {
             {pensiunList.length > 5 && (
               <button
                 onClick={() => setShowAllPensiun(!showAllPensiun)}
-                className="text-xs font-bold text-amber-600 hover:text-amber-700 transition-all active:scale-95 flex items-center gap-1 bg-amber-50 px-3 py-1.5 rounded-lg"
+                className={btnGhost}
               >
                 {showAllPensiun ? (
                   <>
@@ -822,7 +808,7 @@ export default function Dashboard() {
               </button>
             )}
           </div>
-          <div className="bg-white border border-slate-100 rounded-xl overflow-x-auto ">
+          <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto ">
             <table className="w-full text-left text-[13px] whitespace-nowrap">
               <thead className="bg-slate-50/50 border-b border-slate-100 uppercase text-[9px] sm:text-[10px] tracking-widest font-bold text-slate-500">
                 <tr>
@@ -847,7 +833,7 @@ export default function Dashboard() {
                 <AnimatePresence>
                   {displayedPensiun.map((pensiun) => (
                     <motion.tr
-                      variants={itemVariants}
+                      variants={pageItemVariants}
                       initial="hidden"
                       animate="visible"
                       exit="hidden"

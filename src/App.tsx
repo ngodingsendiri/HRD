@@ -11,10 +11,11 @@ import Settings from "./pages/Settings";
 import Print from "./pages/Print";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { useEffect, useState } from "react";
-import { LogIn } from "lucide-react";
+import { LogIn, Loader2 } from "lucide-react";
 import { Toaster, toast } from "sonner";
-import { motion, AnimatePresence } from "motion/react";
+import { motion } from "motion/react";
 import { useAuth } from "./lib/auth";
+import { btnPrimary, easeOut, input, label } from "./lib/ui";
 
 export default function App() {
   const { user, loading, setUser } = useAuth();
@@ -76,24 +77,25 @@ export default function App() {
         toast.success("Login berhasil");
         setUser(data.user);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Detail error login:", err);
-      toast.error("Terjadi kesalahan saat login.", { description: err?.message || String(err) });
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error("Terjadi kesalahan saat login.", { description: message });
     } finally {
       setIsSubmitting(false);
     }
   };
 
-
-
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="text-slate-500 font-medium tracking-wider"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={easeOut}
+          className="flex items-center gap-2 text-slate-500 text-sm font-medium"
         >
+          <Loader2 className="w-4 h-4 animate-spin" />
           Memuat...
         </motion.div>
       </div>
@@ -102,48 +104,53 @@ export default function App() {
 
   if (!user) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4 bg-slate-50">
-        <Toaster position="top-right" richColors />
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <Toaster position="top-right" richColors closeButton />
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
+          initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, ease: "easeOut" }}
-          className="max-w-md w-full bg-white p-8 rounded-xl border border-slate-200"
+          transition={easeOut}
+          className="max-w-md w-full bg-white p-6 sm:p-8 rounded-xl border border-slate-200"
         >
-          <div className="w-16 h-16 bg-slate-900 text-white rounded-xl flex items-center justify-center mx-auto mb-6">
-            <LogIn className="w-8 h-8" />
+          <div className="w-12 h-12 bg-slate-900 text-white rounded-xl flex items-center justify-center mx-auto mb-5">
+            <LogIn className="w-5 h-5" />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900 mb-2 text-center">
-            HRCube Login
+          <h1 className="text-xl font-bold tracking-tight text-slate-900 mb-1 text-center">
+            HRCube
           </h1>
-          <p className="text-slate-500 mb-8 text-sm text-center">
-            Masukkan email dan password untuk masuk ke sistem.
+          <p className="text-slate-500 mb-6 text-sm text-center">
+            Masuk dengan akun admin untuk mengelola data kepegawaian.
           </p>
 
-          <form
-            onSubmit={handleLogin}
-            className="flex flex-col gap-4"
-          >
-            <div className="space-y-1">
-              <label className="text-sm font-medium text-slate-700">Email</label>
+          <form onSubmit={handleLogin} className="flex flex-col gap-4">
+            <div className="space-y-1.5">
+              <label htmlFor="login-email" className={label}>
+                Email
+              </label>
               <input
+                id="login-email"
                 type="email"
                 required
+                autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900"
+                className={input}
                 placeholder="email@contoh.com"
               />
             </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium text-slate-700">Password</label>
+            <div className="space-y-1.5">
+              <label htmlFor="login-password" className={label}>
+                Password
+              </label>
               <input
+                id="login-password"
                 type="password"
                 required
                 minLength={6}
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900"
+                className={input}
                 placeholder="••••••••"
               />
             </div>
@@ -151,13 +158,18 @@ export default function App() {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full mt-2 flex items-center justify-center gap-2 bg-slate-900 text-white py-2.5 px-4 rounded-lg hover:bg-slate-800 active:scale-[0.98] transition-all font-medium disabled:opacity-70"
+              className={`${btnPrimary} w-full mt-1 py-2.5`}
             >
-              {isSubmitting ? "Memproses..." : "Masuk"}
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Memproses...
+                </>
+              ) : (
+                "Masuk"
+              )}
             </button>
           </form>
-
-
         </motion.div>
       </div>
     );
@@ -165,7 +177,7 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      <Toaster position="top-right" richColors />
+      <Toaster position="top-right" richColors closeButton />
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Layout />}>

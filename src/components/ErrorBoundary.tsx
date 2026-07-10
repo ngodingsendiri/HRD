@@ -1,5 +1,6 @@
 import { Component, ErrorInfo, ReactNode } from "react";
 import { AlertCircle } from "lucide-react";
+import { btnPrimary, card } from "../lib/ui";
 
 interface Props {
   children?: ReactNode;
@@ -27,19 +28,27 @@ export class ErrorBoundary extends Component<Props, State> {
   public render() {
     const { hasError, error } = this.state;
     if (hasError) {
-      const errorMessage = error?.message || "Terjadi kesalahan yang tidak terduga.";
+      const errorMessage =
+        error?.message || "Terjadi kesalahan yang tidak terduga.";
 
       return (
         <div className="min-h-[400px] flex items-center justify-center p-6">
-          <div className="max-w-md w-full bg-red-50 border border-red-200 rounded-xl p-6 flex flex-col items-center text-center">
-            <AlertCircle className="w-12 h-12 text-red-500 mb-4" />
-            <h2 className="text-lg font-semibold text-red-800 mb-2">
-              Oops! Terjadi Kesalahan
+          <div
+            className={`${card} max-w-md w-full p-6 flex flex-col items-center text-center border-red-100`}
+          >
+            <div className="w-12 h-12 rounded-xl bg-red-50 border border-red-100 flex items-center justify-center mb-4">
+              <AlertCircle className="w-6 h-6 text-red-600" />
+            </div>
+            <h2 className="text-lg font-semibold tracking-tight text-slate-900 mb-2">
+              Terjadi Kesalahan
             </h2>
-            <p className="text-sm text-red-600 mb-6">{errorMessage}</p>
+            <p className="text-sm text-slate-500 mb-6 leading-relaxed">
+              {errorMessage}
+            </p>
             <button
+              type="button"
               onClick={() => window.location.reload()}
-              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 active:scale-[0.98] transition-all text-sm font-medium"
+              className={btnPrimary}
             >
               Muat Ulang Halaman
             </button>

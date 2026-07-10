@@ -306,7 +306,7 @@ const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
                 <motion.tr initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                   <td colSpan={6} className="px-6 py-16 text-center bg-white border-b border-slate-100">
                     <div className="flex flex-col items-center justify-center">
-                      <div className="w-14 h-14 bg-slate-50 rounded-full flex items-center justify-center mb-4 ring-4 ring-white border border-slate-100">
+                      <div className="w-14 h-14 bg-slate-50 rounded-xl flex items-center justify-center mb-4 border border-slate-100">
                         <Database className="w-6 h-6 text-slate-400" />
                       </div>
                       <h3 className="text-[13px] font-bold text-slate-900">
