@@ -1,13 +1,13 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { requireApiKey } from "../_lib/apiKey.js";
-import { prisma } from "../../src/lib/db.js";
+import { requireApiKey } from "../../_lib/apiKey.js";
+import { prisma } from "../../../src/lib/db.js";
 import {
   buildKgbList,
   buildKpList,
   buildPensiunList,
   normalizeBidangLabel,
-} from "../../src/lib/dashboardStats.js";
-import { fetchAllTimelineRows } from "../../src/lib/statsTimeline.js";
+} from "../../../src/lib/dashboardStats.js";
+import { fetchAllTimelineRows } from "../../../src/lib/statsTimeline.js";
 import {
   clientIp,
   ensureRequestId,
@@ -15,7 +15,7 @@ import {
   sendError,
   withErrorBoundary,
   applyPublicApiCors,
-} from "../_lib/http.js";
+} from "../../_lib/http.js";
 
 /**
  * GET /api/v1/stats — same payload as session /api/stats (API key + stats:read).

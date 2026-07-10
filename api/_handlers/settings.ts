@@ -1,14 +1,14 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { getSettings, upsertSettings, type SettingsInclude } from "../src/lib/queries.js";
-import { AppSettingsSchema } from "../src/lib/schemas.js";
-import { requireAdmin, requireStaff } from "./_lib/session.js";
-import { writeAuditLog } from "../src/lib/audit.js";
+import { getSettings, upsertSettings, type SettingsInclude } from "../../src/lib/queries.js";
+import { AppSettingsSchema } from "../../src/lib/schemas.js";
+import { requireAdmin, requireStaff } from "../_lib/session.js";
+import { writeAuditLog } from "../../src/lib/audit.js";
 import {
   MAX_LOGO_BASE64_CHARS,
   ensureRequestId,
   sendError,
   withErrorBoundary,
-} from "./_lib/http.js";
+} from "../_lib/http.js";
 
 /**
  * GET /api/settings?include=core,logo,kamus,peta|all

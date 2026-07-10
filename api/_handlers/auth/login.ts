@@ -1,15 +1,15 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import bcrypt from "bcryptjs";
-import { prisma } from "../../src/lib/db.js";
-import { createSession, resolveAccess } from "../_lib/session.js";
-import { writeAuditLog } from "../../src/lib/audit.js";
+import { prisma } from "../../../src/lib/db.js";
+import { createSession, resolveAccess } from "../../_lib/session.js";
+import { writeAuditLog } from "../../../src/lib/audit.js";
 import {
   clientIp,
   ensureRequestId,
   sendError,
   withErrorBoundary,
-} from "../_lib/http.js";
-import { rateLimitDb } from "../_lib/rateLimitDb.js";
+} from "../../_lib/http.js";
+import { rateLimitDb } from "../../_lib/rateLimitDb.js";
 
 /**
  * POST /api/auth/login

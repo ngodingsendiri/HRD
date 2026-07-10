@@ -7,7 +7,7 @@ Internal HR app: **React (Vite PWA) + Vercel Serverless API + Prisma/Neon**.
 ## 1. Architecture (do not break)
 
 ```
-Browser (src/)  →  fetch /api/*  →  Vercel Node handlers (api/)  →  Prisma  →  Neon Postgres
+Browser (src/)  →  fetch /api/*  →  Vercel catch-all (1 function)  →  handlers  →  Prisma  →  Neon
 ```
 
 | Layer | Path | Rules |
@@ -16,8 +16,12 @@ Browser (src/)  →  fetch /api/*  →  Vercel Node handlers (api/)  →  Prisma
 | API client | `src/lib/api.ts` | Only gateway from React to backend |
 | Domain pure | `src/lib/employeeImport.ts`, `dashboardStats.ts`, `employeeUtils.ts`, `schemas.ts` | Shared, unit-tested; no HTTP |
 | Data access | `src/lib/queries.ts` | Only place that calls Prisma (except audit/db helpers) |
-| HTTP | `api/**/*.ts` | Thin handlers: auth, validate, status codes |
+| HTTP entry | `api/[[...path]].ts` | **Single** Serverless Function (Hobby ≤12 limit) |
+| Handlers | `api/_handlers/**` | Private modules; not separate Vercel functions |
+| Shared API libs | `api/_lib/**` | session, http, apiKey, rateLimitDb |
 | Auth | `api/_lib/session.ts`, `authEnv.ts` | Cookie session + RBAC |
+
+**Do not** add new top-level `api/foo.ts` endpoints — register routes in `api/[[...path]].ts` and put handlers under `api/_handlers/`.
 
 ---
 

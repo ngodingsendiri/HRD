@@ -105,6 +105,21 @@ npm run dev            # http://localhost:5173
 3. Build: `npm run build` (sudah di `package.json` / `vercel.json`)  
 4. Setelah deploy: `npx prisma migrate deploy` terhadap DB production  
 
+### Serverless function budget (Hobby)
+
+Vercel **Hobby** = max **12** Serverless Functions per deployment.
+
+Proyek ini sengaja memakai **1 function** saja:
+
+| Path | Peran |
+|------|--------|
+| `api/[[...path]].ts` | Catch-all router untuk seluruh `/api/*` |
+| `api/_handlers/**` | Implementasi handler (folder `_` = **bukan** function terpisah) |
+| `api/_lib/**` | Shared helpers (bukan function) |
+
+URL publik **tidak berubah** (`/api/employees`, `/api/v1/stats`, …).  
+Jangan menambah file `api/*.ts` di root API — daftarkan route di catch-all + handler di `_handlers`.
+
 ### Checklist
 
 - [ ] `DATABASE_URL` + `DIRECT_URL`  

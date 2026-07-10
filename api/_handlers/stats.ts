@@ -1,15 +1,15 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { prisma } from "../src/lib/db.js";
+import { prisma } from "../../src/lib/db.js";
 import {
   buildKgbList,
   buildKpList,
   buildPensiunList,
   normalizeBidangLabel,
   type DashboardStats,
-} from "../src/lib/dashboardStats.js";
-import { fetchAllTimelineRows } from "../src/lib/statsTimeline.js";
-import { requireStaff } from "./_lib/session.js";
-import { ensureRequestId, sendError, withErrorBoundary } from "./_lib/http.js";
+} from "../../src/lib/dashboardStats.js";
+import { fetchAllTimelineRows } from "../../src/lib/statsTimeline.js";
+import { requireStaff } from "../_lib/session.js";
+import { ensureRequestId, sendError, withErrorBoundary } from "../_lib/http.js";
 
 /**
  * GET /api/stats — aggregates via SQL groupBy + full timeline scan.
