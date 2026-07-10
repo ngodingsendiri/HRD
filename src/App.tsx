@@ -5,9 +5,6 @@
 
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Layout from "./components/Layout";
-import Dashboard from "./pages/Dashboard";
-import Employees from "./pages/Employees";
-import Print from "./pages/Print";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { useEffect, useState, lazy, Suspense } from "react";
 import { LogIn, Loader2 } from "lucide-react";
@@ -16,8 +13,20 @@ import { motion } from "motion/react";
 import { useAuth } from "./lib/auth";
 import { btnPrimary, easeOut, input, label } from "./lib/ui";
 
-/** Settings is code-split so heavy kamus/peta/xlsx never load until needed. */
+/** Route-level code split — keep initial JS small. */
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Employees = lazy(() => import("./pages/Employees"));
+const Print = lazy(() => import("./pages/Print"));
 const Settings = lazy(() => import("./pages/Settings"));
+
+function RouteFallback() {
+  return (
+    <div className="flex items-center justify-center min-h-[40vh] gap-2 text-sm text-slate-500">
+      <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
+      Memuat halaman…
+    </div>
+  );
+}
 
 export default function App() {
   const { user, loading, setUser } = useAuth();
@@ -121,7 +130,7 @@ export default function App() {
             HRCube
           </h1>
           <p className="text-slate-500 mb-6 text-sm text-center">
-            Masuk dengan akun admin untuk mengelola data kepegawaian.
+            Masuk dengan akun Anda untuk mengakses data kepegawaian.
           </p>
 
           <form onSubmit={handleLogin} className="flex flex-col gap-4">
@@ -183,20 +192,34 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Layout />}>
-            <Route index element={<Dashboard />} />
-            <Route path="employees" element={<Employees />} />
-            <Route path="print" element={<Print />} />
+            <Route
+              index
+              element={
+                <Suspense fallback={<RouteFallback />}>
+                  <Dashboard />
+                </Suspense>
+              }
+            />
+            <Route
+              path="employees"
+              element={
+                <Suspense fallback={<RouteFallback />}>
+                  <Employees />
+                </Suspense>
+              }
+            />
+            <Route
+              path="print"
+              element={
+                <Suspense fallback={<RouteFallback />}>
+                  <Print />
+                </Suspense>
+              }
+            />
             <Route
               path="settings"
               element={
-                <Suspense
-                  fallback={
-                    <div className="flex items-center justify-center h-64 gap-2 text-sm text-slate-500">
-                      <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
-                      Memuat pengaturan…
-                    </div>
-                  }
-                >
+                <Suspense fallback={<RouteFallback />}>
                   <Settings />
                 </Suspense>
               }

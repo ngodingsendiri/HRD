@@ -1,23 +1,24 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import bcrypt from "bcryptjs";
 import { prisma } from "../../src/lib/db.js";
-import { createSession, isAdminEmail } from "../_lib/session.js";
-import { clientIp, rateLimit, sendError, withErrorBoundary } from "../_lib/http.js";
+import { createSession, resolveAccess } from "../_lib/session.js";
+import { writeAuditLog } from "../../src/lib/audit.js";
+import {
+  clientIp,
+  ensureRequestId,
+  sendError,
+  withErrorBoundary,
+} from "../_lib/http.js";
+import { rateLimitDb } from "../_lib/rateLimitDb.js";
 
 /**
  * POST /api/auth/login
- * Body: { "email": string, "password": string }
+ * Body: { email, password }
  *
- * Verifies credentials against the `users` table (bcrypt-hashed passwords),
- * enforces ADMIN_EMAILS allowlist, and creates a DB-backed session.
- *
- * Responses:
- *   200 { user: { id, email, name, image } }
- *   400 { error: "Email dan password wajib diisi" }
- *   401 { error: "Email atau password salah" }
- *   403 { error: "Akun tidak memiliki akses admin" }
- *   429 { error: "Terlalu banyak percobaan..." }
- *   500 { error: "Terjadi kesalahan internal" }
+ * Access:
+ *   - Valid credentials in `users`
+ *   - role ADMIN | VIEWER (default ADMIN), or email on ADMIN_EMAILS
+ * Write (canWrite): role ADMIN or ADMIN_EMAILS allowlist
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {
@@ -26,8 +27,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   return withErrorBoundary(res, "login", async () => {
+    const requestId = ensureRequestId(req, res);
     const ip = clientIp(req);
-    const limited = rateLimit(`login:${ip}`, { limit: 10, windowMs: 15 * 60 * 1000 });
+    // Distributed (Neon) — works across Vercel isolates
+    const limited = await rateLimitDb(`login:${ip}`, {
+      limit: 10,
+      windowMs: 15 * 60 * 1000,
+    });
     if (!limited.ok) {
       res.setHeader("Retry-After", String(limited.retryAfterSec));
       return sendError(res, 429, "Terlalu banyak percobaan login. Coba lagi nanti.");
@@ -40,8 +46,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return sendError(res, 400, "Email dan password wajib diisi");
     }
 
-    // Also rate-limit by email to slow targeted guessing.
-    const emailLimited = rateLimit(`login-email:${email}`, {
+    const emailLimited = await rateLimitDb(`login-email:${email}`, {
       limit: 10,
       windowMs: 15 * 60 * 1000,
     });
@@ -52,22 +57,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const user = await prisma.user.findUnique({ where: { email } });
 
-    // Use a dummy hash compare to keep timing roughly constant when the user
-    // does not exist, so attackers cannot enumerate accounts via timing.
-    const dummyHash = "$2a$10$CwTycUXWue0Thq9StjUM0uJ8.5gQJ0m3Nk2oQ8q5r6o1m2n3o4p5q";
+    // Valid bcrypt hash of a random string — keeps compare timing similar when user missing
+    const dummyHash =
+      "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy";
     const passwordHash = user?.password ?? dummyHash;
-    const isValid = await bcrypt.compare(password, passwordHash);
+    let isValid = false;
+    try {
+      isValid = await bcrypt.compare(password, passwordHash);
+    } catch {
+      isValid = false;
+    }
 
     if (!user || !user.password || !isValid) {
       return sendError(res, 401, "Email atau password salah");
     }
 
-    // Enforce allowlist at login so non-admins never receive a session cookie.
-    if (!isAdminEmail(user.email)) {
-      return sendError(res, 403, "Akun tidak memiliki akses admin");
+    const access = resolveAccess(user.email, (user as { role?: string }).role);
+    if (!access.allowed) {
+      return sendError(res, 403, "Akun tidak memiliki akses");
     }
 
     await createSession(res, user.id);
+    await writeAuditLog({
+      actor: { id: user.id, email: user.email },
+      action: "auth.login",
+      entityType: "session",
+      entityId: user.id,
+      meta: { requestId, ip, role: access.role },
+    });
 
     return res.status(200).json({
       user: {
@@ -75,6 +92,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         email: user.email,
         name: user.name,
         image: user.image,
+        role: access.role,
+        canWrite: access.canWrite,
       },
     });
   });

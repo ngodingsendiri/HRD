@@ -1,9 +1,10 @@
 /**
- * Backwards-compatible re-export of the auth guard.
- *
- * Data handlers (api/employees.ts, api/settings.ts, …) import
- * `requireAdmin` from "./_lib/auth.js". The real implementation now lives in
- * session.ts; this file keeps the old import path working so those handlers
- * require zero changes.
+ * Backwards-compatible re-export.
+ * Prefer importing from `./session.js` in new code.
  */
-export { requireAdmin, type AdminUser } from "./session.js";
+export {
+  requireAdmin,
+  requireStaff,
+  type StaffUser as AdminUser,
+  type StaffUser,
+} from "./session.js";

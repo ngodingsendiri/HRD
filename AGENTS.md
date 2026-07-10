@@ -1,38 +1,166 @@
-# Theme Guidelines: Professional, Simple & Flat
+# HRCube — Agent & Contributor Guide
 
-When building or styling UIs in this project, strictly adhere to the following design system to maintain a cohesive, professional, flat, and modern interface:
+Internal HR app: **React (Vite PWA) + Vercel Serverless API + Prisma/Neon**.
 
-## 1. Overall Aesthetic (Flat & Minimal)
-- **Flat Design:** No gradients (`bg-gradient`, `from-*`, `to-*`), no heavy or blurry shadows (`shadow-md`, `shadow-lg`, `shadow-2xl` etc.).
-- **Structure via Borders:** Use subtle borders (`border border-slate-200` or `border-slate-100`) to define hierarchy instead of shadows.
+---
 
-## 2. Background & Textures
-- **Main Background:** Use `bg-slate-50`.
-- **Subtle Grid:** Implement a faint architectural grid background using CSS linear-gradients on the `body` (e.g., repeating 1px lines every 24px with `rgba(226, 232, 240, 0.4)`).
-- **Cards/Containers:** Pure `bg-white` with a `slate-200` border to stand out cleanly from the grid.
+## 1. Architecture (do not break)
 
-## 3. Shapes & Radiuses
-- Consistently use **`rounded-xl`** for main containers, cards, dialogs, and modals.
-- Consistently use **`rounded-lg`** for smaller interactive elements like buttons, inputs, and badges. 
-- Avoid excessively round corners (e.g., `rounded-2xl`, `rounded-3xl` or full pills) unless it is specifically an avatar or icon container.
+```
+Browser (src/)  →  fetch /api/*  →  Vercel Node handlers (api/)  →  Prisma  →  Neon Postgres
+```
 
-## 4. Interactive States (Hover, Active, Focus)
-- **Hover:** Keep it subtle. `hover:bg-slate-50` for white buttons, or `hover:bg-slate-800` for primary buttons.
-- **Active:** Add small tactile feedback using `active:scale-[0.98]` or `active:scale-95`.
-- **Focus Rings:** Flat, sharp rings strictly without blur. Use: `focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900`. 
-- Avoid default blue outlines or thick blurry `focus:ring-4`.
+| Layer | Path | Rules |
+|-------|------|--------|
+| UI | `src/` | Never import Prisma / `queries.ts` / `db.ts` |
+| API client | `src/lib/api.ts` | Only gateway from React to backend |
+| Domain pure | `src/lib/employeeImport.ts`, `dashboardStats.ts`, `employeeUtils.ts`, `schemas.ts` | Shared, unit-tested; no HTTP |
+| Data access | `src/lib/queries.ts` | Only place that calls Prisma (except audit/db helpers) |
+| HTTP | `api/**/*.ts` | Thin handlers: auth, validate, status codes |
+| Auth | `api/_lib/session.ts`, `authEnv.ts` | Cookie session + RBAC |
 
-## 5. Color Palette (High-Contrast Neutral)
-- **Primary Elements:** `slate-900` for bold UI anchors, primary actions, and major headings. 
-- **Secondary Elements:** `slate-500` for helper texts and inactive icons.
-- **Status/State Colors:** Use soft background tints paired with deep text and a distinct, faint border (e.g., `bg-emerald-50 text-emerald-700 border border-emerald-100`).
+---
 
-## 6. Typography
-- **Clean tracking:** Apply `tracking-tight` carefully on large headings, and keep body text clean.
-- Ensure typographic hierarchy via `font-bold`, `font-semibold`, and `text-sm`/`text-xs`.
+## 2. Auth & roles
 
-## 7. Motion & Animations
-- **Library:** Use `framer-motion` (atau `motion/react`).
-- **Transitions:** Use smooth, professional ease-outs (`transition={{ duration: 0.2, ease: "easeOut" }}`).
-- **Mount/Unmount:** Wrap dynamic lists or changing states with `<AnimatePresence>` and apply layout animations (`layout`).
-- **Initial States:** Simple fade-ins (`opacity: 0` to `opacity: 1`) or slight slide-ups (`y: 10` to `y: 0`). Nothing too bouncy or dramatic.
+| Role | Read APIs | Write APIs |
+|------|-----------|------------|
+| `ADMIN` | ✅ | ✅ |
+| `VIEWER` | ✅ | ❌ 403 |
+| `ADMIN_EMAILS` env | always treated as **ADMIN** (bootstrap) |
+
+- Cookie: HttpOnly `hrcube_session`, SameSite=Lax, Secure in production.
+- Guards: `requireStaff` (read), `requireAdmin` (write).
+- Logout: `POST /api/auth/logout` body `{ allDevices?: true }` revokes all sessions.
+- `AUTH_SECRET` **required** in production (fail hard).
+
+---
+
+## 3. API surface (current)
+
+### Session (cookie)
+
+| Method | Path | Access | Notes |
+|--------|------|--------|--------|
+| POST | `/api/auth/login` | public | rate limited |
+| POST | `/api/auth/logout` | public | optional allDevices |
+| GET | `/api/auth/me` | public | returns user or null |
+| GET | `/api/employees` | staff | `{ data, total, limit, offset }` |
+| POST/PUT/DELETE | `/api/employees` | admin | create / bulk-upsert / bulk-delete |
+| GET/PUT/DELETE | `/api/employees/:id` | staff / admin | |
+| GET/PUT | `/api/settings?include=` | staff / admin | `core,logo,kamus,peta,all` |
+| GET | `/api/stats` | staff | dashboard aggregates |
+| GET | `/api/health` | public | DB ping |
+
+### External API (API key — for other apps)
+
+| Method | Path | Auth | Scope |
+|--------|------|------|--------|
+| GET | `/api/v1/employees` | Bearer / `X-API-Key` | `employees:read` |
+| GET | `/api/v1/employees/:id` | Bearer / `X-API-Key` | `employees:read` |
+| GET | `/api/v1/stats` | Bearer / `X-API-Key` | `stats:read` |
+| GET | `/api/v1/settings` | Bearer / `X-API-Key` | `settings:read` (default `include=core`) |
+| GET | `/api/v1/openapi` | public | discovery doc |
+| GET/POST | `/api/v1/keys` | **session admin** | manage keys (not via API key) |
+| DELETE | `/api/v1/keys/:id` | **session admin** | revoke |
+
+- Keys: prefix `hrc_…`, only **SHA-256 hash** stored (`api_keys` table).
+- No wildcard scopes; max **25** active keys; create rate-limited.
+- UI: **Pengaturan → API & Integrasi** (generate once, copy, revoke).
+- Auth helpers: `api/_lib/apiKey.ts`; CRUD: `src/lib/apiKeys.ts`.
+- CORS enabled on v1 data endpoints for browser clients.
+- Rate limit: IP + per-key (e.g. employees ~120/min IP, ~300/min key).
+- `lastUsedAt` throttled (5 min) and awaited (serverless-safe).
+
+Import machine: client maps Excel → `normalizeEmployeeForImport` (also on server bulk).  
+Template source of truth: `src/lib/employeeImport.ts` (`IMPORT_COLUMNS`).
+
+---
+
+## 4. UI design system (strict)
+
+Use tokens from **`src/lib/ui.ts`** (`pageShell`, `card`, `btnPrimary`, `input`, motion variants).
+
+### Aesthetic
+- **Flat:** no gradients, no heavy shadows (`shadow-md+`).
+- **Structure:** borders `border-slate-200` / `border-slate-100`.
+- **Background:** `bg-slate-50` + 24px grid on `body` (`src/index.css`).
+- **Cards:** `bg-white` + `rounded-xl`.
+- **Controls:** `rounded-lg`, focus `ring-1 ring-slate-900`.
+- **No indigo/random brand colors** for actions — slate + semantic status only.
+
+### Motion
+- Library: `motion/react`.
+- Duration **0.2s**, ease **easeOut**, slide **y ≤ 10**, stagger **0.05**.
+- No bounce / spring drama.
+
+### Feedback (single language)
+- Success / error → `notify` from `src/lib/notify.ts` (Sonner toast).
+- Destructive confirm → `<ConfirmDialog />` (never `window.confirm` / `alert`).
+- Import results → `<ImportResultDialog />`.
+- Loading lists → `<TableSkeleton />` / `<PageSkeleton />`.
+- Empty → `<EmptyState />` + clear CTA when possible.
+
+### Page chrome
+- Titles via `<PageHeader />`.
+- One primary action per screen; secondary actions in “Lainnya”.
+- Mobile: **bottom nav only** (no hamburger sidebar). Desktop: sidebar.
+
+### Copy
+- Short operator language (“Pegawai”, “Simpan”, “Ringkasan”), not pejabat jargon.
+
+---
+
+## 5. Data rules
+
+- **Stored vs derived:** never persist `masaKerja`, `kelasJabatan`, `bebanKerja`, `pensiun`, prediksi KP/KGB — compute on read.
+- **Kamus:** server loads from settings when listing employees.
+- **NIP 18 (PNS/CPNS):** can fill tgl lahir / TMT / JK if empty (import + form).
+- **Audit:** writes go to `audit_logs` (best-effort; never fail the request).
+- **Bulk import:** max 500 rows; chunked transactions; `errorDetails[]` in response.
+
+---
+
+## 6. Scripts
+
+```bash
+npm run dev          # Vite
+npm run build        # prisma generate + vite build
+npm run lint         # tsc --noEmit
+npm test             # vitest
+npm run db:deploy    # prisma migrate deploy
+npm run create-admin # ADMIN_EMAIL + ADMIN_PASSWORD (+ ADMIN_ROLE)
+```
+
+---
+
+## 7. Performance rules
+
+- **Lazy-load every page route** (`React.lazy` in `App.tsx`).
+- **Never** static-import `xlsx` / heavy sheets in page modules — `await import("xlsx")` on action.
+- List API default **50** rows; max **500**. Use `q`, `status`, `alert`, `offset`.
+- Read path: fast mapper (`mapRow`), **no Zod per row**. Zod = writes only.
+- Kamus CSV cached 60s in-process (`getKamusCsv`); invalidate on settings save.
+- Stats: SQL `groupBy` for counts; slim select for timelines.
+- No full-list polling every 60s — manual refresh or refetch on mutation.
+- Vite `manualChunks`: `xlsx`, `charts`, `motion`, `react-vendor`.
+- Log slow handlers via `x-response-time` header (`withErrorBoundary`).
+
+## 8. What not to do
+
+- Do not reintroduce NextAuth / Auth.js bridges on Vercel Node.
+- Do not put passwords or real secrets in docs or seed scripts.
+- Do not import `xlsx` at module top of pages — keep dynamic/lazy.
+- Do not add `Chat` nav until the feature is real.
+- Do not `getEmployees({ limit: 2000 })` for UI tables — paginate.
+
+---
+
+## 8. Docs map
+
+| File | Purpose |
+|------|---------|
+| `README.md` | Product overview + quick start |
+| `SETUP.md` | Env, migrate, admin, deploy |
+| `AGENTS.md` | This file — conventions for humans & coding agents |
+| `AUDIT.md` | Historical security/UI audit notes |

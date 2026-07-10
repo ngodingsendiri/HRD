@@ -1,11 +1,9 @@
 /**
- * Browser-side API client. All data access from React components goes through
- * these helpers, which call the /api serverless functions (where Prisma runs).
- *
- * Prisma/queries.ts must NEVER be imported from src/ (client bundle) — only
- * from /api/* serverless functions. This file is the client's single gateway.
+ * Browser-side API client — single gateway to /api/*.
+ * Never import Prisma from the client bundle.
  */
 import type { Employee, AppSettings } from "../types";
+import type { DashboardStats } from "./dashboardStats";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -19,11 +17,79 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
 }
 
-// ============ Employees ============
+export type EmployeesPage = {
+  data: Employee[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type BulkImportError = {
+  row: number;
+  nip?: string;
+  nik?: string;
+  nama?: string;
+  message: string;
+};
+
+export type BulkUpsertResult = {
+  created: number;
+  updated: number;
+  errors: number;
+  errorDetails?: BulkImportError[];
+};
+
+export type SettingsInclude = "core" | "logo" | "kamus" | "peta" | "all";
+
+export type ApiKeyRecord = {
+  id: string;
+  name: string;
+  keyPrefix: string;
+  scopes: string[];
+  allowedOrigins: string[];
+  createdBy: string | null;
+  lastUsedAt: string | null;
+  expiresAt: string | null;
+  revokedAt: string | null;
+  createdAt: string;
+};
+
+export type EmployeeListParams = {
+  q?: string;
+  limit?: number;
+  offset?: number;
+  lean?: boolean;
+  status?: string;
+  alert?: "kp" | "kgb" | "any";
+};
+
+function employeesQuery(params?: EmployeeListParams): string {
+  const sp = new URLSearchParams();
+  if (params?.q) sp.set("q", params.q);
+  if (params?.limit != null) sp.set("limit", String(params.limit));
+  if (params?.offset != null) sp.set("offset", String(params.offset));
+  if (params?.lean === false) sp.set("lean", "0");
+  else if (params?.lean) sp.set("lean", "1");
+  if (params?.status && params.status !== "all") sp.set("status", params.status);
+  if (params?.alert) sp.set("alert", params.alert);
+  const qs = sp.toString();
+  return qs ? `/api/employees?${qs}` : "/api/employees";
+}
 
 export const api = {
-  async getEmployees(): Promise<Employee[]> {
-    return request<Employee[]>("/api/employees");
+  async getEmployeesPage(params?: EmployeeListParams): Promise<EmployeesPage> {
+    return request<EmployeesPage>(employeesQuery(params));
+  },
+
+  /** Convenience wrapper — prefer getEmployeesPage for pagination UI. */
+  async getEmployees(params?: EmployeeListParams): Promise<Employee[]> {
+    const page = await this.getEmployeesPage({
+      limit: 50,
+      offset: 0,
+      lean: true,
+      ...params,
+    });
+    return page.data;
   },
 
   async getEmployee(id: string): Promise<Employee | null> {
@@ -55,21 +121,18 @@ export const api = {
     });
   },
 
-  async bulkUpsert(employees: Record<string, unknown>[]): Promise<{
-    created: number;
-    updated: number;
-    errors: number;
-  }> {
-    return request("/api/employees", {
+  async bulkUpsert(employees: Record<string, unknown>[]): Promise<BulkUpsertResult> {
+    return request<BulkUpsertResult>("/api/employees", {
       method: "PUT",
       body: JSON.stringify({ action: "bulk-upsert", employees }),
     });
   },
 
-  // ============ Settings ============
-
-  async getSettings(): Promise<AppSettings> {
-    return request<AppSettings>("/api/settings");
+  async getSettings(
+    include: SettingsInclude[] | string = "all",
+  ): Promise<AppSettings> {
+    const q = Array.isArray(include) ? include.join(",") : include;
+    return request<AppSettings>(`/api/settings?include=${encodeURIComponent(q)}`);
   },
 
   async upsertSettings(settings: AppSettings): Promise<AppSettings> {
@@ -79,9 +142,51 @@ export const api = {
     });
   },
 
-  // ============ Auth ============
+  async getDashboardStats(): Promise<DashboardStats> {
+    return request<DashboardStats>("/api/stats");
+  },
 
-  async getSession(): Promise<{ user: { email: string; name?: string; image?: string } | null }> {
+  async getSession(): Promise<{
+    user: {
+      email: string;
+      name?: string;
+      image?: string;
+      role?: string;
+      canWrite?: boolean;
+    } | null;
+  }> {
     return request("/api/auth/me");
+  },
+
+  // ── External API keys (session admin only) ───────────────────────────────
+
+  async listApiKeys(includeRevoked = false): Promise<{
+    keys: ApiKeyRecord[];
+    scopes: string[];
+  }> {
+    const q = includeRevoked ? "?includeRevoked=1" : "";
+    return request(`/api/v1/keys${q}`);
+  },
+
+  async createApiKey(input: {
+    name: string;
+    scopes?: string[];
+    allowedOrigins?: string[];
+    expiresInDays?: number | null;
+  }): Promise<{
+    key: string;
+    record: ApiKeyRecord;
+    warning?: string;
+  }> {
+    return request("/api/v1/keys", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+
+  async revokeApiKey(id: string): Promise<{ ok: boolean; record: ApiKeyRecord }> {
+    return request(`/api/v1/keys/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
   },
 };

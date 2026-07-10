@@ -1,17 +1,24 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Employee, AppSettings } from "../types";
-import { Printer, Users, FileText, ChevronDown } from "lucide-react";
+import { Printer, FileText, Loader2 } from "lucide-react";
 import { api } from "../lib/api";
 import { lookupKamus } from "../lib/kamus";
 import { countWorkingDays } from "../lib/holidays";
 import { PageHeader } from "../components/PageHeader";
+import { ConfirmDialog } from "../components/ConfirmDialog";
+import { notify } from "../lib/notify";
+import { useAuth } from "../lib/auth";
 import { motion } from "motion/react";
 import {
   btnPrimary,
-  chip,
+  btnSecondary,
+  card,
+  cardHeader,
+  input,
   pageContainerVariants,
   pageItemVariants,
   pageShellWide,
+  select,
 } from "../lib/ui";
 
 type PrintType =
@@ -28,9 +35,12 @@ type PrintType =
 type SortAction = "default_kelas" | "abjad";
 
 export default function Print() {
+  const { canWrite } = useAuth();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [loading, setLoading] = useState(true);
+  const [cutiConfirmOpen, setCutiConfirmOpen] = useState(false);
+  const [cutiBusy, setCutiBusy] = useState(false);
 
   // Print Configuration States
   const [printCategory, setPrintCategory] = useState<"laporan" | "layanan">(
@@ -86,33 +96,68 @@ export default function Print() {
   useEffect(() => {
     async function fetchData() {
       try {
-        // Fetch settings + employees in parallel
-        const [currentSettings, empRaw] = await Promise.all([
-          api.getSettings(),
-          api.getEmployees(),
-        ]);
+        const currentSettings = await api.getSettings(["core", "logo", "kamus"]);
         setSettings(currentSettings);
 
-        // Apply Kamus Jabatan overrides dynamically (computed client-side)
-        const empData: Employee[] = empRaw.map((emp) => {
-          if (emp.jabatan) {
-            const { kelas, beban } = lookupKamus(emp.jabatan, currentSettings.jabatanKamusCsv);
-            if (kelas || beban) {
-              return { ...emp, kelasJabatan: kelas, bebanKerja: beban };
-            }
-          }
-          return emp;
-        });
+        const all: Employee[] = [];
+        let offset = 0;
+        const pageSize = 500;
+        for (;;) {
+          const res = await api.getEmployeesPage({
+            limit: pageSize,
+            offset,
+            lean: true,
+          });
+          all.push(...res.data);
+          offset += res.data.length;
+          if (offset >= res.total || res.data.length === 0) break;
+        }
 
-        setEmployees(empData);
+        const kamus = currentSettings.jabatanKamusCsv;
+        setEmployees(
+          all.map((emp) => {
+            if (!emp.jabatan || !kamus) return emp;
+            const { kelas, beban } = lookupKamus(emp.jabatan, kamus);
+            return kelas || beban
+              ? { ...emp, kelasJabatan: kelas, bebanKerja: beban }
+              : emp;
+          }),
+        );
       } catch (err) {
         console.error("Error fetching data for print:", err);
+        notify.error("Gagal memuat data cetak");
       } finally {
         setLoading(false);
       }
     }
     fetchData();
   }, []);
+
+  // Hydrate full employee for cuti (lean list lacks sisaCuti*)
+  useEffect(() => {
+    if (!cutiEmployeeId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const full = await api.getEmployee(cutiEmployeeId);
+        if (cancelled || !full) return;
+        setCutiMasaKerja(full.masaKerja || "");
+        setCutiHp(full.nomorHp || "");
+        setEmployees((prev) => {
+          const idx = prev.findIndex((e) => e.id === cutiEmployeeId);
+          if (idx < 0) return [...prev, full];
+          const next = [...prev];
+          next[idx] = { ...next[idx], ...full };
+          return next;
+        });
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [cutiEmployeeId]);
 
   const handlePrint = () => {
     window.print();
@@ -218,8 +263,9 @@ export default function Print() {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-64 font-medium text-slate-500 text-sm">
-        Menginisialisasi data formulir cetak...
+      <div className="flex justify-center items-center h-64 gap-2 font-medium text-slate-500 text-sm">
+        <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+        Memuat data cetak…
       </div>
     );
   }
@@ -301,80 +347,157 @@ export default function Print() {
     kadisEmp?.pangkatGolongan || "Pangkat Golongan ..........................";
   const ttdNip = kadisEmp?.nip || "........................................";
 
-  const handlePrintClick = async () => {
-    if (printType === "surat_cuti" && cutiJenis.startsWith("1")) {
-      if (
-        !window.confirm(
-          "Cetak surat cuti akan memotong sisa cuti pegawai secara otomatis. Lanjutkan?",
-        )
-      ) {
-        return;
-      }
-      try {
-        const emp = employees.find((e) => e.id === cutiEmployeeId);
-        if (emp) {
-          const sisaN = parseInt(emp.sisaCutiN || "0") || 0;
-          const sisaN1 = parseInt(emp.sisaCutiN1 || "0") || 0;
-          const sisaN2 = parseInt(emp.sisaCutiN2 || "0") || 0;
 
-          let toDeduct = cutiLamaHari;
-          let newN = sisaN;
-          let newN1 = sisaN1;
-          let newN2 = sisaN2;
-
-          if (toDeduct <= newN2) {
-            newN2 -= toDeduct;
-          } else {
-            toDeduct -= newN2;
-            newN2 = 0;
-            if (toDeduct <= newN1) {
-              newN1 -= toDeduct;
-            } else {
-              toDeduct -= newN1;
-              newN1 = 0;
-              if (toDeduct <= newN) {
-                newN -= toDeduct;
-              } else {
-                newN = 0;
-              }
-            }
-          }
-
-          await api.updateEmployee(emp.id!, {
-            sisaCutiN: String(newN),
-            sisaCutiN1: String(newN1),
-            sisaCutiN2: String(newN2),
-          });
-
-          setEmployees(
-            employees.map((e) =>
-              e.id === emp.id
-                ? {
-                    ...e,
-                    sisaCutiN: String(newN),
-                    sisaCutiN1: String(newN1),
-                    sisaCutiN2: String(newN2),
-                  }
-                : e,
-            ),
-          );
-        }
-        setTimeout(() => window.print(), 300);
-      } catch (err) {
-        console.error("Gagal mengurangi sisa cuti", err);
-        alert("Terjadi kesalahan saat mengurangi sisa cuti.");
-      }
+  const runCutiDeductionAndPrint = async () => {
+    if (!canWrite) {
+      notify.error("Mode baca saja", "Viewer tidak dapat mengurangi sisa cuti.");
+      setCutiConfirmOpen(false);
       return;
     }
+    if (!cutiEmployeeId) {
+      notify.error("Pilih pegawai dulu");
+      return;
+    }
+    if (!cutiLamaHari || cutiLamaHari <= 0) {
+      notify.error("Lama cuti tidak valid");
+      return;
+    }
+    setCutiBusy(true);
+    try {
+      const emp = await api.getEmployee(cutiEmployeeId);
+      if (!emp) {
+        notify.error("Pegawai tidak ditemukan");
+        return;
+      }
+      const sisaN = parseInt(String(emp.sisaCutiN ?? "0"), 10) || 0;
+      const sisaN1 = parseInt(String(emp.sisaCutiN1 ?? "0"), 10) || 0;
+      const sisaN2 = parseInt(String(emp.sisaCutiN2 ?? "0"), 10) || 0;
+      const total = sisaN + sisaN1 + sisaN2;
+      if (total < cutiLamaHari) {
+        notify.error(
+          "Sisa cuti tidak cukup",
+          `Tersedia ${total} hari, diminta ${cutiLamaHari} hari.`,
+        );
+        return;
+      }
+      let toDeduct = cutiLamaHari;
+      let newN = sisaN;
+      let newN1 = sisaN1;
+      let newN2 = sisaN2;
+      if (toDeduct <= newN2) {
+        newN2 -= toDeduct;
+      } else {
+        toDeduct -= newN2;
+        newN2 = 0;
+        if (toDeduct <= newN1) {
+          newN1 -= toDeduct;
+        } else {
+          toDeduct -= newN1;
+          newN1 = 0;
+          newN -= toDeduct;
+        }
+      }
+      await api.updateEmployee(emp.id!, {
+        sisaCutiN: String(newN),
+        sisaCutiN1: String(newN1),
+        sisaCutiN2: String(newN2),
+      });
+      setEmployees((prev) =>
+        prev.map((e) =>
+          e.id === emp.id
+            ? {
+                ...e,
+                sisaCutiN: String(newN),
+                sisaCutiN1: String(newN1),
+                sisaCutiN2: String(newN2),
+              }
+            : e,
+        ),
+      );
+      setCutiConfirmOpen(false);
+      notify.success("Sisa cuti diperbarui");
+      setTimeout(() => window.print(), 300);
+    } catch (err) {
+      console.error(err);
+      notify.error(
+        "Gagal mengurangi sisa cuti",
+        err instanceof Error ? err.message : undefined,
+      );
+    } finally {
+      setCutiBusy(false);
+    }
+  };
 
+  const handlePrintClick = async () => {
+    if (printType === "surat_cuti" && cutiJenis.startsWith("1")) {
+      if (!canWrite) {
+        try {
+          window.print();
+        } catch {
+          notify.warning(
+            "Cetak diblokir browser",
+            "Gunakan Ctrl+P (Windows) atau Cmd+P (Mac).",
+          );
+        }
+        return;
+      }
+      setCutiConfirmOpen(true);
+      return;
+    }
     try {
       window.print();
     } catch {
-      alert(
-        "Perintah otomatis terblokir oleh browser. Silakan tekan Ctrl+P atau Cmd+P untuk mencetak secara manual.",
+      notify.warning(
+        "Cetak diblokir browser",
+        "Gunakan Ctrl+P (Windows) atau Cmd+P (Mac).",
       );
     }
   };
+
+
+  const DOCUMENTS: {
+    category: "laporan" | "layanan";
+    type: PrintType;
+    label: string;
+    title: string;
+    wip?: boolean;
+  }[] = [
+    { category: "laporan", type: "absen_global", label: "Absensi", title: "DAFTAR HADIR / ABSENSI PEGAWAI" },
+    { category: "laporan", type: "tanda_terima", label: "Tanda terima", title: "DAFTAR TANDA TERIMA ......................" },
+    { category: "laporan", type: "duk", label: "DUK", title: "DAFTAR URUT KEPANGKATAN (DUK)" },
+    { category: "layanan", type: "surat_cuti", label: "Surat cuti", title: "SURAT IZIN CUTI PEGAWAI" },
+    {
+      category: "layanan",
+      type: "model_dk",
+      label: "Model DK",
+      title: "SURAT KETERANGAN UNTUK MENDAPATKAN PEMBAYARAN TUNJANGAN KELUARGA",
+    },
+  ];
+
+  const selectDocument = (doc: (typeof DOCUMENTS)[number]) => {
+    setPrintCategory(doc.category);
+    if (doc.type === "absen_global") {
+      if (selectedBidang !== "Semua") {
+        setPrintType("absen_bidang");
+        setCustomTitle(`DAFTAR HADIR UNIT KERJA ${selectedBidang.toUpperCase()}`);
+      } else {
+        setPrintType("absen_global");
+        setCustomTitle(doc.title);
+      }
+    } else {
+      setPrintType(doc.type);
+      setCustomTitle(doc.title);
+      setSelectedBidang("Semua");
+    }
+  };
+
+  const activeDocKey =
+    printType === "absen_bidang" || printType === "absen_global"
+      ? "absen_global"
+      : printType;
+
+  const fieldLabel =
+    "block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5";
 
   return (
     <motion.div
@@ -383,384 +506,264 @@ export default function Print() {
       variants={pageContainerVariants}
       className={pageShellWide}
     >
-      {/* Control Panel (Hidden on Print) */}
-      <div className="print-hidden space-y-5 md:space-y-6">
+      <div className="print-hidden mb-4 md:mb-5">
         <motion.div variants={pageItemVariants}>
           <PageHeader
-            title="Pusat Pencetakan Dokumen"
-            description="Konfigurasi pratinjau tabel pracetak dan detail dokumen Anda."
+            title="Cetak"
+            description="Pilih dokumen, atur opsi, pratinjau langsung, lalu cetak."
             actions={
               <button
                 type="button"
                 onClick={handlePrintClick}
-                className={`${btnPrimary} w-full lg:w-auto`}
-                title="Klik untuk cetak atau tekan Ctrl+P"
+                className={`${btnPrimary} w-full sm:w-auto`}
               >
                 <Printer className="w-4 h-4" />
-                Cetak Dokumen Sekarang
+                Cetak
               </button>
             }
           />
         </motion.div>
+      </div>
 
-        <motion.div
-          variants={pageItemVariants}
-          className="bg-amber-50 border border-amber-100 p-3 rounded-xl text-[12px] text-amber-800 flex items-center gap-3"
-        >
-          <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center shrink-0">
-            <svg
-              className="w-4 h-4 text-amber-600"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-              ></path>
-            </svg>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-5 items-start">
+        <aside className={`print-hidden ${card} lg:col-span-3 overflow-hidden`}>
+          <div className={cardHeader}>
+            <h2 className="text-sm font-semibold text-slate-800">Dokumen</h2>
           </div>
-          <p>
-            Jika tombol cetak tidak berfungsi di mode pratinjau ini, silakan
-            tekan <strong>Ctrl+P</strong> (Windows) atau <strong>Cmd+P</strong>{" "}
-            (Mac) langsung pada keyboard Anda.
-          </p>
-        </motion.div>
-
-        <div className="flex bg-slate-100 p-1 rounded-lg w-full sm:w-max">
-          <button
-            onClick={() => {
-              setPrintCategory("laporan");
-              setPrintType("absen_global");
-              setCustomTitle("DAFTAR HADIR / ABSENSI PEGAWAI");
-              setSelectedBidang("Semua");
-            }}
-            className={`flex-1 sm:flex-none px-6 py-2 font-bold text-[12px] rounded-lg transition-colors ${printCategory === "laporan" ? "bg-white text-slate-900 " : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"}`}
-          >
-            Laporan Umum
-          </button>
-          <button
-            onClick={() => {
-              setPrintCategory("layanan");
-              setPrintType("surat_cuti");
-              setCustomTitle("SURAT IZIN CUTI PEGAWAI");
-            }}
-            className={`flex-1 sm:flex-none px-6 py-2 font-bold text-[12px] rounded-lg transition-colors ${printCategory === "layanan" ? "bg-white text-slate-900 " : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"}`}
-          >
-            Layanan Kepegawaian
-          </button>
-        </div>
-
-        <div className="flex flex-wrap gap-2 pt-2">
-          {printCategory === "laporan" && (
-            <>
-              <button
-                onClick={() => {
-                  setPrintType("absen_global");
-                  setCustomTitle("DAFTAR HADIR / ABSENSI PEGAWAI");
-                  setSelectedBidang("Semua");
-                }}
-                className={chip(printType === "absen_global" || printType === "absen_bidang")}
-              >
-                Daftar Hadir / Absensi
-              </button>
-              <button
-                onClick={() => {
-                  setPrintType("tanda_terima");
-                  setCustomTitle("DAFTAR TANDA TERIMA ......................");
-                }}
-                className={chip(printType === "tanda_terima")}
-              >
-                Tanda Terima
-              </button>
-              <button
-                onClick={() => {
-                  setPrintType("duk");
-                  setCustomTitle("DAFTAR URUT KEPANGKATAN (DUK)");
-                }}
-                className={chip(printType === "duk")}
-              >
-                Data Urut Kepangkatan
-              </button>
-            </>
-          )}
-
-          {printCategory === "layanan" && (
-            <>
-              <button
-                onClick={() => {
-                  setPrintType("surat_cuti");
-                  setCustomTitle("SURAT IZIN CUTI PEGAWAI");
-                }}
-                className={chip(printType === "surat_cuti")}
-              >
-                Surat Cuti
-              </button>
-              <button
-                onClick={() => {
-                  setPrintType("model_dk");
-                  setCustomTitle(
-                    "SURAT KETERANGAN UNTUK MENDAPATKAN PEMBAYARAN TUNJANGAN KELUARGA",
-                  );
-                }}
-                className={chip(printType === "model_dk")}
-              >
-                Model DK
-              </button>
-              <button
-                onClick={() => {
-                  setPrintType("anjab");
-                  setCustomTitle("DOKUMEN ANALISIS JABATAN (ANJAB)");
-                }}
-                className={chip(printType === "anjab", { muted: true })}
-              >
-                ANJAB (WIP)
-              </button>
-              <button
-                onClick={() => {
-                  setPrintType("bezetting");
-                  setCustomTitle("DAFTAR SUSUNAN BEZETTING PEGAWAI");
-                }}
-                className={chip(printType === "bezetting", { muted: true })}
-              >
-                Bezetting (WIP)
-              </button>
-              <button
-                onClick={() => {
-                  setPrintType("usulan_kgb");
-                  setCustomTitle("USULAN KENAIKAN GAJI BERKALA (KGB)");
-                }}
-                className={chip(printType === "usulan_kgb", { muted: true })}
-              >
-                Usulan KGB (WIP)
-              </button>
-              <button
-                onClick={() => {
-                  setPrintType("usulan_kp");
-                  setCustomTitle("USULAN KENAIKAN PANGKAT (KP)");
-                }}
-                className={chip(printType === "usulan_kp", { muted: true })}
-              >
-                Usulan KP (WIP)
-              </button>
-            </>
-          )}
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-5 gap-4 lg:gap-6 pt-4">
-          {(printType === "absen_global" || printType === "absen_bidang") && (
-            <div className="space-y-2 lg:col-span-2">
-              <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                Filter Unit Kerja
-              </label>
-              <select
-                className="w-full px-4 py-2 bg-white border border-slate-200 rounded-lg text-[12px] focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-colors cursor-pointer"
-                value={selectedBidang}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setSelectedBidang(val);
-                  if (val === "Semua") {
-                    setPrintType("absen_global");
-                    setCustomTitle("DAFTAR HADIR / ABSENSI PEGAWAI");
-                  } else {
-                    setPrintType("absen_bidang");
-                    setCustomTitle(
-                      `DAFTAR HADIR UNIT KERJA ${val.toUpperCase()}`,
+          <div className="p-2 space-y-3">
+            {(
+              [
+                ["laporan", "Laporan"],
+                ["layanan", "Layanan"],
+              ] as const
+            ).map(([cat, title]) => (
+              <div key={cat}>
+                <p className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  {title}
+                </p>
+                <ul className="space-y-0.5">
+                  {DOCUMENTS.filter((d) => d.category === cat).map((doc) => {
+                    const active = activeDocKey === doc.type;
+                    return (
+                      <li key={doc.type}>
+                        <button
+                          type="button"
+                          onClick={() => selectDocument(doc)}
+                          className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors active:scale-[0.98] ${
+                            active
+                              ? "bg-slate-900 text-white"
+                              : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                          }`}
+                        >
+                          {doc.label}
+                        </button>
+                      </li>
                     );
-                  }
-                }}
-              >
-                <option value="Semua">Semua / Pilih Filter...</option>
-                {getUniqueBidang().map((b) => (
-                  <option key={b} value={b}>
-                    {b}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
+                  })}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </aside>
 
-          {printCategory === "laporan" && (
-            <>
-              <div className="space-y-2 lg:col-span-1">
-                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                  Metode Pengurutan
-                </label>
+        <section className={`print-hidden ${card} lg:col-span-4 overflow-hidden`}>
+          <div className={cardHeader}>
+            <h2 className="text-sm font-semibold text-slate-800">Opsi</h2>
+          </div>
+          <div className="p-4 sm:p-5 space-y-4 max-h-[min(70vh,720px)] overflow-y-auto">
+            {(printType === "absen_global" || printType === "absen_bidang") && (
+              <div>
+                <label className={fieldLabel}>Unit kerja</label>
                 <select
-                  className="w-full px-4 py-2 bg-white border border-slate-200 rounded-lg text-[12px] focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-colors cursor-pointer"
-                  value={sortOption}
-                  onChange={(e) => setSortOption(e.target.value as SortAction)}
+                  className={select}
+                  value={selectedBidang}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setSelectedBidang(val);
+                    if (val === "Semua") {
+                      setPrintType("absen_global");
+                      setCustomTitle("DAFTAR HADIR / ABSENSI PEGAWAI");
+                    } else {
+                      setPrintType("absen_bidang");
+                      setCustomTitle(
+                        `DAFTAR HADIR UNIT KERJA ${val.toUpperCase()}`,
+                      );
+                    }
+                  }}
                 >
-                  <option value="default_kelas">
-                    Hierarki (Kelas Jabatan, Status)
-                  </option>
-                  <option value="abjad">Alfabetis (A-Z)</option>
+                  <option value="Semua">Semua unit</option>
+                  {getUniqueBidang().map((b) => (
+                    <option key={b} value={b}>
+                      {b}
+                    </option>
+                  ))}
                 </select>
               </div>
+            )}
 
-              <div
-                className={`space-y-2 ${printType === "tanda_terima" || printType === "duk" ? "md:col-span-3 lg:col-span-2" : "md:col-span-2 lg:col-span-2"}`}
-              >
-                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                  Judul Utama Dokumen
-                </label>
-                <input
-                  type="text"
-                  className="w-full px-4 py-2 bg-white border border-slate-200 rounded-lg text-[12px] font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-colors"
-                  value={customTitle}
-                  onChange={(e) => setCustomTitle(e.target.value)}
-                />
-              </div>
-
-              <div className="space-y-2 md:col-span-4 lg:col-span-5">
-                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                  Informasi Tambahan / Keterangan Dokumen
-                </label>
-                <input
-                  type="text"
-                  className="w-full px-4 py-2 bg-white border border-slate-200 rounded-lg text-[12px] focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-colors"
-                  value={customSubtitle}
-                  onChange={(e) => setCustomSubtitle(e.target.value)}
-                />
-              </div>
-            </>
-          )}
-          {printCategory === "layanan" && (
-            <>
-              {[
-                "surat_cuti",
-                "model_dk",
-                "anjab",
-                "bezetting",
-                "usulan_kgb",
-                "usulan_kp",
-              ].includes(printType) && (
-                <div className="space-y-2 lg:col-span-2">
-                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                    Pilih Pegawai Pemohon
-                  </label>
+            {printCategory === "laporan" && (
+              <>
+                <div>
+                  <label className={fieldLabel}>Urutan</label>
                   <select
-                    className="w-full px-4 py-2 bg-white border border-slate-200 rounded-lg text-[12px] font-bold focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-colors cursor-pointer"
+                    className={select}
+                    value={sortOption}
+                    onChange={(e) =>
+                      setSortOption(e.target.value as SortAction)
+                    }
+                  >
+                    <option value="default_kelas">
+                      Hierarki (kelas, status)
+                    </option>
+                    <option value="abjad">Alfabetis (A–Z)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={fieldLabel}>Judul</label>
+                  <input
+                    type="text"
+                    className={`${input} font-semibold`}
+                    value={customTitle}
+                    onChange={(e) => setCustomTitle(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className={fieldLabel}>Subjudul / keterangan</label>
+                  <input
+                    type="text"
+                    className={input}
+                    value={customSubtitle}
+                    onChange={(e) => setCustomSubtitle(e.target.value)}
+                  />
+                </div>
+              </>
+            )}
+
+            {printCategory === "layanan" && (
+              <>
+                <div>
+                  <label className={fieldLabel}>Pegawai</label>
+                  <select
+                    className={select}
                     value={cutiEmployeeId}
                     onChange={(e) => setCutiEmployeeId(e.target.value)}
                   >
-                    <option value="">-- Pilih Pegawai --</option>
+                    <option value="">— Pilih pegawai —</option>
                     {[...employees]
                       .sort((a, b) =>
                         (a.nama || "").localeCompare(b.nama || ""),
                       )
                       .map((emp) => (
                         <option key={emp.id} value={emp.id}>
-                          {emp.nama} - {emp.nip}
+                          {emp.nama} — {emp.nip}
                         </option>
                       ))}
                   </select>
                 </div>
-              )}
-
-              {printType === "surat_cuti" && (
-                <>
-                  <div className="space-y-2">
-                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                      Jenis Cuti
-                    </label>
-                    <select
-                      className="w-full px-4 py-2 bg-white border border-slate-200 rounded-lg text-[12px] focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-colors cursor-pointer"
-                      value={cutiJenis}
-                      onChange={(e) => setCutiJenis(e.target.value)}
-                    >
-                      <option value="1. Cuti Tahunan">1. Cuti Tahunan</option>
-                      <option value="2. Cuti Besar">2. Cuti Besar</option>
-                      <option value="3. Cuti Sakit">3. Cuti Sakit</option>
-                      <option value="4. Cuti Melahirkan">
-                        4. Cuti Melahirkan
-                      </option>
-                      <option value="5. Cuti Karena Alasan Penting">
-                        5. Cuti Karena Alasan Penting
-                      </option>
-                      <option value="6. Cuti di Luar Tanggungan Negara">
-                        6. Cuti di Luar Tanggungan Negara
-                      </option>
-                    </select>
+                {printType === "surat_cuti" && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="sm:col-span-2">
+                      <label className={fieldLabel}>Jenis cuti</label>
+                      <select
+                        className={select}
+                        value={cutiJenis}
+                        onChange={(e) => setCutiJenis(e.target.value)}
+                      >
+                        <option value="1. Cuti Tahunan">Cuti tahunan</option>
+                        <option value="2. Cuti Besar">Cuti besar</option>
+                        <option value="3. Cuti Sakit">Cuti sakit</option>
+                        <option value="4. Cuti Melahirkan">
+                          Cuti melahirkan
+                        </option>
+                        <option value="5. Cuti Karena Alasan Penting">
+                          Cuti alasan penting
+                        </option>
+                        <option value="6. Cuti di Luar Tanggungan Negara">
+                          CLTN
+                        </option>
+                      </select>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className={fieldLabel}>Alasan</label>
+                      <input
+                        type="text"
+                        className={input}
+                        value={cutiAlasan}
+                        onChange={(e) => setCutiAlasan(e.target.value)}
+                        placeholder="Contoh: ibadah / keperluan keluarga"
+                      />
+                    </div>
+                    <div>
+                      <label className={fieldLabel}>Mulai</label>
+                      <input
+                        type="date"
+                        className={input}
+                        value={cutiMulai}
+                        onChange={(e) => setCutiMulai(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className={fieldLabel}>Selesai</label>
+                      <input
+                        type="date"
+                        className={input}
+                        value={cutiAkhir}
+                        onChange={(e) => setCutiAkhir(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className={fieldLabel}>Lama (hari kerja)</label>
+                      <input
+                        type="number"
+                        className={`${input} bg-slate-50 text-slate-600`}
+                        value={cutiLamaHari}
+                        readOnly
+                      />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className={fieldLabel}>Alamat selama cuti</label>
+                      <input
+                        type="text"
+                        className={input}
+                        value={cutiAlamat}
+                        onChange={(e) => setCutiAlamat(e.target.value)}
+                      />
+                    </div>
                   </div>
+                )}
+              </>
+            )}
 
-                  <div className="space-y-2 md:col-span-2 lg:col-span-2">
-                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                      Alasan Cuti
-                    </label>
-                    <input
-                      type="text"
-                      className="w-full px-4 py-2 bg-white border border-slate-200 rounded-lg text-[12px] focus:outline-none focus:ring-1 focus:ring-slate-900 transition-colors"
-                      value={cutiAlasan}
-                      onChange={(e) => setCutiAlasan(e.target.value)}
-                      placeholder="Contoh: Ibadah Umroh"
-                    />
-                  </div>
+            <p className="text-[11px] text-slate-400 pt-2 border-t border-slate-100">
+              {sortedEmployees.length} pegawai
+              {printCategory === "laporan"
+                ? ` · ${sortOption === "abjad" ? "A–Z" : "hierarki"}`
+                : ""}
+            </p>
+          </div>
+        </section>
 
-                  <div className="space-y-2">
-                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                      Lama Hari
-                    </label>
-                    <input
-                      type="number"
-                      className="w-full px-4 py-2 bg-slate-100 border border-slate-200 rounded-lg text-[12px] font-bold text-slate-500 focus:outline-none transition-colors cursor-not-allowed"
-                      value={cutiLamaHari}
-                      readOnly
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                      Mulai Tgl
-                    </label>
-                    <input
-                      type="date"
-                      className="w-full px-4 py-2 bg-white border border-slate-200 rounded-lg text-[12px] focus:outline-none focus:ring-1 focus:ring-slate-900 transition-colors"
-                      value={cutiMulai}
-                      onChange={(e) => setCutiMulai(e.target.value)}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                      Sampai Tgl
-                    </label>
-                    <input
-                      type="date"
-                      className="w-full px-4 py-2 bg-white border border-slate-200 rounded-lg text-[12px] focus:outline-none focus:ring-1 focus:ring-slate-900 transition-colors"
-                      value={cutiAkhir}
-                      onChange={(e) => setCutiAkhir(e.target.value)}
-                    />
-                  </div>
-
-                  <div className="space-y-2 md:col-span-2 lg:col-span-2">
-                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                      Alamat Selama Cuti
-                    </label>
-                    <input
-                      type="text"
-                      className="w-full px-4 py-2 bg-white border border-slate-200 rounded-lg text-[12px] focus:outline-none focus:ring-1 focus:ring-slate-900 transition-colors"
-                      value={cutiAlamat}
-                      onChange={(e) => setCutiAlamat(e.target.value)}
-                    />
-                  </div>
-                </>
-              )}
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Preview Section */}
-      <div className="bg-slate-100 p-4 sm:p-8 rounded-xl border border-slate-200 overflow-x-auto print:p-0 print:bg-transparent print:border-none print:shadow-none print:-mx-4 print:overflow-visible flex flex-col items-center">
-        <div className="text-center mb-6 text-xs sm:text-sm font-bold text-slate-400 tracking-widest uppercase print:hidden w-full">
-          — Mode Pratinjau Cetak —
-        </div>
-
-        {/* Actual Print Paper Container */}
-        <div
+        <section className="lg:col-span-5 space-y-2 min-w-0">
+          <div
+            className={`print-hidden ${card} px-4 py-3 flex items-center justify-between gap-2`}
+          >
+            <div>
+              <h2 className="text-sm font-semibold text-slate-800">
+                Pratinjau
+              </h2>
+              <p className="text-[11px] text-slate-400 mt-0.5">A4 · live</p>
+            </div>
+            <button
+              type="button"
+              onClick={handlePrintClick}
+              className={btnSecondary}
+            >
+              <Printer className="w-3.5 h-3.5" />
+              Cetak
+            </button>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-100 p-3 sm:p-4 overflow-auto max-h-[min(75vh,900px)] print:p-0 print:border-none print:bg-transparent print:max-h-none print:overflow-visible print:rounded-none">
+<div
           ref={printRef}
           className="bg-white border border-slate-200 print-container text-[12pt] w-[210mm] max-w-none shrink-0 p-[15mm] print:max-w-full print:w-full print:p-0 mx-auto print:border-none"
           style={{
@@ -1744,8 +1747,23 @@ export default function Print() {
               </p>
             </div>
           )}
-        </div>
+            </div>
+
+          </div>
+        </section>
       </div>
+
+
+      <ConfirmDialog
+        open={cutiConfirmOpen}
+        onClose={() => !cutiBusy && setCutiConfirmOpen(false)}
+        loading={cutiBusy}
+        variant="danger"
+        title="Potong sisa cuti & cetak?"
+        description={`Surat cuti tahunan akan memotong ${cutiLamaHari} hari kerja dari saldo cuti (N-2 → N-1 → N). Lanjutkan?`}
+        confirmLabel="Ya, potong & cetak"
+        onConfirm={() => void runCutiDeductionAndPrint()}
+      />
 
       <style
         dangerouslySetInnerHTML={{

@@ -135,4 +135,23 @@ Anggap terkompromi → ganti password & `AUTH_SECRET`.
 
 ---
 
-*Diperbarui otomatis seiring batch perbaikan keamanan 10 Juli 2026.*
+---
+
+## Batch lanjutan (backend + clean)
+
+| Item | Status |
+|------|--------|
+| List employees envelope + lean + kamus dari settings | ✅ |
+| Bulk import chunk + `errorDetails` | ✅ |
+| Settings `?include=` | ✅ |
+| Audit log | ✅ |
+| Health + DB ping | ✅ |
+| `GET /api/stats` dasbor | ✅ |
+| Role ADMIN/VIEWER + requireStaff/requireAdmin | ✅ |
+| Logout all devices | ✅ |
+| Hapus Chat.tsx, plan.md, fetch-fonts.md | ✅ |
+| AGENTS.md + SETUP.md + README | ✅ |
+
+Deploy: `npx prisma migrate deploy` (role + audit_logs).
+
+*Diperbarui seiring batch backend & clean code.*

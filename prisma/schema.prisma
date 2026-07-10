@@ -100,7 +100,7 @@ model Settings {
   @@map("settings")
 }
 
-/// Auth.js session/user tables (via @auth/neon-adapter / Prisma adapter)
+/// App users (credentials). Account/VerificationToken kept for possible future OAuth.
 model User {
   id            String    @id @default(cuid())
   name          String?
@@ -108,6 +108,8 @@ model User {
   emailVerified DateTime?
   image         String?
   password      String?
+  /// ADMIN = full write, VIEWER = read-only API
+  role          String    @default("ADMIN")
   accounts      Account[]
   sessions      Session[]
 
@@ -150,4 +152,56 @@ model VerificationToken {
 
   @@unique([identifier, token])
   @@map("verification_tokens")
+}
+
+/// Append-only audit trail for sensitive write operations.
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actorEmail String?
+  action     String // e.g. employee.create, employee.import, settings.update
+  entityType String // employee | settings | session
+  entityId   String?
+  meta       Json?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@index([actorEmail])
+  @@map("audit_logs")
+}
+
+/// Programmatic access keys for external apps (Bearer / X-API-Key).
+/// Only a SHA-256 hash is stored — the plaintext key is shown once at creation.
+model ApiKey {
+  id         String    @id @default(cuid())
+  name       String
+  /// Visible prefix for identification, e.g. hrc_Ab12Cd…
+  keyPrefix  String
+  /// SHA-256 hex of the full secret
+  keyHash    String    @unique
+  /// JSON string array of scopes, e.g. ["employees:read","stats:read"]
+  scopes     Json      @default("[\"employees:read\",\"stats:read\"]")
+  /// JSON string array of allowed browser origins, e.g. ["https://app.example.com"].
+  /// Empty array = any origin (server-to-server clients have no Origin header).
+  allowedOrigins Json   @default("[]")
+  createdBy  String?
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([revokedAt])
+  @@map("api_keys")
+}
+
+/// Distributed rate-limit buckets (Neon) — survives multi-instance serverless.
+model RateLimitBucket {
+  id        String   @id
+  count     Int      @default(0)
+  resetAt   DateTime
+  updatedAt DateTime @updatedAt
+
+  @@index([resetAt])
+  @@map("rate_limit_buckets")
 }

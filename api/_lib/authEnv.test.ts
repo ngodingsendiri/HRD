@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { getAuthSecret, isAdminEmail } from "./authEnv";
+import { getAuthSecret, isAdminEmail, resolveAccess, normalizeRole } from "./authEnv";
 
 describe("getAuthSecret", () => {
   const originalSecret = process.env.AUTH_SECRET;
@@ -50,5 +50,35 @@ describe("isAdminEmail", () => {
     expect(isAdminEmail("OTHER@test.com")).toBe(true);
     expect(isAdminEmail("nope@test.com")).toBe(false);
     expect(isAdminEmail(null)).toBe(false);
+  });
+});
+
+describe("normalizeRole / resolveAccess", () => {
+  const original = process.env.ADMIN_EMAILS;
+
+  afterEach(() => {
+    if (original === undefined) delete process.env.ADMIN_EMAILS;
+    else process.env.ADMIN_EMAILS = original;
+  });
+
+  it("normalizes roles fail-closed", () => {
+    expect(normalizeRole("viewer")).toBe("VIEWER");
+    expect(normalizeRole("ADMIN")).toBe("ADMIN");
+    expect(normalizeRole(undefined)).toBe("VIEWER");
+    expect(normalizeRole("typo")).toBe("VIEWER");
+  });
+
+  it("elevates allowlist to write admin", () => {
+    process.env.ADMIN_EMAILS = "boss@ex.com";
+    const a = resolveAccess("boss@ex.com", "VIEWER");
+    expect(a.canWrite).toBe(true);
+    expect(a.role).toBe("ADMIN");
+  });
+
+  it("respects VIEWER role without allowlist", () => {
+    delete process.env.ADMIN_EMAILS;
+    const a = resolveAccess("user@ex.com", "VIEWER");
+    expect(a.canWrite).toBe(false);
+    expect(a.role).toBe("VIEWER");
   });
 });

@@ -1,46 +1,68 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import {
-  getEmployees,
+  getEmployeesPage,
   createEmployee,
   deleteEmployees,
   bulkUpsertEmployees,
   findEmployeeIdByNipOrNik,
 } from "../src/lib/queries.js";
 import { EmployeeSchema } from "../src/lib/schemas.js";
-import { requireAdmin } from "./_lib/auth.js";
+import { requireAdmin, requireStaff } from "./_lib/session.js";
+import { writeAuditLog } from "../src/lib/audit.js";
 import {
+  DEFAULT_EMPLOYEES_PAGE,
   MAX_BULK_DELETE_IDS,
   MAX_BULK_EMPLOYEES,
   MAX_EMPLOYEES_PAGE,
+  ensureRequestId,
   sendError,
   withErrorBoundary,
 } from "./_lib/http.js";
 
 /**
- * GET    /api/employees         → list (optional ?q=&limit=&offset=)
- * POST   /api/employees         → create
- * DELETE /api/employees         → bulk delete { ids: string[] }
- * PUT    /api/employees         → bulk-upsert { action, employees }
+ * GET    /api/employees  → { data, total, limit, offset }
+ * POST   /api/employees  → create
+ * DELETE /api/employees  → bulk delete { ids }
+ * PUT    /api/employees  → bulk-upsert { action, employees }
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  return withErrorBoundary(res, "employees", async () => {
-    try {
-      await requireAdmin(req, res);
-    } catch {
-      return;
-    }
+  const requestId = ensureRequestId(req, res);
 
+  return withErrorBoundary(res, "employees", async () => {
     if (req.method === "GET") {
+      try {
+        await requireStaff(req, res);
+      } catch {
+        return;
+      }
       const q = typeof req.query.q === "string" ? req.query.q : undefined;
+      const status = typeof req.query.status === "string" ? req.query.status : undefined;
+      const alertRaw = typeof req.query.alert === "string" ? req.query.alert : undefined;
+      const alert =
+        alertRaw === "kp" || alertRaw === "kgb" || alertRaw === "any"
+          ? alertRaw
+          : undefined;
       const limitRaw = typeof req.query.limit === "string" ? parseInt(req.query.limit, 10) : NaN;
       const offsetRaw = typeof req.query.offset === "string" ? parseInt(req.query.offset, 10) : NaN;
+      // lean defaults true unless lean=0
+      const lean = !(req.query.lean === "0" || req.query.lean === "false");
+
       const limit = Number.isFinite(limitRaw)
         ? Math.min(Math.max(limitRaw, 1), MAX_EMPLOYEES_PAGE)
-        : MAX_EMPLOYEES_PAGE;
+        : DEFAULT_EMPLOYEES_PAGE;
       const offset = Number.isFinite(offsetRaw) ? Math.max(offsetRaw, 0) : 0;
 
-      const rows = await getEmployees(undefined, { q, limit, offset });
-      return res.status(200).json(rows);
+      const page = await getEmployeesPage({ q, status, alert, limit, offset, lean });
+      res.setHeader("x-total-count", String(page.total));
+      res.setHeader("Cache-Control", "private, no-cache");
+      return res.status(200).json(page);
+    }
+
+    let admin;
+    try {
+      admin = await requireAdmin(req, res);
+    } catch {
+      return;
     }
 
     if (req.method === "POST") {
@@ -56,8 +78,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return sendError(res, 409, "NIP atau NIK sudah terdaftar");
       }
 
-      const created = await createEmployee(parsed.data);
-      return res.status(201).json(created);
+      try {
+        const created = await createEmployee(parsed.data);
+        await writeAuditLog({
+          actor: admin,
+          action: "employee.create",
+          entityType: "employee",
+          entityId: created.id,
+          meta: { nip: created.nip, nama: created.nama, requestId },
+        });
+        return res.status(201).json(created);
+      } catch (err) {
+        if (
+          typeof err === "object" &&
+          err !== null &&
+          "code" in err &&
+          (err as { code: string }).code === "P2002"
+        ) {
+          return sendError(res, 409, "NIP atau NIK sudah terdaftar");
+        }
+        throw err;
+      }
     }
 
     if (req.method === "DELETE") {
@@ -72,6 +113,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return sendError(res, 400, "Format ids tidak valid");
       }
       await deleteEmployees(ids);
+      await writeAuditLog({
+        actor: admin,
+        action: "employee.bulk_delete",
+        entityType: "employee",
+        meta: { count: ids.length, ids: ids.slice(0, 20), requestId },
+      });
       return res.status(204).end();
     }
 
@@ -84,6 +131,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return sendError(res, 400, `Maksimal ${MAX_BULK_EMPLOYEES} baris per impor`);
       }
       const result = await bulkUpsertEmployees(incoming);
+      await writeAuditLog({
+        actor: admin,
+        action: "employee.import",
+        entityType: "employee",
+        meta: {
+          created: result.created,
+          updated: result.updated,
+          errors: result.errors,
+          requestId,
+        },
+      });
       return res.status(200).json(result);
     }
 

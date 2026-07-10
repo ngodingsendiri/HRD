@@ -1,0 +1,2 @@
+-- AlterTable: add role for RBAC (ADMIN | VIEWER)
+ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "role" TEXT NOT NULL DEFAULT 'ADMIN';

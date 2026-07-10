@@ -1,13 +1,9 @@
 import { PrismaClient } from "@prisma/client";
 
 /**
- * Prisma singleton.
- * In development, Vite's HMR + serverless can create many PrismaClient
- * instances which exhaust DB connections. We stash one on globalThis.
- */
-/**
- * Ensures the connection string has pgbouncer=true if it's a pooled connection.
- * This bypasses the need to edit locked Vercel environment variables.
+ * Prisma singleton for serverless + local.
+ * Always reuse on globalThis to avoid exhausting Neon connections on warm
+ * Vercel isolates (not only in development).
  */
 function getDatabaseUrl() {
   let url = process.env.DATABASE_URL;
@@ -33,6 +29,19 @@ export const prisma =
     log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
   });
 
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
+globalForPrisma.prisma = prisma;
+
+/** Lightweight connectivity probe for health checks. */
+export async function pingDatabase(): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
+  const start = Date.now();
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    return { ok: true, latencyMs: Date.now() - start };
+  } catch (err) {
+    return {
+      ok: false,
+      latencyMs: Date.now() - start,
+      error: err instanceof Error ? err.message : "db_unreachable",
+    };
+  }
 }

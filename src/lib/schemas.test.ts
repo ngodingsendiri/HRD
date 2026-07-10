@@ -102,6 +102,19 @@ describe("EmployeeSchema", () => {
     expect(r.success).toBe(true);
     if (r.success) expect(r.data.nama).toBe("Budi");
   });
+
+  it("normalizes NIP/NIK to digits only", () => {
+    const r = EmployeeSchema.safeParse({
+      ...base,
+      nip: "1980 0101 2010 011 001",
+      nik: "3201-0101-0101-0001",
+    });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.nip).toBe("198001012010011001");
+      expect(r.data.nik).toBe("3201010101010001");
+    }
+  });
 });
 
 describe("AppSettingsSchema", () => {

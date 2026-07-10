@@ -1,171 +1,204 @@
-# Panduan Setup & Deployment HRCube
+# Setup & Deployment — HRCube
 
-> Dokumen ini menjelaskan langkah-langkah untuk menjalankan HRCube secara lokal
-> maupun di Vercel (produksi).
+## Prasyarat
 
----
-
-## 1. Prasyarat
-
-- **Node.js** ≥ 18
-- **Database** Neon Postgres ([neon.tech](https://neon.tech))
-- **Vercel** account (untuk deployment)
+- Node.js ≥ 18  
+- Neon Postgres  
+- Akun Vercel (production)
 
 ---
 
-## 2. Environment Variables
+## 1. Environment variables
 
-Salin `.env.example` menjadi `.env` (lokal) atau set di **Vercel Dashboard → Settings → Environment Variables**.
+Salin `.env.example` → `.env` (lokal) atau set di Vercel.
 
-### Variabel wajib
-
-| Variabel | Contoh | Keterangan |
-|----------|--------|------------|
-| `DATABASE_URL` | Neon pooled URL + `sslmode=require` | Koneksi runtime (pooler) |
-| `DIRECT_URL` | Neon direct URL | Migrasi Prisma |
-| `AUTH_SECRET` | output `openssl rand -base64 32` | **Wajib di production** (min 16 char). App **gagal hard** jika kosong. |
-| `ADMIN_EMAILS` | `admin@example.com` | Allowlist email admin (comma-separated) |
-
-### Variabel untuk script admin (hanya lokal / CI — jangan commit)
-
-| Variabel | Keterangan |
-|----------|------------|
-| `ADMIN_EMAIL` | Email user yang dibuat/di-update |
-| `ADMIN_PASSWORD` | Password min 8 karakter |
-| `ADMIN_NAME` | Nama tampilan (opsional) |
-
-### Generate AUTH_SECRET
-
-```bash
-openssl rand -base64 32
-```
+| Variabel | Wajib | Keterangan |
+|----------|-------|------------|
+| `DATABASE_URL` | ✅ | Neon **pooled** (+ `sslmode=require`) |
+| `DIRECT_URL` | ✅ | Neon **direct** (migrasi) |
+| `AUTH_SECRET` | ✅ prod | `openssl rand -base64 32` (min 16 char). **Gagal hard** jika kosong di production |
+| `ADMIN_EMAILS` | disarankan | Email yang selalu dapat **write** (comma-separated) |
+| `ADMIN_EMAIL` | script | Hanya untuk `create-admin` |
+| `ADMIN_PASSWORD` | script | Min 8 karakter |
+| `ADMIN_NAME` | opsional | Nama tampilan |
+| `ADMIN_ROLE` | opsional | `ADMIN` (default) atau `VIEWER` |
+| `REVOKE_SESSIONS` | opsional | `1` = hapus semua session setelah ganti password |
 
 ---
 
-## 3. Setup Database
+## 2. Database
 
 ```bash
 npm install
-npx prisma migrate deploy
-# atau development: npm run db:migrate
+npx prisma migrate deploy   # production / CI
+# development:
+npm run db:migrate
 ```
 
-Jika database sudah ada dari `db push` lama, jalankan migrasi partial unique index:
+Migrasi termasuk:
+
+- schema employees + auth tables  
+- partial unique NIP/NIK non-empty  
+- `audit_logs`  
+- `users.role`  
+- `api_keys` (external API)
+
+Seed settings (opsional):
 
 ```bash
-npx prisma migrate deploy
+npm run db:seed
 ```
-
-Jika index gagal karena **duplikat NIP/NIK**, bersihkan duplikat dulu di Neon SQL Editor, lalu ulang.
 
 ---
 
-## 4. Buat User Admin
-
-**Jangan hardcode password di repo.** Gunakan env:
+## 3. Buat user
 
 ```bash
-# Windows PowerShell
-$env:ADMIN_EMAIL="admin@example.com"
-$env:ADMIN_PASSWORD="ganti-dengan-password-kuat"
+# PowerShell
+$env:ADMIN_EMAIL="anda@instansi.go.id"
+$env:ADMIN_PASSWORD="password-kuat-min-8"
 $env:ADMIN_NAME="Admin Sekretariat"
+$env:ADMIN_ROLE="ADMIN"          # atau VIEWER
+$env:REVOKE_SESSIONS="1"         # opsional setelah rotate password
 npm run create-admin
 ```
 
 ```bash
 # bash
-ADMIN_EMAIL=admin@example.com \
-ADMIN_PASSWORD='ganti-dengan-password-kuat' \
-ADMIN_NAME='Admin Sekretariat' \
+ADMIN_EMAIL=anda@instansi.go.id \
+ADMIN_PASSWORD='password-kuat-min-8' \
+ADMIN_ROLE=ADMIN \
 npm run create-admin
 ```
 
-Pastikan email yang sama ada di `ADMIN_EMAILS`, jika tidak login akan ditolak (403).
+Tambahkan email yang sama ke `ADMIN_EMAILS` jika ingin bootstrap write lewat env (selain role DB).
 
-### Production (Neon via Vercel)
-
-```bash
-vercel env pull .env.production.local
-# set ADMIN_EMAIL / ADMIN_PASSWORD, lalu:
-# pastikan DATABASE_URL mengarah ke production
-npm run create-admin
-```
+**VIEWER:** role `VIEWER` → bisa login & baca; mutasi API → 403.
 
 ---
 
-## 5. Jalankan Lokal
+## 4. Lokal
 
 ```bash
 npm install
-cp .env.example .env
-# Edit .env — DATABASE_URL, DIRECT_URL, AUTH_SECRET, ADMIN_EMAILS
+cp .env.example .env   # isi env
 npx prisma migrate dev
-npm run create-admin   # setelah set ADMIN_EMAIL + ADMIN_PASSWORD
-npm run dev
+npm run create-admin
 ```
 
-Buka `http://localhost:5173`.
+**Penting:** `npm run dev` (Vite) hanya menyajikan frontend. Endpoint `/api/*` **tidak** ikut jalan kecuali Anda pakai Vercel CLI:
+
+```bash
+# Opsi A — full stack lokal (disarankan)
+npx vercel dev
+
+# Opsi B — UI saja (API akan 404)
+npm run dev            # http://localhost:5173
+```
 
 ---
 
-## 6. Deploy ke Vercel
+## 5. Deploy Vercel
 
-1. Push ke GitHub  
-2. Connect repo di [Vercel](https://vercel.com/new)  
-3. Set environment variables  
-4. Deploy  
+1. Push repo, connect Vercel  
+2. Set env (production)  
+3. Build: `npm run build` (sudah di `package.json` / `vercel.json`)  
+4. Setelah deploy: `npx prisma migrate deploy` terhadap DB production  
 
 ### Checklist
 
-- [ ] `DATABASE_URL` + `DIRECT_URL`
-- [ ] `AUTH_SECRET` (panjang ≥ 16, random)
-- [ ] `ADMIN_EMAILS` berisi email admin
-- [ ] `create-admin` sudah dijalankan di DB produksi
-- [ ] Password default / lama sudah diganti jika pernah bocor di git
+- [ ] `DATABASE_URL` + `DIRECT_URL`  
+- [ ] `AUTH_SECRET` random  
+- [ ] `ADMIN_EMAILS`  
+- [ ] Migrasi applied  
+- [ ] Admin dibuat / password di-rotate  
+- [ ] `GET /api/health` → `"db":"up"`  
 
 ---
 
-## 7. Keamanan (ringkas)
+## 6. API penting
 
-- Login dibatasi rate limit (~10 percobaan / 15 menit per IP & email)
-- Hanya email di `ADMIN_EMAILS` yang boleh session
-- Cookie session: HttpOnly, SameSite=Lax, Secure di production
-- Header keamanan di `vercel.json` (HSTS, X-Frame-Options, nosniff, …)
-- Bulk import/delete dibatasi 500 baris per request
+### Session (aplikasi web)
 
-Detail temuan & status perbaikan: lihat [`AUDIT.md`](./AUDIT.md).
+| Endpoint | Auth |
+|----------|------|
+| `GET /api/health` | publik — cek DB |
+| `POST /api/auth/login` | publik — rate limit |
+| `GET /api/auth/me` | cookie |
+| `POST /api/auth/logout` `{ "allDevices": true }` | cookie — revoke semua session |
+| `GET /api/employees?limit=&offset=&q=&lean=1` | staff |
+| `GET /api/stats` | staff — dasbor |
+| `GET /api/settings?include=core,kamus` | staff |
+| Mutasi employees/settings | **admin only** |
+
+### External API (aplikasi lain)
+
+1. Login sebagai **admin** → **Pengaturan → API & Integrasi** → **Buat API key**.  
+2. Salin secret `hrc_…` (hanya sekali).  
+3. Panggil endpoint dengan header:
+
+```bash
+# List pegawai
+curl -H "Authorization: Bearer hrc_YOUR_KEY" \
+  "https://YOUR_DOMAIN/api/v1/employees?limit=50&lean=1&q=budi"
+
+# Satu pegawai
+curl -H "X-API-Key: hrc_YOUR_KEY" \
+  "https://YOUR_DOMAIN/api/v1/employees/EMPLOYEE_ID"
+
+# Ringkasan dasbor (total, bidang, KP/KGB/pensiun)
+curl -H "Authorization: Bearer hrc_YOUR_KEY" \
+  "https://YOUR_DOMAIN/api/v1/stats"
+```
+
+| Endpoint | Scope | Catatan |
+|----------|-------|---------|
+| `GET /api/v1/employees` | `employees:read` | Query: `q`, `status`, `alert`, `limit`, `offset`, `lean` |
+| `GET /api/v1/employees/:id` | `employees:read` | Detail penuh |
+| `GET /api/v1/stats` | `stats:read` | Agregat dasbor |
+| `GET /api/v1/settings?include=core` | `settings:read` | Default `core` saja; tambah `logo,kamus,peta` bila perlu |
+| `GET /api/v1/openapi` | — | OpenAPI 3 (publik) |
+| `GET/POST /api/v1/keys` | session admin | Kelola key di UI (maks 25 aktif) |
+| `DELETE /api/v1/keys/:id` | session admin | Cabut key |
+
+- Secret **tidak** disimpan plain-text (hanya hash SHA-256).  
+- Cabut key di UI jika bocor.  
+- CORS: diizinkan untuk GET data v1 (header `Authorization` / `X-API-Key`).  
+- **Origin binding (opsional):** isi origin browser di form key; kosong = bebas (server-to-server OK).  
+- Scope wildcard `*` **tidak** diizinkan (least privilege).  
+- Login + create key: rate limit **terdistribusi di Neon** (bukan hanya memory isolate).
+
+Import Excel: unduh **Template** di Direktori Pegawai → isi sheet `Data_Import` + baca `Petunjuk` → Impor.
 
 ---
 
-## 8. Troubleshooting
+## 7. Troubleshooting
 
-### Login gagal / 500
-
-| Penyebab | Solusi |
-|----------|--------|
-| `AUTH_SECRET` kosong di production | Generate & set di Vercel |
-| User belum ada | `npm run create-admin` |
-| Email tidak di `ADMIN_EMAILS` | Tambahkan email → 403 “tidak memiliki akses admin” |
-| Rate limit | Tunggu ~15 menit |
-
-### 401 setelah login
-
-Email tidak di allowlist `ADMIN_EMAILS`.
-
-### DB connection
-
-Pastikan `sslmode=require`. Untuk pooler Neon, app menambahkan `pgbouncer=true` otomatis jika perlu.
+| Gejala | Cek |
+|--------|-----|
+| Login 500 | `AUTH_SECRET`, koneksi DB |
+| Login 403 | role / allowlist |
+| 403 saat simpan (VIEWER) | normal — butuh ADMIN |
+| Import banyak error | buka detail baris di alert; NIP/NIK valid; Nama wajib |
+| Settings lambat | pakai `include=` tanpa logo di halaman lain (sudah) |
+| Health 503 | Neon down / `DATABASE_URL` salah |
+| Audit tidak terisi | jalankan migrasi `audit_logs` |
+| External API 401 | key salah / dicabut / kadaluarsa; cek prefix `hrc_` |
+| External API 403 | scope key tidak mencakup endpoint (mis. butuh `stats:read`) |
+| Tabel `api_keys` hilang | `npx prisma migrate deploy` |
 
 ---
 
-## 9. Scripts berguna
+## 8. Perintah harian
 
 | Command | Fungsi |
 |---------|--------|
-| `npm run dev` | Vite dev server |
-| `npm run build` | Prisma generate + Vite build |
-| `npm run lint` | Typecheck (`tsc --noEmit`) |
-| `npm test` | Unit tests (Vitest) |
-| `npm run db:migrate` | Migrasi dev |
+| `npm run dev` | Frontend dev |
+| `npm run build` | Production build |
+| `npm run lint` | Typecheck |
+| `npm test` | Unit tests |
 | `npm run db:deploy` | Migrasi production |
-| `npm run create-admin` | Buat/update admin dari env |
+| `npm run create-admin` | User admin/viewer |
+
+Konvensi kode & desain: **[AGENTS.md](./AGENTS.md)**.  
+Ringkasan produk: **[README.md](./README.md)**.

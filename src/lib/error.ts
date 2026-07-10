@@ -19,6 +19,7 @@ export interface ErrorContext {
 
 /**
  * Normalize an error into a user-friendly message based on the operation.
+ * Prefers intentional API error strings (409, validation) over generic text.
  * Logs a redacted context to the console for debugging (no auth/PII data).
  */
 export function handleApiError(
@@ -35,7 +36,6 @@ export function handleApiError(
   };
   console.error("API Error:", JSON.stringify(ctx));
 
-  // Translate to a generic user-facing message (no stack/PII).
   const friendly: Record<OperationType, string> = {
     [OperationType.CREATE]: "Gagal menambahkan data.",
     [OperationType.UPDATE]: "Gagal memperbarui data.",
@@ -44,5 +44,22 @@ export function handleApiError(
     [OperationType.GET]: "Gagal memuat data.",
     [OperationType.WRITE]: "Gagal menyimpan data.",
   };
+
+  // Surface server messages (validation, 409, 403) when present
+  const isNetwork =
+    /failed to fetch|networkerror|load failed|network request failed/i.test(
+      message,
+    );
+  const isBareStatus = /^Request failed:\s*\d+$/i.test(message);
+  if (
+    message &&
+    !isNetwork &&
+    !isBareStatus &&
+    message.length > 0 &&
+    message.length < 280
+  ) {
+    return new Error(message);
+  }
+
   return new Error(friendly[operationType]);
 }

@@ -1,8 +1,11 @@
 import { useForm, useFieldArray } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Employee, AppSettings } from "../types";
 import { Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { validateAndExtractNIP, calculateBUP, calculateMasaKerja } from "../lib/employeeUtils";
+import { EmployeeFormSchema } from "../lib/schemas";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { btnPrimary, btnSecondary, input, label } from "../lib/ui";
 
 interface EmployeeFormProps {
@@ -10,6 +13,8 @@ interface EmployeeFormProps {
   settings?: AppSettings | null;
   onSubmit: (data: Employee) => void;
   onCancel: () => void;
+  /** Parent can block Modal close when form is dirty */
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
 export function EmployeeForm({
@@ -17,8 +22,10 @@ export function EmployeeForm({
   settings,
   onSubmit,
   onCancel,
+  onDirtyChange,
 }: EmployeeFormProps) {
   const [activeTab, setActiveTab] = useState(1);
+  const [discardOpen, setDiscardOpen] = useState(false);
   const {
     register,
     control,
@@ -26,8 +33,10 @@ export function EmployeeForm({
     watch,
     setValue,
     getValues,
-    formState: { errors, dirtyFields },
+    formState: { errors, dirtyFields, isDirty },
   } = useForm<Employee>({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    resolver: zodResolver(EmployeeFormSchema) as any,
     defaultValues: initialData || {
       nik: "",
       nama: "",
@@ -181,13 +190,22 @@ export function EmployeeForm({
 
   useEffect(() => {
     if (Object.keys(errors).length > 0) {
-      if (errors.nik || errors.nama) {
+      if (errors.nik || errors.nama || errors.nip) {
         setActiveTab(1);
       } else if (errors.dataKeluarga) {
         setActiveTab(4);
       }
     }
   }, [errors]);
+
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+  }, [isDirty, onDirtyChange]);
+
+  const requestCancel = () => {
+    if (isDirty) setDiscardOpen(true);
+    else onCancel();
+  };
 
   const tabs = [
     { id: 1, label: "Identitas Pribadi" },
@@ -228,24 +246,24 @@ export function EmployeeForm({
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="space-y-1.5">
                 <label className={label}>NIP</label>
-                <input
-                  {...register("nip")}
-                  className={input}
-                />
+                <input {...register("nip")} className={input} />
+                {errors.nip && (
+                  <p className="text-xs text-red-600">{String(errors.nip.message)}</p>
+                )}
               </div>
               <div className="space-y-1.5">
-                <label className={label}>NIK *</label>
-                <input
-                  {...register("nik", { required: true })}
-                  className={input}
-                />
+                <label className={label}>NIK</label>
+                <input {...register("nik")} className={input} />
+                {errors.nik && (
+                  <p className="text-xs text-red-600">{String(errors.nik.message)}</p>
+                )}
               </div>
               <div className="space-y-1.5">
                 <label className={label}>Nama Lengkap (Sesuai KTP) *</label>
-                <input
-                  {...register("nama", { required: true })}
-                  className={input}
-                />
+                <input {...register("nama")} className={input} />
+                {errors.nama && (
+                  <p className="text-xs text-red-600">{String(errors.nama.message)}</p>
+                )}
               </div>
               <div className="space-y-1.5">
                 <label className={label}>Jenis Kelamin</label>
@@ -711,7 +729,7 @@ export function EmployeeForm({
         <div className="flex gap-3">
           <button
             type="button"
-            onClick={onCancel}
+            onClick={requestCancel}
             className={`${btnSecondary} px-5 py-2.5 text-sm`}
           >
             Batal
@@ -726,11 +744,25 @@ export function EmployeeForm({
             </button>
           ) : (
             <button type="submit" className={`${btnPrimary} px-5 py-2.5 text-sm`}>
-              Simpan Rekam Data
+              Simpan
             </button>
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={discardOpen}
+        onClose={() => setDiscardOpen(false)}
+        title="Buang perubahan?"
+        description="Ada perubahan yang belum disimpan. Tutup formulir ini?"
+        confirmLabel="Buang & tutup"
+        cancelLabel="Tetap mengisi"
+        variant="danger"
+        onConfirm={() => {
+          setDiscardOpen(false);
+          onCancel();
+        }}
+      />
     </form>
   );
 }

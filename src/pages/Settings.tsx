@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback, Suspense, lazy } from "react";
+import React, { useState, useEffect, useCallback, Suspense, lazy } from "react";
+import { useBlocker } from "react-router-dom";
 import { AppSettings } from "../types";
 import {
   Save,
@@ -10,17 +11,15 @@ import {
   User,
   Printer,
   FileSpreadsheet,
+  KeyRound,
 } from "lucide-react";
 import { DEFAULT_KAMUS } from "../constants";
-import { AnimatePresence, motion } from "motion/react";
+import { motion } from "motion/react";
 import { api } from "../lib/api";
 import { PageHeader } from "../components/PageHeader";
 import {
-  alertError,
-  alertSuccess,
   btnPrimary,
   card,
-  easeOut,
   input,
   navTab,
   pageContainerVariants,
@@ -28,6 +27,9 @@ import {
   pageShell,
 } from "../lib/ui";
 import { cn } from "../lib/utils";
+import { useAuth } from "../lib/auth";
+import { ConfirmDialog } from "../components/ConfirmDialog";
+import { notify } from "../lib/notify";
 
 /**
  * Heavy managers (pull in xlsx) — only load when user opens those tabs.
@@ -39,6 +41,11 @@ const KamusManager = lazy(() =>
 );
 const PetaManager = lazy(() =>
   import("../components/PetaManager").then((m) => ({ default: m.PetaManager })),
+);
+const ApiKeysManager = lazy(() =>
+  import("../components/ApiKeysManager").then((m) => ({
+    default: m.ApiKeysManager,
+  })),
 );
 
 const EMPTY_SETTINGS: AppSettings = {
@@ -64,27 +71,25 @@ function TabFallback() {
 }
 
 export default function Settings() {
+  const { canWrite } = useAuth();
   const [settings, setSettings] = useState<AppSettings>(EMPTY_SETTINGS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
-  const [message, setMessage] = useState<{
-    type: "success" | "error";
-    text: string;
-  } | null>(null);
   const [activeTab, setActiveTab] = useState<
-    "identitas" | "cetak" | "kamus" | "peta"
+    "identitas" | "cetak" | "kamus" | "peta" | "api"
   >("identitas");
 
   // Track which heavy tabs have been visited so Suspense only hits once.
   const [kamusMounted, setKamusMounted] = useState(false);
   const [petaMounted, setPetaMounted] = useState(false);
+  const [apiMounted, setApiMounted] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     async function fetchSettingsData() {
       try {
-        const data = await api.getSettings();
+        const data = await api.getSettings("all");
         if (cancelled) return;
         setSettings({
           ...EMPTY_SETTINGS,
@@ -98,10 +103,7 @@ export default function Settings() {
       } catch (error) {
         console.error("Error fetching settings:", error);
         if (!cancelled) {
-          setMessage({
-            type: "error",
-            text: "Gagal memuat pengaturan. Coba muat ulang.",
-          });
+          notify.error("Gagal memuat pengaturan", "Coba muat ulang halaman.");
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -123,10 +125,7 @@ export default function Settings() {
     if (!file) return;
 
     if (file.size > 1024 * 1024) {
-      setMessage({
-        type: "error",
-        text: "Ukuran logo tidak boleh lebih dari 1MB",
-      });
+      notify.error("Logo terlalu besar", "Maksimal 1MB.");
       return;
     }
 
@@ -144,9 +143,7 @@ export default function Settings() {
   const handleSave = async (e?: React.FormEvent) => {
     e?.preventDefault();
     setSaving(true);
-    setMessage(null);
     try {
-      // Ensure kamus has a usable default if still empty when saving from other tabs
       const payload: AppSettings = {
         ...settings,
         jabatanKamusCsv: settings.jabatanKamusCsv || DEFAULT_KAMUS,
@@ -154,11 +151,10 @@ export default function Settings() {
       await api.upsertSettings(payload);
       setSettings(payload);
       setIsDirty(false);
-      setMessage({ type: "success", text: "Pengaturan berhasil disimpan" });
-      setTimeout(() => setMessage(null), 3000);
+      notify.success("Pengaturan disimpan");
     } catch (error) {
       console.error("Error saving settings:", error);
-      setMessage({ type: "error", text: "Gagal menyimpan pengaturan" });
+      notify.error("Gagal menyimpan pengaturan");
     } finally {
       setSaving(false);
     }
@@ -167,10 +163,32 @@ export default function Settings() {
   const selectTab = (tab: typeof activeTab) => {
     if (tab === "kamus") setKamusMounted(true);
     if (tab === "peta") setPetaMounted(true);
+    if (tab === "api") setApiMounted(true);
     setActiveTab(tab);
   };
 
+  const isApiTab = activeTab === "api";
+
   const kamusCsvForEditor = settings.jabatanKamusCsv || DEFAULT_KAMUS;
+
+  // Block navigation when there are unsaved changes (React Router v7)
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      isDirty &&
+      canWrite &&
+      currentLocation.pathname !== nextLocation.pathname,
+  );
+
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isDirty && canWrite) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [isDirty, canWrite]);
 
   return (
     <motion.div
@@ -181,59 +199,50 @@ export default function Settings() {
     >
       <motion.div variants={pageItemVariants}>
         <PageHeader
-          title="Pengaturan Sistem"
-          description="Konfigurasi identitas instansi, atribut tata naskah, otoritas penandatangan, dan manajemen kamus data."
+          title="Pengaturan"
+          description="Identitas instansi, data master, dan API."
           actions={
-            <button
-              type="button"
-              onClick={() => handleSave()}
-              disabled={saving || loading}
-              aria-label="Simpan pengaturan"
-              className={`${btnPrimary} w-full sm:w-auto shrink-0`}
-            >
-              {saving ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Save className="w-4 h-4" />
-              )}
-              {saving
-                ? "Menyimpan..."
-                : isDirty
-                  ? "Simpan Perubahan"
-                  : "Tersimpan"}
-            </button>
+            isApiTab ? (
+              <span className="text-xs font-medium text-slate-500 border border-slate-200 rounded-lg px-3 py-2">
+                Kelola key di panel
+              </span>
+            ) : canWrite ? (
+              <button
+                type="button"
+                onClick={() => handleSave()}
+                disabled={saving || loading || !isDirty}
+                aria-label="Simpan pengaturan"
+                className={`${btnPrimary} w-full sm:w-auto shrink-0`}
+              >
+                {saving ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Save className="w-4 h-4" />
+                )}
+                {saving
+                  ? "Menyimpan…"
+                  : isDirty
+                    ? "Simpan semua"
+                    : "Tersimpan"}
+              </button>
+            ) : (
+              <span className="text-xs font-medium text-slate-500 border border-slate-200 rounded-lg px-3 py-2">
+                Mode baca saja
+              </span>
+            )
           }
         />
       </motion.div>
-
-      <AnimatePresence mode="wait">
-        {message && (
-          <motion.div
-            key={message.text}
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={easeOut}
-            className={message.type === "success" ? alertSuccess : alertError}
-            role="status"
-          >
-            <div
-              className={cn(
-                "w-2 h-2 rounded-full shrink-0",
-                message.type === "success" ? "bg-emerald-500" : "bg-red-500",
-              )}
-            />
-            {message.text}
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       <motion.div
         variants={pageItemVariants}
         className="flex flex-col md:flex-row gap-6 md:gap-8"
       >
-        <div className="w-full md:w-64 shrink-0">
-          <nav className="flex md:flex-col gap-2 overflow-x-auto pb-2 md:pb-0 scrollbar-hide snap-x">
+        <div className="w-full md:w-56 shrink-0">
+          <nav className="flex md:flex-col gap-1 overflow-x-auto pb-2 md:pb-0 scrollbar-hide snap-x">
+            <p className="hidden md:block px-3 pt-1 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Instansi
+            </p>
             <button
               type="button"
               onClick={() => selectTab("identitas")}
@@ -245,7 +254,7 @@ export default function Settings() {
                   activeTab === "identitas" ? "text-slate-900" : "text-slate-400",
                 )}
               />
-              Otoritas Penandatangan
+              Penandatangan
             </button>
             <button
               type="button"
@@ -258,8 +267,11 @@ export default function Settings() {
                   activeTab === "cetak" ? "text-slate-900" : "text-slate-400",
                 )}
               />
-              Tata Naskah & Identitas
+              Identitas
             </button>
+            <p className="hidden md:block px-3 pt-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Data master
+            </p>
             <button
               type="button"
               onClick={() => selectTab("kamus")}
@@ -271,7 +283,7 @@ export default function Settings() {
                   activeTab === "kamus" ? "text-slate-900" : "text-slate-400",
                 )}
               />
-              Kamus Jabatan
+              Kamus
             </button>
             <button
               type="button"
@@ -284,14 +296,30 @@ export default function Settings() {
                   activeTab === "peta" ? "text-slate-900" : "text-slate-400",
                 )}
               />
-              Master Peta Jabatan
+              Peta jabatan
+            </button>
+            <p className="hidden md:block px-3 pt-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Integrasi
+            </p>
+            <button
+              type="button"
+              onClick={() => selectTab("api")}
+              className={navTab(activeTab === "api")}
+            >
+              <KeyRound
+                className={cn(
+                  "w-4 h-4",
+                  activeTab === "api" ? "text-slate-900" : "text-slate-400",
+                )}
+              />
+              API
             </button>
           </nav>
         </div>
 
         <div className={`flex-1 ${card} min-h-[500px] relative`}>
           {/* Soft loading overlay — UI shell stays visible (no full-page spinner) */}
-          {loading && (
+          {loading && !isApiTab && (
             <div className="absolute inset-0 z-10 bg-white/70 flex items-center justify-center rounded-xl">
               <div className="flex items-center gap-2 text-sm text-slate-500 font-medium">
                 <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
@@ -300,40 +328,59 @@ export default function Settings() {
             </div>
           )}
 
+          {apiMounted && (
+            <div
+              className={cn(
+                "p-4 sm:p-6 md:p-8",
+                activeTab === "api" ? "block" : "hidden",
+              )}
+            >
+              <Suspense fallback={<TabFallback />}>
+                <ApiKeysManager canWrite={canWrite} />
+              </Suspense>
+            </div>
+          )}
+
           <form
             onSubmit={handleSave}
-            className={cn("p-4 sm:p-6 md:p-8", loading && "pointer-events-none opacity-60")}
+            className={cn(
+              "p-4 sm:p-6 md:p-8",
+              isApiTab && "hidden",
+              loading && "pointer-events-none opacity-60",
+              !canWrite && "[&_input]:bg-slate-50 [&_input]:text-slate-600 [&_textarea]:bg-slate-50",
+            )}
           >
             {activeTab === "identitas" && (
               <div className="space-y-8">
                 <div className="border-b border-slate-100 pb-4">
-                  <h2 className="text-lg font-bold text-slate-800">
-                    Otoritas Pengesahan Teratas
+                  <h2 className="text-lg font-bold text-slate-800 tracking-tight">
+                    Penandatangan
                   </h2>
                   <p className="text-sm text-slate-500 mt-1">
-                    Delegasi penandatangan untuk validasi dan pengesahan dokumen
-                    serta laporan kepegawaian resmi.
+                    Nama pejabat untuk dokumen resmi (kop / TTD).
                   </p>
                 </div>
 
-                <div className="space-y-6">
-                  <div className="p-4 sm:p-5 rounded-xl border border-slate-200 bg-slate-50 space-y-5">
+                <div className="space-y-8">
+                  <section className="space-y-4">
                     <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
                       <ShieldCheck className="w-3.5 h-3.5" /> Sekretaris Daerah
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                       <div className="space-y-2">
                         <label className="block text-xs font-semibold text-slate-700">
-                          Nama Lengkap
+                          Nama
                         </label>
                         <input
                           type="text"
                           className={input}
                           value={settings.sekdaNama}
+                          disabled={!canWrite}
+                          readOnly={!canWrite}
                           onChange={(e) =>
                             patchSettings({ sekdaNama: e.target.value })
                           }
-                          placeholder="Masukkan nama lengkap..."
+                          placeholder="Nama lengkap"
                         />
                       </div>
                       <div className="space-y-2">
@@ -344,36 +391,40 @@ export default function Settings() {
                           type="text"
                           className={`${input} font-mono`}
                           value={settings.sekdaNip}
+                          disabled={!canWrite}
+                          readOnly={!canWrite}
                           onChange={(e) =>
                             patchSettings({ sekdaNip: e.target.value })
                           }
-                          placeholder="19xxxxxxxxxxxxxx"
+                          placeholder="18 digit"
                         />
                       </div>
                     </div>
-                  </div>
+                  </section>
 
-                  <div className="p-4 sm:p-5 rounded-xl border border-slate-200 bg-slate-50 space-y-5">
+                  <section className="space-y-4 pt-2 border-t border-slate-100">
                     <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                      <ShieldCheck className="w-3.5 h-3.5" /> Kepala Daerah
+                      <ShieldCheck className="w-3.5 h-3.5" /> Kepala daerah
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                       <div className="space-y-2">
                         <label className="block text-xs font-semibold text-slate-700">
-                          Nama Bupati / Pejabat
+                          Nama
                         </label>
                         <input
                           type="text"
                           className={input}
                           value={settings.bupatiNama}
+                          disabled={!canWrite}
+                          readOnly={!canWrite}
                           onChange={(e) =>
                             patchSettings({ bupatiNama: e.target.value })
                           }
-                          placeholder="Masukkan nama jabatan tertinggi..."
+                          placeholder="Bupati / pejabat"
                         />
                       </div>
                     </div>
-                  </div>
+                  </section>
                 </div>
               </div>
             )}
@@ -381,12 +432,11 @@ export default function Settings() {
             {activeTab === "cetak" && (
               <div className="space-y-8">
                 <div className="border-b border-slate-100 pb-4">
-                  <h2 className="text-lg font-bold text-slate-800">
-                    Tata Naskah Dinas & Identitas Visual
+                  <h2 className="text-lg font-bold text-slate-800 tracking-tight">
+                    Identitas dokumen
                   </h2>
                   <p className="text-sm text-slate-500 mt-1">
-                    Konfigurasi atribut tipografi dan elemen visual KOP instansi
-                    guna standarisasi dokumen operasional.
+                    Baris kop surat dan logo instansi.
                   </p>
                 </div>
 
@@ -498,12 +548,11 @@ export default function Settings() {
             {kamusMounted && (
               <div className={activeTab === "kamus" ? "block" : "hidden"}>
                 <div className="border-b border-slate-100 pb-4 mb-6">
-                  <h2 className="text-lg font-bold text-slate-800">
-                    Data Kamus Jabatan
+                  <h2 className="text-lg font-bold text-slate-800 tracking-tight">
+                    Kamus jabatan
                   </h2>
                   <p className="text-sm text-slate-500 mt-1">
-                    Data master referensi jabatan untuk menghitung kelas & beban
-                    kerja secara otomatis di seluruh sistem.
+                    Referensi kelas & beban kerja per jabatan.
                   </p>
                 </div>
                 <Suspense fallback={<TabFallback />}>
@@ -520,12 +569,11 @@ export default function Settings() {
             {petaMounted && (
               <div className={activeTab === "peta" ? "block" : "hidden"}>
                 <div className="border-b border-slate-100 pb-4 mb-6">
-                  <h2 className="text-lg font-bold text-slate-800">
-                    Master Peta Jabatan (Kebutuhan & Bezetting)
+                  <h2 className="text-lg font-bold text-slate-800 tracking-tight">
+                    Peta jabatan
                   </h2>
                   <p className="text-sm text-slate-500 mt-1">
-                    Data referensi master untuk perhitungan kebutuhan pegawai dan
-                    analisis selisih/bezetting per Bidang/Unit Kerja.
+                    Kebutuhan & bezetting per unit.
                   </p>
                 </div>
                 <Suspense fallback={<TabFallback />}>
@@ -541,6 +589,17 @@ export default function Settings() {
           </form>
         </div>
       </motion.div>
+
+      <ConfirmDialog
+        open={blocker.state === "blocked"}
+        onClose={() => blocker.reset?.()}
+        title="Buang perubahan?"
+        description="Ada perubahan yang belum disimpan. Tinggalkan halaman ini?"
+        confirmLabel="Buang & keluar"
+        cancelLabel="Tetap di sini"
+        variant="danger"
+        onConfirm={() => blocker.proceed?.()}
+      />
     </motion.div>
   );
 }

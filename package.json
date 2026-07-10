@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:full": "vercel dev",
     "build": "prisma generate && vite build",
     "preview": "vite preview",
     "clean": "rimraf dist",

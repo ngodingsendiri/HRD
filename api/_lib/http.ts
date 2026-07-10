@@ -57,6 +57,57 @@ export function sendError(
 }
 
 /**
+ * CORS for public /api/v1/* data endpoints (API-key auth).
+ *
+ * @param allowedOrigins When set (from API key), only those origins get
+ *   Access-Control-Allow-Origin. Empty/undefined → `*` (server-to-server keys).
+ * Returns true if this was an OPTIONS preflight (caller should return).
+ */
+export function applyPublicApiCors(
+  req: VercelRequest,
+  res: VercelResponse,
+  allowedOrigins?: string[] | null,
+): boolean {
+  const originHeader =
+    typeof req.headers.origin === "string" ? req.headers.origin.trim() : "";
+  let requestOrigin: string | null = null;
+  if (originHeader) {
+    try {
+      requestOrigin = new URL(originHeader).origin;
+    } catch {
+      requestOrigin = null;
+    }
+  }
+
+  if (allowedOrigins?.length) {
+    if (requestOrigin && allowedOrigins.includes(requestOrigin)) {
+      res.setHeader("Access-Control-Allow-Origin", requestOrigin);
+      res.setHeader("Vary", "Origin");
+    }
+    // Mismatched browser origin: omit ACAO so browser blocks the response
+  } else {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+  }
+
+  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Authorization, X-API-Key, Content-Type, Accept",
+  );
+  res.setHeader("Access-Control-Max-Age", "86400");
+  if (req.method === "OPTIONS") {
+    // Preflight without key — allow listed origins or *
+    if (allowedOrigins?.length && requestOrigin && !allowedOrigins.includes(requestOrigin)) {
+      res.status(403).end();
+      return true;
+    }
+    res.status(204).end();
+    return true;
+  }
+  return false;
+}
+
+/**
  * Wrap async handler body. Logs full error server-side; returns generic 500.
  * Skip wrapping when response already sent (e.g. requireAdmin wrote 401).
  */
@@ -65,18 +116,40 @@ export async function withErrorBoundary(
   label: string,
   fn: () => Promise<unknown>,
 ): Promise<void> {
+  const t0 = Date.now();
   try {
     await fn();
   } catch (err) {
     if (res.headersSent) return;
     console.error(`[${label}]`, err);
     sendError(res, 500, "Terjadi kesalahan internal");
+  } finally {
+    try {
+      res.setHeader("x-response-time", `${Date.now() - t0}ms`);
+    } catch {
+      /* headers may be sent */
+    }
+    if (Date.now() - t0 > 1500) {
+      console.warn(`[perf] ${label} took ${Date.now() - t0}ms`);
+    }
   }
 }
 
 /** Max rows for bulk upsert / bulk delete — prevents timeouts & abuse. */
 export const MAX_BULK_EMPLOYEES = 500;
 export const MAX_BULK_DELETE_IDS = 500;
-export const MAX_EMPLOYEES_PAGE = 2000;
+/** Default list page size (clients can raise up to MAX). */
+export const DEFAULT_EMPLOYEES_PAGE = 50;
+export const MAX_EMPLOYEES_PAGE = 500;
 /** ~1.4MB base64 for ~1MB binary logo */
 export const MAX_LOGO_BASE64_CHARS = 1_500_000;
+
+/** Attach a request id for log correlation (optional header passthrough). */
+export function ensureRequestId(req: VercelRequest, res: VercelResponse): string {
+  const incoming = req.headers["x-request-id"];
+  const id =
+    (typeof incoming === "string" && incoming.slice(0, 64)) ||
+    `req_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+  res.setHeader("x-request-id", id);
+  return id;
+}

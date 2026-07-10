@@ -197,8 +197,10 @@ export function PetaManager({ csvData, onChange }: PetaManagerProps) {
         }
       } catch (error) {
         console.error("Error parsing import:", error);
-        alert(
-          "Gagal membaca file Excel/CSV. Pastikan format kolom sesuai: No, Bidang, Jabatan, Kelas, Kebutuhan.",
+        const { notify } = await import("../lib/notify");
+        notify.error(
+          "Gagal membaca file",
+          "Pastikan kolom: No, Bidang, Jabatan, Kelas, Kebutuhan.",
         );
       }
     };

@@ -14,6 +14,8 @@ export function buildFamilyExportFields(dataKeluarga?: FamilyMember[]): Record<s
   const out: Record<string, string> = {
     "Nama Istri/Suami": spouse?.name ?? "",
     "Tanggal Lahir Pasangan": spouse?.birthDate ?? "",
+    // Keep both labels for round-trip with old exports + new template
+    "Tanggal Nikah Pasangan": spouse?.marriageDate ?? "",
     "Perkawinan Pasangan": spouse?.marriageDate ?? "",
     "Pekerjaan Pasangan": spouse?.occupation ?? "",
     "Keterangan Pasangan": spouse?.description ?? "",
@@ -24,6 +26,7 @@ export function buildFamilyExportFields(dataKeluarga?: FamilyMember[]): Record<s
     const a = anak[i];
     out[`Nama Anak ${n}`] = a?.name ?? "";
     out[`Tanggal Lahir Anak ${n}`] = a?.birthDate ?? "";
+    out[`Tanggal Nikah Anak ${n}`] = a?.marriageDate ?? "";
     out[`Perkawinan Anak ${n}`] = a?.marriageDate ?? "";
     out[`Pekerjaan Anak ${n}`] = a?.occupation ?? "";
     out[`Keterangan Anak ${n}`] = a?.description ?? "";

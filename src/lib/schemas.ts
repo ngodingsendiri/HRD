@@ -32,14 +32,15 @@ export function isValidNip(value: string): boolean {
   return digits.length === 0 || (digits.length >= 8 && digits.length <= 25);
 }
 
+/** Canonical storage: digits only (spaces/dashes stripped). */
 const nikField = z
   .string()
-  .transform((s) => s.trim())
+  .transform((s) => s.replace(/\D/g, ""))
   .refine(isValidNik, { message: "NIK harus 16 digit angka (atau kosong)" });
 
 const nipField = z
   .string()
-  .transform((s) => s.trim())
+  .transform((s) => s.replace(/\D/g, ""))
   .refine(isValidNip, { message: "NIP harus 8–25 digit angka (atau kosong)" });
 
 // --- Family member (nested object, stored as JSONB in Postgres) ---

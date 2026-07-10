@@ -194,8 +194,10 @@ export function KamusManager({ csvData, onChange }: KamusManagerProps) {
         }
       } catch (error) {
         console.error("Error parsing import:", error);
-        alert(
-          "Gagal membaca file Excel/CSV. Pastikan format kolom sesuai: No, Jabatan, Kelas, Beban Kerja.",
+        const { notify } = await import("../lib/notify");
+        notify.error(
+          "Gagal membaca file",
+          "Pastikan kolom: No, Jabatan, Kelas, Beban Kerja.",
         );
       }
     };
