@@ -1,7 +1,5 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Plus, Trash2, Download, Upload, FileText, Database } from "lucide-react";
-import * as XLSX from "xlsx";
-import { motion, AnimatePresence } from "motion/react";
 
 interface PetaRow {
   id: string;
@@ -15,7 +13,6 @@ interface PetaRow {
 interface PetaManagerProps {
   csvData: string;
   onChange: (csv: string) => void;
-  
 }
 
 function generateId() {
@@ -52,22 +49,46 @@ function parseCsvToRows(csv: string): PetaRow[] {
 function stringifyRowsToCsv(rows: PetaRow[]): string {
   const header = "No;Bidang;Jabatan;Kelas;Kebutuhan";
   const dataLines = rows.map(
-    (r) => `${r.no};${r.bidang};${r.jabatan};${r.kelas};${r.kebutuhan}`
+    (r) => `${r.no};${r.bidang};${r.jabatan};${r.kelas};${r.kebutuhan}`,
   );
   return [header, ...dataLines].join("\n");
 }
 
+async function loadXlsx() {
+  return import("xlsx");
+}
+
 export function PetaManager({ csvData, onChange }: PetaManagerProps) {
-  const [rows, setRows] = useState<PetaRow[]>([]);
+  const [rows, setRows] = useState<PetaRow[]>(() => parseCsvToRows(csvData || ""));
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastCsvRef = useRef(csvData);
 
   useEffect(() => {
+    if (csvData === lastCsvRef.current) return;
+    lastCsvRef.current = csvData;
     setRows(parseCsvToRows(csvData || ""));
   }, [csvData]);
 
-  const updateParent = (newRows: PetaRow[]) => {
-    onChange(stringifyRowsToCsv(newRows));
-  };
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
+
+  const pushParent = useCallback(
+    (newRows: PetaRow[], immediate = false) => {
+      const csv = stringifyRowsToCsv(newRows);
+      lastCsvRef.current = csv;
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      if (immediate) {
+        onChange(csv);
+        return;
+      }
+      debounceRef.current = setTimeout(() => onChange(csv), 200);
+    },
+    [onChange],
+  );
 
   const handleAddRow = () => {
     const newRow = {
@@ -80,14 +101,16 @@ export function PetaManager({ csvData, onChange }: PetaManagerProps) {
     };
     const newRows = [...rows, newRow];
     setRows(newRows);
-    updateParent(newRows);
+    pushParent(newRows, true);
   };
 
   const handleDeleteRow = (id: string) => {
     const newRows = rows.filter((r) => r.id !== id);
-    newRows.forEach((r, idx) => (r.no = String(idx + 1)));
+    newRows.forEach((r, idx) => {
+      r.no = String(idx + 1);
+    });
     setRows(newRows);
-    updateParent(newRows);
+    pushParent(newRows, true);
   };
 
   const handleCellChange = (
@@ -99,10 +122,11 @@ export function PetaManager({ csvData, onChange }: PetaManagerProps) {
       r.id === id ? { ...r, [field]: value } : r,
     );
     setRows(newRows);
-    updateParent(newRows);
+    pushParent(newRows, false);
   };
 
-  const handleExport = () => {
+  const handleExport = async () => {
+    const XLSX = await loadXlsx();
     const exportData = rows.map((row) => ({
       No: row.no,
       Bidang: row.bidang,
@@ -116,52 +140,45 @@ export function PetaManager({ csvData, onChange }: PetaManagerProps) {
     XLSX.writeFile(wb, "Master_Peta_Jabatan.xlsx");
   };
 
-  
-  const handleDownloadTemplate = () => {
-    const headers = [
-      "No",
-      "Bidang",
-      "Jabatan",
-      "Kelas",
-      "Kebutuhan",
-    ];
-
+  const handleDownloadTemplate = async () => {
+    const XLSX = await loadXlsx();
+    const headers = ["No", "Bidang", "Jabatan", "Kelas", "Kebutuhan"];
     const sampleData = [
       ["1", "Sekretariat", "Kepala Dinas", "14", "1"],
       ["2", "Sekretariat", "Sekretaris", "12", "1"],
     ];
-
     const ws = XLSX.utils.aoa_to_sheet([headers, ...sampleData]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Template_Peta");
     XLSX.writeFile(wb, "Template_Master_Peta_Jabatan.xlsx");
   };
 
-const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       try {
+        const XLSX = await loadXlsx();
         const bstr = evt.target?.result;
         const wb = XLSX.read(bstr, { type: "binary" });
         const wsname = wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
-        const data = XLSX.utils.sheet_to_json<any>(ws);
+        const data = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws);
 
         if (data && data.length > 0) {
           const newRows: PetaRow[] = data
-            .map((d: any, idx: number) => {
-              const no = d["No"] || d["no"] || String(idx + 1);
-              const bidang = d["Bidang"] || d["bidang"] || "";
+            .map((d, idx) => {
+              const no = d["No"] ?? d["no"] ?? String(idx + 1);
+              const bidang = d["Bidang"] ?? d["bidang"] ?? "";
               const jabatan =
-                d["Jabatan"] || d["jabatan"] || d["JABATAN"] || "";
+                d["Jabatan"] ?? d["jabatan"] ?? d["JABATAN"] ?? "";
               const kelas = String(
-                d["Kelas"] || d["kelas"] || d["Kelas Jabatan"] || "",
+                d["Kelas"] ?? d["kelas"] ?? d["Kelas Jabatan"] ?? "",
               );
               const kebutuhan = String(
-                d["Kebutuhan"] || d["kebutuhan"] || "",
+                d["Kebutuhan"] ?? d["kebutuhan"] ?? "",
               );
 
               return {
@@ -176,7 +193,7 @@ const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
             .filter((r) => r.jabatan);
 
           setRows(newRows);
-          updateParent(newRows);
+          pushParent(newRows, true);
         }
       } catch (error) {
         console.error("Error parsing import:", error);
@@ -193,11 +210,11 @@ const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <p className="text-xs text-slate-500 max-w-lg">
-          Kelola Master Peta Jabatan untuk menghitung analisis Bezetting secara akurat. Anda dapat mengetik
-          langsung ke tabel, menambah baris, atau memproses massal menggunakan Excel.
+          Kelola Master Peta Jabatan untuk menghitung analisis Bezetting secara
+          akurat. Anda dapat mengetik langsung ke tabel, menambah baris, atau
+          memproses massal menggunakan Excel.
         </p>
         <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 shrink-0 w-full sm:w-auto">
-          
           <input
             type="file"
             accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
@@ -207,90 +224,119 @@ const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
           />
           <button
             type="button"
+            onClick={handleAddRow}
+            className="flex-1 sm:flex-none justify-center inline-flex items-center px-3 py-2 text-[12px] font-semibold text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-all active:scale-[0.98]"
+          >
+            <Plus className="w-3.5 h-3.5 mr-1.5" /> Tambah
+          </button>
+          <button
+            type="button"
             onClick={handleDownloadTemplate}
-            className="flex-1 sm:flex-none justify-center inline-flex items-center px-3 py-2 text-[12px] font-bold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all active:scale-95"
+            className="flex-1 sm:flex-none justify-center inline-flex items-center px-3 py-2 text-[12px] font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all active:scale-[0.98]"
           >
             <FileText className="w-3.5 h-3.5 mr-1.5 text-emerald-600" /> Template
           </button>
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="flex-1 sm:flex-none justify-center inline-flex items-center px-3 py-2 text-[12px] font-bold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all active:scale-95"
+            className="flex-1 sm:flex-none justify-center inline-flex items-center px-3 py-2 text-[12px] font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all active:scale-[0.98]"
           >
             <Upload className="w-3.5 h-3.5 mr-1.5" /> Impor
           </button>
           <button
             type="button"
             onClick={handleExport}
-            className="flex-1 sm:flex-none justify-center inline-flex items-center px-3 py-2 text-[12px] font-bold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all active:scale-95"
+            className="flex-1 sm:flex-none justify-center inline-flex items-center px-3 py-2 text-[12px] font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all active:scale-[0.98]"
           >
             <Download className="w-3.5 h-3.5 mr-1.5" /> Ekspor
           </button>
         </div>
       </div>
 
-      <div className="border border-slate-100 rounded-xl overflow-hidden bg-white ">
+      <div className="border border-slate-200 rounded-xl overflow-hidden bg-white">
         <div className="overflow-x-auto max-h-[400px]">
           <table className="w-full text-left border-collapse">
             <thead className="sticky top-0 z-10 bg-slate-50 border-b border-slate-100">
               <tr>
-                <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50 border-r border-slate-100 last:border-r-0 w-12">No</th>
-                <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50 border-r border-slate-100 last:border-r-0 min-w-[150px]">Bidang / Unit Kerja</th>
-                <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50 border-r border-slate-100 last:border-r-0 min-w-[180px]">Jabatan</th>
-                <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50 border-r border-slate-100 last:border-r-0 w-24">Kelas</th>
-                <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50 border-r border-slate-100 last:border-r-0 w-24">Kebutuhan</th>
-                <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50 border-r border-slate-100 last:border-r-0 w-16 text-center">Aksi</th>
+                <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest w-16">
+                  No
+                </th>
+                <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest min-w-[140px]">
+                  Bidang
+                </th>
+                <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest min-w-[180px]">
+                  Jabatan
+                </th>
+                <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest w-24">
+                  Kelas
+                </th>
+                <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest w-28">
+                  Kebutuhan
+                </th>
+                <th className="px-4 py-3 text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest w-16">
+                  Aksi
+                </th>
               </tr>
             </thead>
             <tbody className="bg-white">
-              <AnimatePresence initial={false}>
               {rows.map((row) => (
-                <motion.tr initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} transition={{ duration: 0.2 }} key={row.id} className="group hover:bg-slate-50 transition-colors duration-150">
-                  <td className="px-2 py-1 border-b border-r border-slate-100 last:border-r-0">
+                <tr
+                  key={row.id}
+                  className="group hover:bg-slate-50 transition-colors"
+                >
+                  <td className="px-2 py-1 border-b border-slate-100">
                     <input
                       type="text"
                       value={row.no}
-                      onChange={(e) => handleCellChange(row.id, "no", e.target.value)}
-                      className="w-full px-2 py-1.5 text-xs bg-transparent border border-transparent rounded-lg hover:border-slate-200 focus:border-slate-300 focus:bg-white focus:outline-none transition-colors"
+                      onChange={(e) =>
+                        handleCellChange(row.id, "no", e.target.value)
+                      }
+                      className="w-full px-2 py-1.5 text-xs bg-transparent border border-transparent rounded-lg hover:border-slate-200 focus:border-slate-300 focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 transition-colors"
                     />
                   </td>
-                  <td className="px-2 py-1 border-b border-r border-slate-100 last:border-r-0">
+                  <td className="px-2 py-1 border-b border-slate-100">
                     <input
                       type="text"
                       value={row.bidang}
-                      onChange={(e) => handleCellChange(row.id, "bidang", e.target.value)}
-                      className="w-full px-2 py-1.5 text-xs font-medium text-slate-700 bg-transparent border border-transparent rounded-lg hover:border-slate-200 focus:border-slate-300 focus:bg-white focus:outline-none transition-colors"
+                      onChange={(e) =>
+                        handleCellChange(row.id, "bidang", e.target.value)
+                      }
+                      className="w-full px-2 py-1.5 text-xs bg-transparent border border-transparent rounded-lg hover:border-slate-200 focus:border-slate-300 focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 transition-colors"
                       placeholder="Bidang..."
                     />
                   </td>
-                  <td className="px-2 py-1 border-b border-r border-slate-100 last:border-r-0">
+                  <td className="px-2 py-1 border-b border-slate-100">
                     <input
                       type="text"
                       value={row.jabatan}
-                      onChange={(e) => handleCellChange(row.id, "jabatan", e.target.value)}
-                      className="w-full px-2 py-1.5 text-xs font-medium text-slate-700 bg-transparent border border-transparent rounded-lg hover:border-slate-200 focus:border-slate-300 focus:bg-white focus:outline-none transition-colors"
-                      placeholder="Nama Jabatan..."
+                      onChange={(e) =>
+                        handleCellChange(row.id, "jabatan", e.target.value)
+                      }
+                      className="w-full px-2 py-1.5 text-xs font-medium text-slate-700 bg-transparent border border-transparent rounded-lg hover:border-slate-200 focus:border-slate-300 focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 transition-colors"
+                      placeholder="Jabatan..."
                     />
                   </td>
-                  <td className="px-2 py-1 border-b border-r border-slate-100 last:border-r-0">
+                  <td className="px-2 py-1 border-b border-slate-100">
                     <input
                       type="text"
                       value={row.kelas}
-                      onChange={(e) => handleCellChange(row.id, "kelas", e.target.value)}
-                      className="w-full px-2 py-1.5 text-xs bg-transparent border border-transparent rounded-lg hover:border-slate-200 focus:border-slate-300 focus:bg-white focus:outline-none transition-colors"
-                      placeholder="Misal: 14"
+                      onChange={(e) =>
+                        handleCellChange(row.id, "kelas", e.target.value)
+                      }
+                      className="w-full px-2 py-1.5 text-xs bg-transparent border border-transparent rounded-lg hover:border-slate-200 focus:border-slate-300 focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 transition-colors"
                     />
                   </td>
-                  <td className="px-2 py-1 border-b border-r border-slate-100 last:border-r-0">
+                  <td className="px-2 py-1 border-b border-slate-100">
                     <input
                       type="text"
                       value={row.kebutuhan}
-                      onChange={(e) => handleCellChange(row.id, "kebutuhan", e.target.value)}
-                      className="w-full px-2 py-1.5 text-xs bg-transparent border border-transparent rounded-lg hover:border-slate-200 focus:border-slate-300 focus:bg-white focus:outline-none transition-colors"
-                      placeholder="0"
+                      onChange={(e) =>
+                        handleCellChange(row.id, "kebutuhan", e.target.value)
+                      }
+                      className="w-full px-2 py-1.5 text-xs bg-transparent border border-transparent rounded-lg hover:border-slate-200 focus:border-slate-300 focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 transition-colors"
                     />
                   </td>
-                  <td className="px-2 py-1 text-center border-b border-r border-slate-100 last:border-r-0">
+                  <td className="px-2 py-1 text-center border-b border-slate-100">
                     <button
                       type="button"
                       onClick={() => handleDeleteRow(row.id)}
@@ -300,37 +346,27 @@ const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </td>
-                </motion.tr>
+                </tr>
               ))}
               {rows.length === 0 && (
-                <motion.tr initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                  <td colSpan={6} className="px-6 py-16 text-center bg-white border-b border-slate-100">
+                <tr>
+                  <td colSpan={6} className="px-6 py-16 text-center bg-white">
                     <div className="flex flex-col items-center justify-center">
                       <div className="w-14 h-14 bg-slate-50 rounded-xl flex items-center justify-center mb-4 border border-slate-100">
                         <Database className="w-6 h-6 text-slate-400" />
                       </div>
                       <h3 className="text-[13px] font-bold text-slate-900">
-                        Belum ada Master Peta Jabatan
+                        Belum ada Peta Jabatan
                       </h3>
                       <p className="text-[12px] text-slate-500 mt-1 max-w-sm">
-                        Silakan tambah baris kosong untuk mengisi manual, atau impor dari file Excel untuk memproses massal.
+                        Tambah baris manual atau impor dari Excel.
                       </p>
                     </div>
                   </td>
-                </motion.tr>
+                </tr>
               )}
-            </AnimatePresence>
             </tbody>
           </table>
-        </div>
-        <div className="bg-slate-50 border-t border-slate-200 p-2">
-          <button
-            type="button"
-            onClick={handleAddRow}
-            className="w-full inline-flex items-center justify-center px-3 py-2 text-[12px] font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-200/50 rounded-lg transition-all active:scale-95"
-          >
-            <Plus className="w-3.5 h-3.5 mr-1" /> Tambah Baris Kosong
-          </button>
         </div>
       </div>
     </div>

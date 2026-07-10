@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback, Suspense, lazy } from "react";
 import { AppSettings } from "../types";
 import {
   Save,
@@ -9,10 +9,8 @@ import {
   Database,
   User,
   Printer,
+  FileSpreadsheet,
 } from "lucide-react";
-import { KamusManager } from "../components/KamusManager";
-import { PetaManager } from "../components/PetaManager";
-import { FileSpreadsheet } from "lucide-react";
 import { DEFAULT_KAMUS } from "../constants";
 import { AnimatePresence, motion } from "motion/react";
 import { api } from "../lib/api";
@@ -31,61 +29,93 @@ import {
 } from "../lib/ui";
 import { cn } from "../lib/utils";
 
+/**
+ * Heavy managers (pull in xlsx) — only load when user opens those tabs.
+ * This was a major cause of "spinning" when entering Settings: the whole
+ * Settings route was parsing xlsx + rendering managers before first paint.
+ */
+const KamusManager = lazy(() =>
+  import("../components/KamusManager").then((m) => ({ default: m.KamusManager })),
+);
+const PetaManager = lazy(() =>
+  import("../components/PetaManager").then((m) => ({ default: m.PetaManager })),
+);
+
+const EMPTY_SETTINGS: AppSettings = {
+  sekdaNama: "",
+  sekdaNip: "",
+  bupatiNama: "",
+  kopLine1: "",
+  kopLine2: "",
+  kopLine3: "",
+  kopLine4: "",
+  logoBase64: "",
+  jabatanKamusCsv: "",
+  petaJabatanCsv: "",
+};
+
+function TabFallback() {
+  return (
+    <div className="flex items-center justify-center py-16 text-slate-400 gap-2 text-sm">
+      <Loader2 className="w-4 h-4 animate-spin" />
+      Memuat editor…
+    </div>
+  );
+}
+
 export default function Settings() {
-  const [settings, setSettings] = useState<AppSettings>({
-    sekdaNama: "",
-    sekdaNip: "",
-    bupatiNama: "",
-    kopLine1: "",
-    kopLine2: "",
-    kopLine3: "",
-    kopLine4: "",
-    logoBase64: "",
-    jabatanKamusCsv: DEFAULT_KAMUS,
-    petaJabatanCsv: "",
-  });
+  const [settings, setSettings] = useState<AppSettings>(EMPTY_SETTINGS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  
-  const initialSettingsRef = useRef<string | null>(null);
-  
-  // Track initial settings (snapshot at load — used to detect unsaved changes).
-  useEffect(() => {
-    if (!loading && initialSettingsRef.current === null) {
-      initialSettingsRef.current = JSON.stringify(settings);
-    }
-  }, [loading, settings]);
-
-  // Auto-save DISABLED intentionally. Settings include official document
-  // headers (kop surat, pejabat names) — silent auto-save risked persisting
-  // mistakes with no audit trail. Save now goes through the explicit Save
-  // button (handleSave) which calls api.upsertSettings.
-
+  const [isDirty, setIsDirty] = useState(false);
   const [message, setMessage] = useState<{
     type: "success" | "error";
     text: string;
   } | null>(null);
-  const [activeTab, setActiveTab] = useState<"identitas" | "cetak" | "kamus" | "peta">(
-    "identitas",
-  );
+  const [activeTab, setActiveTab] = useState<
+    "identitas" | "cetak" | "kamus" | "peta"
+  >("identitas");
+
+  // Track which heavy tabs have been visited so Suspense only hits once.
+  const [kamusMounted, setKamusMounted] = useState(false);
+  const [petaMounted, setPetaMounted] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     async function fetchSettingsData() {
       try {
         const data = await api.getSettings();
-        setSettings((prev) => ({
-          ...prev,
+        if (cancelled) return;
+        setSettings({
+          ...EMPTY_SETTINGS,
           ...data,
-          jabatanKamusCsv: data.jabatanKamusCsv || DEFAULT_KAMUS,
-          petaJabatanCsv: data.petaJabatanCsv || "",
-        }));
+          // Keep stored CSV as-is; only fall back to default when truly empty
+          // and user opens kamus tab (avoids rewriting huge default on every load).
+          jabatanKamusCsv: data.jabatanKamusCsv ?? "",
+          petaJabatanCsv: data.petaJabatanCsv ?? "",
+        });
+        setIsDirty(false);
       } catch (error) {
         console.error("Error fetching settings:", error);
+        if (!cancelled) {
+          setMessage({
+            type: "error",
+            text: "Gagal memuat pengaturan. Coba muat ulang.",
+          });
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
     fetchSettingsData();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const patchSettings = useCallback((patch: Partial<AppSettings>) => {
+    setSettings((prev) => ({ ...prev, ...patch }));
+    setIsDirty(true);
   }, []);
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -93,7 +123,6 @@ export default function Settings() {
     if (!file) return;
 
     if (file.size > 1024 * 1024) {
-      // 1MB limit check
       setMessage({
         type: "error",
         text: "Ukuran logo tidak boleh lebih dari 1MB",
@@ -103,23 +132,29 @@ export default function Settings() {
 
     const reader = new FileReader();
     reader.onloadend = () => {
-      setSettings((prev) => ({ ...prev, logoBase64: reader.result as string }));
+      patchSettings({ logoBase64: reader.result as string });
     };
     reader.readAsDataURL(file);
   };
 
   const removeLogo = () => {
-    setSettings((prev) => ({ ...prev, logoBase64: "" }));
+    patchSettings({ logoBase64: "" });
   };
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSave = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     setSaving(true);
     setMessage(null);
     try {
-      await api.upsertSettings(settings);
+      // Ensure kamus has a usable default if still empty when saving from other tabs
+      const payload: AppSettings = {
+        ...settings,
+        jabatanKamusCsv: settings.jabatanKamusCsv || DEFAULT_KAMUS,
+      };
+      await api.upsertSettings(payload);
+      setSettings(payload);
+      setIsDirty(false);
       setMessage({ type: "success", text: "Pengaturan berhasil disimpan" });
-      // clear message after 3 seconds
       setTimeout(() => setMessage(null), 3000);
     } catch (error) {
       console.error("Error saving settings:", error);
@@ -129,17 +164,13 @@ export default function Settings() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
-      </div>
-    );
-  }
+  const selectTab = (tab: typeof activeTab) => {
+    if (tab === "kamus") setKamusMounted(true);
+    if (tab === "peta") setPetaMounted(true);
+    setActiveTab(tab);
+  };
 
-  const hasUnsaved =
-    initialSettingsRef.current !== null &&
-    JSON.stringify(settings) !== initialSettingsRef.current;
+  const kamusCsvForEditor = settings.jabatanKamusCsv || DEFAULT_KAMUS;
 
   return (
     <motion.div
@@ -155,8 +186,8 @@ export default function Settings() {
           actions={
             <button
               type="button"
-              onClick={handleSave}
-              disabled={saving}
+              onClick={() => handleSave()}
+              disabled={saving || loading}
               aria-label="Simpan pengaturan"
               className={`${btnPrimary} w-full sm:w-auto shrink-0`}
             >
@@ -165,7 +196,11 @@ export default function Settings() {
               ) : (
                 <Save className="w-4 h-4" />
               )}
-              {saving ? "Menyimpan..." : hasUnsaved ? "Simpan Perubahan" : "Tersimpan"}
+              {saving
+                ? "Menyimpan..."
+                : isDirty
+                  ? "Simpan Perubahan"
+                  : "Tersimpan"}
             </button>
           }
         />
@@ -193,13 +228,15 @@ export default function Settings() {
         )}
       </AnimatePresence>
 
-      <motion.div variants={pageItemVariants} className="flex flex-col md:flex-row gap-6 md:gap-8">
-        {/* Sidebar Nav */}
+      <motion.div
+        variants={pageItemVariants}
+        className="flex flex-col md:flex-row gap-6 md:gap-8"
+      >
         <div className="w-full md:w-64 shrink-0">
           <nav className="flex md:flex-col gap-2 overflow-x-auto pb-2 md:pb-0 scrollbar-hide snap-x">
             <button
               type="button"
-              onClick={() => setActiveTab("identitas")}
+              onClick={() => selectTab("identitas")}
               className={navTab(activeTab === "identitas")}
             >
               <User
@@ -212,7 +249,7 @@ export default function Settings() {
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab("cetak")}
+              onClick={() => selectTab("cetak")}
               className={navTab(activeTab === "cetak")}
             >
               <Printer
@@ -225,7 +262,7 @@ export default function Settings() {
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab("kamus")}
+              onClick={() => selectTab("kamus")}
               className={navTab(activeTab === "kamus")}
             >
               <Database
@@ -238,7 +275,7 @@ export default function Settings() {
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab("peta")}
+              onClick={() => selectTab("peta")}
               className={navTab(activeTab === "peta")}
             >
               <FileSpreadsheet
@@ -252,18 +289,23 @@ export default function Settings() {
           </nav>
         </div>
 
-        {/* Content Area */}
-        <div className={`flex-1 ${card} min-h-[500px]`}>
-          <form onSubmit={handleSave} className="p-4 sm:p-6 md:p-8">
-            {/* TAB IDENTITAS */}
+        <div className={`flex-1 ${card} min-h-[500px] relative`}>
+          {/* Soft loading overlay — UI shell stays visible (no full-page spinner) */}
+          {loading && (
+            <div className="absolute inset-0 z-10 bg-white/70 flex items-center justify-center rounded-xl">
+              <div className="flex items-center gap-2 text-sm text-slate-500 font-medium">
+                <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
+                Memuat pengaturan…
+              </div>
+            </div>
+          )}
+
+          <form
+            onSubmit={handleSave}
+            className={cn("p-4 sm:p-6 md:p-8", loading && "pointer-events-none opacity-60")}
+          >
             {activeTab === "identitas" && (
-              <motion.div
-                key="identitas"
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={easeOut}
-                className="space-y-8"
-              >
+              <div className="space-y-8">
                 <div className="border-b border-slate-100 pb-4">
                   <h2 className="text-lg font-bold text-slate-800">
                     Otoritas Pengesahan Teratas
@@ -275,7 +317,6 @@ export default function Settings() {
                 </div>
 
                 <div className="space-y-6">
-                  {/* Sekda Section */}
                   <div className="p-4 sm:p-5 rounded-xl border border-slate-200 bg-slate-50 space-y-5">
                     <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
                       <ShieldCheck className="w-3.5 h-3.5" /> Sekretaris Daerah
@@ -290,10 +331,7 @@ export default function Settings() {
                           className={input}
                           value={settings.sekdaNama}
                           onChange={(e) =>
-                            setSettings({
-                              ...settings,
-                              sekdaNama: e.target.value,
-                            })
+                            patchSettings({ sekdaNama: e.target.value })
                           }
                           placeholder="Masukkan nama lengkap..."
                         />
@@ -307,10 +345,7 @@ export default function Settings() {
                           className={`${input} font-mono`}
                           value={settings.sekdaNip}
                           onChange={(e) =>
-                            setSettings({
-                              ...settings,
-                              sekdaNip: e.target.value,
-                            })
+                            patchSettings({ sekdaNip: e.target.value })
                           }
                           placeholder="19xxxxxxxxxxxxxx"
                         />
@@ -318,7 +353,6 @@ export default function Settings() {
                     </div>
                   </div>
 
-                  {/* Bupati Section */}
                   <div className="p-4 sm:p-5 rounded-xl border border-slate-200 bg-slate-50 space-y-5">
                     <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
                       <ShieldCheck className="w-3.5 h-3.5" /> Kepala Daerah
@@ -333,10 +367,7 @@ export default function Settings() {
                           className={input}
                           value={settings.bupatiNama}
                           onChange={(e) =>
-                            setSettings({
-                              ...settings,
-                              bupatiNama: e.target.value,
-                            })
+                            patchSettings({ bupatiNama: e.target.value })
                           }
                           placeholder="Masukkan nama jabatan tertinggi..."
                         />
@@ -344,18 +375,11 @@ export default function Settings() {
                     </div>
                   </div>
                 </div>
-              </motion.div>
+              </div>
             )}
 
-            {/* TAB CETAK & KOP */}
             {activeTab === "cetak" && (
-              <motion.div
-                key="cetak"
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={easeOut}
-                className="space-y-8"
-              >
+              <div className="space-y-8">
                 <div className="border-b border-slate-100 pb-4">
                   <h2 className="text-lg font-bold text-slate-800">
                     Tata Naskah Dinas & Identitas Visual
@@ -367,7 +391,6 @@ export default function Settings() {
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-                  {/* Kop Text Inputs */}
                   <div className="space-y-4">
                     <div className="space-y-2">
                       <label className="block text-xs font-semibold text-slate-700">
@@ -378,56 +401,55 @@ export default function Settings() {
                         className={`${input} font-bold text-center`}
                         value={settings.kopLine1 || ""}
                         onChange={(e) =>
-                          setSettings({ ...settings, kopLine1: e.target.value })
+                          patchSettings({ kopLine1: e.target.value })
                         }
                         placeholder="PEMERINTAH KOTA BANDUNG"
                       />
                     </div>
                     <div className="space-y-2">
                       <label className="block text-xs font-semibold text-slate-700">
-                        Baris 2 (Instansi/Dinas)
+                        Baris 2 (Dinas)
                       </label>
                       <input
                         type="text"
                         className={`${input} font-bold text-center text-lg`}
                         value={settings.kopLine2 || ""}
                         onChange={(e) =>
-                          setSettings({ ...settings, kopLine2: e.target.value })
+                          patchSettings({ kopLine2: e.target.value })
                         }
-                        placeholder="DINAS KESEHATAN"
+                        placeholder="DINAS KOMUNIKASI DAN INFORMATIKA"
                       />
                     </div>
                     <div className="space-y-2">
                       <label className="block text-xs font-semibold text-slate-700">
-                        Baris 3 (Jalan)
+                        Baris 3 (Alamat)
                       </label>
                       <input
                         type="text"
                         className={`${input} text-center`}
                         value={settings.kopLine3 || ""}
                         onChange={(e) =>
-                          setSettings({ ...settings, kopLine3: e.target.value })
+                          patchSettings({ kopLine3: e.target.value })
                         }
-                        placeholder="Jalan Sukajadi No. 123"
+                        placeholder="Jl. ..."
                       />
                     </div>
                     <div className="space-y-2">
                       <label className="block text-xs font-semibold text-slate-700">
-                        Baris 4 (Kontak/Web)
+                        Baris 4 (Kontak)
                       </label>
                       <input
                         type="text"
                         className={`${input} text-center`}
                         value={settings.kopLine4 || ""}
                         onChange={(e) =>
-                          setSettings({ ...settings, kopLine4: e.target.value })
+                          patchSettings({ kopLine4: e.target.value })
                         }
-                        placeholder="Telp (022) 123456 Kode Pos 40162"
+                        placeholder="Telp / Email"
                       />
                     </div>
                   </div>
 
-                  {/* Logo Upload Box */}
                   <div className="space-y-2">
                     <label className="block text-xs font-semibold text-slate-700">
                       Logo Instansi
@@ -437,31 +459,27 @@ export default function Settings() {
                         <>
                           <img
                             src={settings.logoBase64}
-                            alt="Logo Instansi"
-                            className="max-h-full max-w-full object-contain drop-"
+                            alt="Logo"
+                            className="max-h-[200px] max-w-full object-contain"
                           />
                           <button
                             type="button"
                             onClick={removeLogo}
                             className="absolute top-4 right-4 p-2 bg-white text-red-600 rounded-lg border border-slate-200 hover:bg-slate-100 transition-all opacity-0 group-hover:opacity-100"
+                            aria-label="Hapus logo"
                           >
-                            <X className="w-5 h-5" />
+                            <X className="w-4 h-4" />
                           </button>
                         </>
-                      ) : (
-                        <div className="text-center text-slate-400 flex flex-col items-center">
-                          <ImageIcon className="w-12 h-12 mb-3 text-slate-300" />
-                          <span className="text-sm font-semibold text-slate-600">
-                            Pilih Logo Berkas
-                          </span>
-                          <span className="text-xs mt-1">
-                            Format PNG/JPG/SVG, max 1MB
-                          </span>
-                        </div>
-                      )}
-
+                      ) : null}
                       {!settings.logoBase64 && (
-                        <label className="absolute inset-0 cursor-pointer flex items-center justify-center">
+                        <label className="flex flex-col items-center gap-3 cursor-pointer text-slate-500 hover:text-slate-800 transition-colors">
+                          <div className="w-12 h-12 rounded-xl bg-white border border-slate-200 flex items-center justify-center">
+                            <ImageIcon className="w-5 h-5" />
+                          </div>
+                          <span className="text-sm font-medium">
+                            Unggah logo (maks 1MB)
+                          </span>
                           <input
                             type="file"
                             accept="image/*"
@@ -473,17 +491,12 @@ export default function Settings() {
                     </div>
                   </div>
                 </div>
-              </motion.div>
+              </div>
             )}
 
-            {/* TAB KAMUS JABATAN */}
-            {activeTab === "kamus" && (
-              <motion.div
-                key="kamus"
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={easeOut}
-              >
+            {/* Keep mounted after first visit so re-opening tab is instant */}
+            {kamusMounted && (
+              <div className={activeTab === "kamus" ? "block" : "hidden"}>
                 <div className="border-b border-slate-100 pb-4 mb-6">
                   <h2 className="text-lg font-bold text-slate-800">
                     Data Kamus Jabatan
@@ -493,24 +506,19 @@ export default function Settings() {
                     kerja secara otomatis di seluruh sistem.
                   </p>
                 </div>
-
-                <KamusManager
-                  csvData={settings.jabatanKamusCsv || DEFAULT_KAMUS}
-                  onChange={(newCsv) =>
-                    setSettings({ ...settings, jabatanKamusCsv: newCsv })
-                  }
-                />
-              </motion.div>
+                <Suspense fallback={<TabFallback />}>
+                  <KamusManager
+                    csvData={kamusCsvForEditor}
+                    onChange={(newCsv) =>
+                      patchSettings({ jabatanKamusCsv: newCsv })
+                    }
+                  />
+                </Suspense>
+              </div>
             )}
 
-            {/* TAB PETA JABATAN */}
-            {activeTab === "peta" && (
-              <motion.div
-                key="peta"
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={easeOut}
-              >
+            {petaMounted && (
+              <div className={activeTab === "peta" ? "block" : "hidden"}>
                 <div className="border-b border-slate-100 pb-4 mb-6">
                   <h2 className="text-lg font-bold text-slate-800">
                     Master Peta Jabatan (Kebutuhan & Bezetting)
@@ -520,14 +528,15 @@ export default function Settings() {
                     analisis selisih/bezetting per Bidang/Unit Kerja.
                   </p>
                 </div>
-
-                <PetaManager
-                  csvData={settings.petaJabatanCsv || ""}
-                  onChange={(newCsv) =>
-                    setSettings({ ...settings, petaJabatanCsv: newCsv })
-                  }
-                />
-              </motion.div>
+                <Suspense fallback={<TabFallback />}>
+                  <PetaManager
+                    csvData={settings.petaJabatanCsv || ""}
+                    onChange={(newCsv) =>
+                      patchSettings({ petaJabatanCsv: newCsv })
+                    }
+                  />
+                </Suspense>
+              </div>
             )}
           </form>
         </div>
