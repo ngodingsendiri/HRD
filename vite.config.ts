@@ -32,6 +32,9 @@ export default defineConfig({
         // Keep precache lean — large app chunks load on demand via code-split
         maximumFileSizeToCacheInBytes: 2_500_000,
         globPatterns: ["**/*.{js,css,html,svg,ico,webp,woff2}"],
+        // Never treat /api/* as SPA navigation (was serving login HTML for /api/health)
+        navigateFallback: "/index.html",
+        navigateFallbackDenylist: [/^\/api\//],
       },
     }),
   ],

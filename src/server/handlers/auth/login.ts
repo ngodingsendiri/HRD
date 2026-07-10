@@ -65,14 +65,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return sendError(res, 429, "Terlalu banyak percobaan login. Coba lagi nanti.");
     }
 
+    if (!process.env.DATABASE_URL?.trim()) {
+      return sendError(
+        res,
+        503,
+        "DATABASE_URL belum di-set di Vercel. Isi Environment Variables → Redeploy.",
+        { code: "LOGIN_DB_URL_MISSING" },
+      );
+    }
+
     let user;
     try {
       user = await prisma.user.findUnique({ where: { email } });
     } catch (err) {
       console.error("[login] db findUnique", err);
-      return sendError(res, 503, "Database tidak tersedia. Coba lagi sebentar.", {
-        code: "LOGIN_DB",
-      });
+      const detail = err instanceof Error ? err.message.slice(0, 160) : "";
+      return sendError(
+        res,
+        503,
+        "Database tidak tersedia dari server Vercel. Cek DATABASE_URL di Vercel (bukan hanya .env laptop) lalu Redeploy.",
+        {
+          code: "LOGIN_DB",
+          detail: detail.replace(/:[^:@/]+@/g, ":***@"),
+        },
+      );
     }
 
     const dummyHash =

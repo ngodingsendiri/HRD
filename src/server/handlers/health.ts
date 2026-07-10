@@ -3,7 +3,7 @@ import { pingDatabase } from "../../lib/db.js";
 
 /**
  * GET /api/health
- * Liveness + DB probe + config flags (no secrets leaked).
+ * JSON only — used to verify API routing + DB + AUTH_SECRET (no secrets leaked).
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "GET" && req.method !== "HEAD") {
@@ -15,20 +15,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const authSecretSet = Boolean(
     process.env.AUTH_SECRET && process.env.AUTH_SECRET.length >= 16,
   );
+  const databaseUrlSet = Boolean(process.env.DATABASE_URL?.trim());
+
   const body = {
-    status: db.ok && authSecretSet ? "ok" : "degraded",
+    status: db.ok && authSecretSet && databaseUrlSet ? "ok" : "degraded",
     db: db.ok ? "up" : "down",
     latencyMs: db.latencyMs,
+    databaseUrl: databaseUrlSet ? "set" : "missing",
     authSecret: authSecretSet ? "set" : "missing",
     api: "index",
     time: new Date().toISOString(),
-    ...(db.ok ? {} : { error: "database_unreachable" }),
-    ...(!authSecretSet && process.env.VERCEL
-      ? { hint: "Set AUTH_SECRET in Vercel env (min 16 chars) and Redeploy" }
-      : {}),
+    ...(db.error ? { dbError: db.error } : {}),
+    hints: [
+      !databaseUrlSet
+        ? "Set DATABASE_URL (Neon pooler) in Vercel Production env"
+        : null,
+      !authSecretSet
+        ? "Set AUTH_SECRET (min 16 chars) in Vercel Production env"
+        : null,
+      !db.ok && databaseUrlSet
+        ? "DB URL set but connect failed — check pooler URL, sslmode=require, redeploy"
+        : null,
+    ].filter(Boolean),
   };
 
   res.setHeader("Cache-Control", "no-store");
-  // Health stays 200 if process is up; degraded fields tell the story
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
   return res.status(200).json(body);
 }
