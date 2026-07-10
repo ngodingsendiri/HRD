@@ -1,11 +1,12 @@
 /**
  * Single Vercel Serverless Function for the entire /api/* surface.
  *
- * Hobby plan allows max 12 functions — consolidating all routes here keeps
- * us at 1 function while preserving existing URL paths for the SPA client
- * and external integrators.
+ * Hobby plan max = 12 functions. Vite + Vercel does NOT support Next-style
+ * catch-all files (`[...path].ts`) the same way — nested /api/auth/login 404s.
  *
- * Handlers live in api/_handlers/** (private; not deployed as separate functions).
+ * Fix: one entry `api/index.ts` + vercel.json rewrite:
+ *   /api/(.*) → /api
+ * Path is parsed from req.url and dispatched to api/_handlers/**.
  */
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
@@ -18,15 +19,12 @@ type Route =
   | { kind: "exact"; path: string; load: () => Promise<{ default: Handler }> }
   | {
       kind: "param";
-      /** e.g. ^employees/([^/]+)$ */
       pattern: RegExp;
-      /** query keys assigned from capture groups */
       params: string[];
       load: () => Promise<{ default: Handler }>;
     };
 
 const routes: Route[] = [
-  // Auth
   {
     kind: "exact",
     path: "auth/login",
@@ -47,8 +45,6 @@ const routes: Route[] = [
     path: "auth/register",
     load: () => import("./_handlers/auth/register.js"),
   },
-
-  // Core app
   {
     kind: "exact",
     path: "health",
@@ -75,8 +71,6 @@ const routes: Route[] = [
     params: ["id"],
     load: () => import("./_handlers/employees/[id].js"),
   },
-
-  // External API v1
   {
     kind: "exact",
     path: "v1/openapi",
@@ -116,22 +110,55 @@ const routes: Route[] = [
   },
 ];
 
-function resolvePath(req: VercelRequest): string {
-  // Prefer catch-all query (Vercel sets this for [[...path]])
-  const q = req.query.path;
-  if (Array.isArray(q) && q.length) {
-    return q.map(String).filter(Boolean).join("/");
+/** Extract path after /api/ from the original request URL. */
+export function resolveApiPath(req: VercelRequest): string {
+  // 1) x-vercel-forwarded or original URL on req
+  const raw =
+    (typeof req.url === "string" && req.url) ||
+    (typeof req.headers["x-invoke-path"] === "string" &&
+      req.headers["x-invoke-path"]) ||
+    "";
+
+  // 2) When rewritten to /api, Vercel often keeps original in x-forwarded-uri / x-matched-path
+  const forwarded =
+    (typeof req.headers["x-forwarded-uri"] === "string" &&
+      req.headers["x-forwarded-uri"]) ||
+    (typeof req.headers["x-vercel-forwarded-path"] === "string" &&
+      req.headers["x-vercel-forwarded-path"]) ||
+    "";
+
+  let candidate = raw || forwarded || "";
+
+  // Strip query string
+  const q = candidate.indexOf("?");
+  if (q >= 0) candidate = candidate.slice(0, q);
+
+  // Also try query param if rewrite passes it: /api?path=auth/login
+  if (typeof req.query.path === "string" && req.query.path) {
+    return String(req.query.path).replace(/^\/+|\/+$/g, "");
   }
-  if (typeof q === "string" && q.length) {
-    return q.replace(/^\/+|\/+$/g, "");
+  if (Array.isArray(req.query.path) && req.query.path.length) {
+    return req.query.path.map(String).filter(Boolean).join("/");
   }
 
-  // Fallback: parse URL (vercel dev / edge cases)
   try {
+    // req.url may be absolute path "/api/auth/login" or "/api" after rewrite
     const host = String(req.headers.host || "localhost");
-    const url = new URL(req.url || "/", `http://${host}`);
+    const url = new URL(candidate || raw || "/api", `https://${host}`);
     let p = url.pathname || "";
+
+    // After rewrite dest=/api, pathname may be just "/api" — recover from referer? No.
+    // Use rewrite destination with capture: /api?__path=:path
+    if (p === "/api" || p === "/api/") {
+      // Check custom query from rewrite
+      const pathQ =
+        url.searchParams.get("path") ||
+        (typeof req.query.__path === "string" ? req.query.__path : null);
+      if (pathQ) return pathQ.replace(/^\/+|\/+$/g, "");
+    }
+
     if (p.startsWith("/api/")) p = p.slice(5);
+    else if (p.startsWith("api/")) p = p.slice(4);
     else if (p === "/api") p = "";
     return p.replace(/^\/+|\/+$/g, "");
   } catch {
@@ -139,7 +166,7 @@ function resolvePath(req: VercelRequest): string {
   }
 }
 
-function matchRoute(pathname: string): {
+export function matchRoute(pathname: string): {
   load: Route["load"];
   params: Record<string, string>;
 } | null {
@@ -167,7 +194,6 @@ export default async function handler(
   req: VercelRequest,
   res: VercelResponse,
 ): Promise<void> {
-  // CORS preflight for any path — individual handlers may refine
   if (req.method === "OPTIONS") {
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader(
@@ -182,18 +208,18 @@ export default async function handler(
     return;
   }
 
-  const pathname = resolvePath(req);
+  const pathname = resolveApiPath(req);
   const matched = matchRoute(pathname);
 
   if (!matched) {
     res.status(404).json({
       error: "Not Found",
       path: pathname ? `/api/${pathname}` : "/api",
+      hint: "API is consolidated in api/index.ts — check rewrite /api/(.*) → /api",
     });
     return;
   }
 
-  // Merge dynamic params into req.query (handlers read req.query.id etc.)
   for (const [k, v] of Object.entries(matched.params)) {
     (req.query as Record<string, string | string[] | undefined>)[k] = v;
   }
@@ -203,7 +229,7 @@ export default async function handler(
     await mod.default(req, res);
   } catch (err) {
     if (res.headersSent) return;
-    console.error("[api catch-all]", pathname, err);
+    console.error("[api]", pathname, err);
     res.status(500).json({ error: "Terjadi kesalahan internal" });
   }
 }

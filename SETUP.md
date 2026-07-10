@@ -113,12 +113,13 @@ Proyek ini sengaja memakai **1 function** saja:
 
 | Path | Peran |
 |------|--------|
-| `api/[[...path]].ts` | Catch-all router untuk seluruh `/api/*` |
+| `api/index.ts` | Satu-satunya Serverless Function |
 | `api/_handlers/**` | Implementasi handler (folder `_` = **bukan** function terpisah) |
 | `api/_lib/**` | Shared helpers (bukan function) |
 
-URL publik **tidak berubah** (`/api/employees`, `/api/v1/stats`, …).  
-Jangan menambah file `api/*.ts` di root API — daftarkan route di catch-all + handler di `_handlers`.
+`vercel.json` me-rewrite `/api/(.*)` → `/api?path=$1` (Vite tidak mendukung catch-all Next.js `[...path]`).  
+URL publik tetap `/api/auth/login`, `/api/employees`, …  
+Jangan menambah file `api/*.ts` di root — daftarkan route di `api/index.ts` + handler di `_handlers`.
 
 ### Checklist
 
