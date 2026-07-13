@@ -28,6 +28,37 @@ body {
   display: none;
 }
 
+/* Respect OS reduced-motion (a11y / constitution operator tools) */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Unit bar grow on dashboard */
+@keyframes bar-grow {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+.bar-grow {
+  transform-origin: left center;
+  animation: bar-grow 0.35s ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .bar-grow {
+    animation: none;
+  }
+}
+
 @media print {
   html,
   body,

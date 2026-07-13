@@ -50,7 +50,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return;
       }
       const emp = await getEmployee(id);
-      if (!emp) return sendError(res, 404, "Not found");
+      if (!emp) return sendError(res, 404, "Pegawai tidak ditemukan");
       return res.status(200).json(emp);
     }
 
@@ -89,7 +89,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
         return res.status(200).json(updated);
       } catch (err) {
-        if (isPrismaNotFound(err)) return sendError(res, 404, "Not found");
+        if (isPrismaNotFound(err)) {
+          return sendError(res, 404, "Pegawai tidak ditemukan");
+        }
         if (isPrismaUnique(err)) {
           return sendError(res, 409, "NIP atau NIK sudah terdaftar pada pegawai lain");
         }
@@ -109,7 +111,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
         return res.status(204).end();
       } catch (err) {
-        if (isPrismaNotFound(err)) return sendError(res, 404, "Not found");
+        if (isPrismaNotFound(err)) {
+          return sendError(res, 404, "Pegawai tidak ditemukan");
+        }
         throw err;
       }
     }

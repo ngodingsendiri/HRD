@@ -83,20 +83,28 @@ function isSecureContext(): boolean {
   return process.env.NODE_ENV === "production";
 }
 
+function cookieSecureSuffix(): string {
+  return isSecureContext() ? "; Secure" : "";
+}
+
 function setSessionCookie(res: VercelResponse, cookieValue: string): void {
-  const parts = [
+  const secure = cookieSecureSuffix();
+  const main = [
     `${COOKIE_NAME}=${encodeURIComponent(cookieValue)}`,
     "Path=/",
     `Max-Age=${SESSION_MAX_AGE_MS / 1000}`,
     "HttpOnly",
     "SameSite=Lax",
-  ];
-  if (isSecureContext()) parts.push("Secure");
-  res.setHeader("Set-Cookie", parts.join("; "));
+  ].join("; ") + secure;
+  // Drop legacy brand cookies in the same response so rebrand leaves no orphans
+  const clearLegacy = LEGACY_COOKIE_NAMES.map(
+    (name) => `${name}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secure}`,
+  );
+  res.setHeader("Set-Cookie", [main, ...clearLegacy]);
 }
 
 function clearSessionCookie(res: VercelResponse): void {
-  const secure = isSecureContext() ? "; Secure" : "";
+  const secure = cookieSecureSuffix();
   const clearOne = (name: string) =>
     `${name}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secure}`;
   const cookies = [COOKIE_NAME, ...LEGACY_COOKIE_NAMES].map(clearOne);
@@ -223,7 +231,7 @@ export interface StaffUser {
 export async function requireStaff(req: VercelRequest, res: VercelResponse): Promise<StaffUser> {
   const session = await getSession(req);
   if (!session?.user?.email) {
-    res.status(401).json({ error: "Unauthorized" });
+    res.status(401).json({ error: "Silakan masuk terlebih dahulu" });
     throw new Error("Unauthorized");
   }
   const u = session.user;
@@ -244,7 +252,7 @@ export async function requireStaff(req: VercelRequest, res: VercelResponse): Pro
 export async function requireAdmin(req: VercelRequest, res: VercelResponse): Promise<StaffUser> {
   const staff = await requireStaff(req, res);
   if (!staff.canWrite) {
-    res.status(403).json({ error: "Forbidden: akses hanya baca (VIEWER)" });
+    res.status(403).json({ error: "Akses hanya baca (VIEWER). Hubungi admin untuk ubah data." });
     throw new Error("Forbidden");
   }
   return staff;

@@ -30,6 +30,7 @@ import { cn } from "../lib/utils";
 import { useAuth } from "../lib/auth";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { notify } from "../lib/notify";
+import { useDocumentTitle } from "../lib/useDocumentTitle";
 
 /**
  * Heavy managers (pull in xlsx) — only load when user opens those tabs.
@@ -71,6 +72,7 @@ function TabFallback() {
 }
 
 export default function Settings() {
+  useDocumentTitle("Pengaturan");
   const { canWrite } = useAuth();
   const [settings, setSettings] = useState<AppSettings>(EMPTY_SETTINGS);
   const [loading, setLoading] = useState(true);
@@ -254,7 +256,7 @@ export default function Settings() {
                   activeTab === "identitas" ? "text-slate-900" : "text-slate-400",
                 )}
               />
-              Penandatangan
+              Pejabat
             </button>
             <button
               type="button"
@@ -267,7 +269,7 @@ export default function Settings() {
                   activeTab === "cetak" ? "text-slate-900" : "text-slate-400",
                 )}
               />
-              Identitas
+              Kop & logo
             </button>
             <p className="hidden md:block px-3 pt-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
               Data master
@@ -589,6 +591,25 @@ export default function Settings() {
           </form>
         </div>
       </motion.div>
+
+      {/* Mobile sticky save (above bottom nav) */}
+      {canWrite && !isApiTab && isDirty && (
+        <div className="md:hidden fixed bottom-20 left-3 right-3 z-40">
+          <button
+            type="button"
+            onClick={() => void handleSave()}
+            disabled={saving || loading}
+            className={`${btnPrimary} w-full py-3 shadow-sm`}
+          >
+            {saving ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Save className="w-4 h-4" />
+            )}
+            {saving ? "Menyimpan…" : "Simpan semua"}
+          </button>
+        </div>
+      )}
 
       <ConfirmDialog
         open={blocker.state === "blocked"}

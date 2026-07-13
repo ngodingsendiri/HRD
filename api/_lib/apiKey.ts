@@ -7,7 +7,7 @@
  *
  * Only SHA-256 hashes are stored in DB.
  */
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { prisma } from "../../src/lib/db.js";
 
@@ -244,16 +244,4 @@ export function pathParamId(raw: string | string[] | undefined): string | null {
     return raw[0].trim().slice(0, 64);
   }
   return null;
-}
-
-/** Constant-time compare for optional future use */
-export function safeEqualHex(a: string, b: string): boolean {
-  try {
-    const ba = Buffer.from(a, "hex");
-    const bb = Buffer.from(b, "hex");
-    if (ba.length !== bb.length) return false;
-    return timingSafeEqual(ba, bb);
-  } catch {
-    return false;
-  }
 }

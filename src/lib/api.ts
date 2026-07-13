@@ -5,14 +5,28 @@
 import type { Employee, AppSettings } from "../types.js";
 import type { DashboardStats } from "./dashboardStats.js";
 
+/** Typed API failure — preserves HTTP status for callers. */
+export class ApiError extends Error {
+  readonly status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     ...init,
+    // Always send session cookie for same-origin /api/* (constitution: auth via cookie)
+    credentials: "same-origin",
     headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error((err as { error?: string }).error || `Request failed: ${res.status}`);
+    const message =
+      (err as { error?: string }).error || `Request failed: ${res.status}`;
+    throw new ApiError(message, res.status);
   }
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
 }
@@ -81,19 +95,14 @@ export const api = {
     return request<EmployeesPage>(employeesQuery(params));
   },
 
-  /** Convenience wrapper — prefer getEmployeesPage for pagination UI. */
-  async getEmployees(params?: EmployeeListParams): Promise<Employee[]> {
-    const page = await this.getEmployeesPage({
-      limit: 50,
-      offset: 0,
-      lean: true,
-      ...params,
-    });
-    return page.data;
-  },
-
   async getEmployee(id: string): Promise<Employee | null> {
-    return request<Employee | null>(`/api/employees/${id}`);
+    try {
+      return await request<Employee>(`/api/employees/${encodeURIComponent(id)}`);
+    } catch (e) {
+      // Contract: missing row → null (not throw), so UI can show "tidak ditemukan"
+      if (e instanceof ApiError && e.status === 404) return null;
+      throw e;
+    }
   },
 
   async createEmployee(emp: Employee): Promise<Employee> {
@@ -144,18 +153,6 @@ export const api = {
 
   async getDashboardStats(): Promise<DashboardStats> {
     return request<DashboardStats>("/api/stats");
-  },
-
-  async getSession(): Promise<{
-    user: {
-      email: string;
-      name?: string;
-      image?: string;
-      role?: string;
-      canWrite?: boolean;
-    } | null;
-  }> {
-    return request("/api/auth/me");
   },
 
   // ── External API keys (session admin only) ───────────────────────────────

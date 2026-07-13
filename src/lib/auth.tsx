@@ -33,7 +33,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const fetchSession = () => {
-    fetch("/api/auth/me")
+    fetch("/api/auth/me", { credentials: "same-origin" })
       .then(async (r) => {
         if (!r.ok) return null;
         return r.json();

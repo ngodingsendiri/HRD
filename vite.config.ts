@@ -51,7 +51,6 @@ export default defineConfig({
         manualChunks(id) {
           if (!id.includes("node_modules")) return;
           if (id.includes("xlsx")) return "xlsx";
-          if (id.includes("recharts") || id.includes("d3-")) return "charts";
           if (id.includes("motion") || id.includes("framer-motion")) return "motion";
           if (id.includes("react-dom") || id.includes("react-router") || id.includes("/react/")) {
             return "react-vendor";

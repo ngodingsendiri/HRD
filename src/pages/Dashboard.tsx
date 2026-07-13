@@ -10,6 +10,7 @@ import {
   TrendingUp,
   RefreshCw,
   Loader2,
+  ArrowRight,
 } from "lucide-react";
 import { handleApiError, OperationType } from "../lib/error";
 import { api } from "../lib/api";
@@ -19,6 +20,7 @@ import { motion } from "motion/react";
 import { PageHeader } from "../components/PageHeader";
 import {
   btnGhost,
+  btnPrimary,
   btnSecondary,
   card,
   cardHeader,
@@ -31,6 +33,7 @@ import {
   formatRelativeTime,
   type TimelineItem,
 } from "../lib/dashboardStats";
+import { useDocumentTitle } from "../lib/useDocumentTitle";
 
 type TimelineTab = "kgb" | "kp" | "pensiun";
 type TimeFilter = "all" | "overdue" | "d30" | "d90";
@@ -77,6 +80,7 @@ const UNIT_COLORS = [
 ];
 
 export default function Dashboard() {
+  useDocumentTitle("Ringkasan");
   const [stats, setStats] = useState({
     total: 0,
     pns: 0,
@@ -95,6 +99,7 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
 
   const [timelineTab, setTimelineTab] = useState<TimelineTab>("kgb");
   const [timeFilter, setTimeFilter] = useState<TimeFilter>("all");
@@ -114,6 +119,7 @@ export default function Dashboard() {
       setKgbList(dash.kgb);
       setKpList(dash.kp);
       setPensiunList(dash.pensiun);
+      setUpdatedAt(dash.generatedAt || new Date().toISOString());
       setError(null);
     },
     [],
@@ -149,7 +155,7 @@ export default function Dashboard() {
     }
   };
 
-  const urgentAlerts = useMemo(() => {
+  const { urgentAlerts, urgentTotal } = useMemo(() => {
     const items = [
       ...kgbList
         .filter((x) => x.isOverdue || x.diffDays <= 90)
@@ -160,8 +166,11 @@ export default function Dashboard() {
       ...pensiunList
         .filter((x) => x.isOverdue || x.diffDays <= 365)
         .map((x) => ({ ...x, kind: "Pensiun" as const })),
-    ];
-    return items.sort((a, b) => a.diffDays - b.diffDays).slice(0, 8);
+    ].sort((a, b) => a.diffDays - b.diffDays);
+    return {
+      urgentTotal: items.length,
+      urgentAlerts: items.slice(0, 8),
+    };
   }, [kgbList, kpList, pensiunList]);
 
   const activeList = useMemo(() => {
@@ -255,7 +264,11 @@ export default function Dashboard() {
       <motion.div variants={pageItemVariants}>
         <PageHeader
           title="Ringkasan"
-          description="Angka SDM, peringatan, dan proyeksi KP / KGB / pensiun."
+          description={
+            updatedAt
+              ? `Angka SDM & proyeksi. Diperbarui ${new Date(updatedAt).toLocaleString("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}.`
+              : "Angka SDM, peringatan, dan proyeksi KP / KGB / pensiun."
+          }
           actions={
             <button
               type="button"
@@ -283,6 +296,41 @@ export default function Dashboard() {
           {error}
         </motion.div>
       )}
+
+      {/* Hero: perlu tindakan */}
+      <motion.div
+        variants={pageItemVariants}
+        className={`${card} p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-l-4 ${
+          urgentTotal > 0 ? "border-l-amber-500" : "border-l-emerald-500"
+        }`}
+      >
+        <div className="min-w-0">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+            Perlu tindakan
+          </p>
+          <p className="text-lg font-bold text-slate-900 tabular-nums mt-0.5">
+            {urgentTotal > 0
+              ? `${urgentTotal} item mendesak`
+              : "Tidak ada item mendesak"}
+          </p>
+          <p className="text-xs text-slate-500 mt-1">
+            KP/KGB H-90 atau pensiun H-365
+            {urgentTotal > 8
+              ? ` · daftar menampilkan 8 teratas dari ${urgentTotal}`
+              : urgentTotal > 0
+                ? " · daftar di panel kiri bawah"
+                : ""}
+            .
+          </p>
+        </div>
+        <Link
+          to="/employees?alert=any"
+          className={`${urgentTotal > 0 ? btnPrimary : btnSecondary} shrink-0`}
+        >
+          Buka pegawai
+          <ArrowRight className="w-3.5 h-3.5" />
+        </Link>
+      </motion.div>
 
       {/* ── Zone 1: KPI strip ─────────────────────────────────────────── */}
       <motion.div
@@ -429,7 +477,7 @@ export default function Dashboard() {
                     </div>
                     <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
                       <div
-                        className="h-full rounded-full transition-all"
+                        className="h-full rounded-full bar-grow"
                         style={{
                           width: `${width}%`,
                           backgroundColor: color,

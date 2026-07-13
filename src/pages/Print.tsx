@@ -20,6 +20,7 @@ import {
   pageShellWide,
   select,
 } from "../lib/ui";
+import { useDocumentTitle } from "../lib/useDocumentTitle";
 
 type PrintType =
   | "absen_global"
@@ -35,6 +36,7 @@ type PrintType =
 type SortAction = "default_kelas" | "abjad";
 
 export default function Print() {
+  useDocumentTitle("Cetak");
   const { canWrite } = useAuth();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -204,45 +206,59 @@ export default function Print() {
         return kelasB - kelasA;
       }
 
-      // Golongan/Pangkat Fallback (DESC)
-      const getGolonganWeight = (emp: any) => {
+      // Golongan/Pangkat fallback (DESC) — exact token only (avoid III/A matching II/A)
+      const getGolonganWeight = (emp: Employee) => {
         const g = (
           emp.pangkatGolongan ||
           emp.gol ||
           emp.pangkat ||
           ""
-        ).toUpperCase();
-        if (g.includes("IV/E") || g.includes("IV / E")) return 45;
-        if (g.includes("IV/D") || g.includes("IV / D")) return 44;
-        if (g.includes("IV/C") || g.includes("IV / C")) return 43;
-        if (g.includes("IV/B") || g.includes("IV / B")) return 42;
-        if (g.includes("IV/A") || g.includes("IV / A")) return 41;
-        if (g.includes("III/D") || g.includes("III / D")) return 34;
-        if (g.includes("III/C") || g.includes("III / C")) return 33;
-        if (g.includes("III/B") || g.includes("III / B")) return 32;
-        if (g.includes("III/A") || g.includes("III / A")) return 31;
-        if (g.includes("II/D") || g.includes("II / D")) return 24;
-        if (g.includes("II/C") || g.includes("II / C")) return 23;
-        if (g.includes("II/B") || g.includes("II / B")) return 22;
-        if (g.includes("II/A") || g.includes("II / A")) return 21;
-        if (g.includes("I/D") || g.includes("I / D")) return 14;
-        if (g.includes("I/C") || g.includes("I / C")) return 13;
-        if (g.includes("I/B") || g.includes("I / B")) return 12;
-        if (g.includes("I/A") || g.includes("I / A")) return 11;
+        )
+          .toUpperCase()
+          .replace(/\s/g, "")
+          .replace(/[.\-]/g, "/");
 
-        if (g.includes("XVII")) return 117;
-        if (g.includes("XVI")) return 116;
-        if (g.includes("XV")) return 115;
-        if (g.includes("XIV")) return 114;
-        if (g.includes("XIII")) return 113;
-        if (g.includes("XII")) return 112;
-        if (g.includes("XI")) return 111;
-        if (g.includes("X")) return 110;
-        if (g.includes("IX")) return 109;
-        if (g.includes("VIII")) return 108;
-        if (g.includes("VII")) return 107;
-        if (g.includes("VI")) return 106;
-        if (g.includes("V")) return 105;
+        const pns: [string, number][] = [
+          ["IV/E", 45],
+          ["IV/D", 44],
+          ["IV/C", 43],
+          ["IV/B", 42],
+          ["IV/A", 41],
+          ["III/D", 34],
+          ["III/C", 33],
+          ["III/B", 32],
+          ["III/A", 31],
+          ["II/D", 24],
+          ["II/C", 23],
+          ["II/B", 22],
+          ["II/A", 21],
+          ["I/D", 14],
+          ["I/C", 13],
+          ["I/B", 12],
+          ["I/A", 11],
+        ];
+        for (const [token, w] of pns) {
+          if (g === token || g === token.replace("/", "")) return w;
+        }
+
+        const roman: [string, number][] = [
+          ["XVII", 117],
+          ["XVI", 116],
+          ["XV", 115],
+          ["XIV", 114],
+          ["XIII", 113],
+          ["XII", 112],
+          ["XI", 111],
+          ["X", 110],
+          ["IX", 109],
+          ["VIII", 108],
+          ["VII", 107],
+          ["VI", 106],
+          ["V", 105],
+        ];
+        for (const [token, w] of roman) {
+          if (g === token) return w;
+        }
 
         const num = parseInt(g, 10);
         if (!isNaN(num)) return num;
@@ -526,7 +542,9 @@ export default function Print() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-5 items-start">
-        <aside className={`print-hidden ${card} lg:col-span-3 overflow-hidden`}>
+        <aside
+          className={`print-hidden ${card} lg:col-span-3 overflow-hidden lg:sticky lg:top-4 lg:self-start`}
+        >
           <div className={cardHeader}>
             <h2 className="text-sm font-semibold text-slate-800">Dokumen</h2>
           </div>
@@ -566,7 +584,9 @@ export default function Print() {
           </div>
         </aside>
 
-        <section className={`print-hidden ${card} lg:col-span-4 overflow-hidden`}>
+        <section
+          className={`print-hidden ${card} lg:col-span-4 overflow-hidden lg:sticky lg:top-4 lg:self-start`}
+        >
           <div className={cardHeader}>
             <h2 className="text-sm font-semibold text-slate-800">Opsi</h2>
           </div>
@@ -745,24 +765,26 @@ export default function Print() {
 
         <section className="lg:col-span-5 space-y-2 min-w-0">
           <div
-            className={`print-hidden ${card} px-4 py-3 flex items-center justify-between gap-2`}
+            className={`print-hidden ${card} px-4 py-3 flex items-center justify-between gap-2 sticky top-0 z-10`}
           >
             <div>
               <h2 className="text-sm font-semibold text-slate-800">
                 Pratinjau
               </h2>
-              <p className="text-[11px] text-slate-400 mt-0.5">A4 · live</p>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                A4 · zona kertas
+              </p>
             </div>
             <button
               type="button"
               onClick={handlePrintClick}
-              className={btnSecondary}
+              className={btnPrimary}
             >
               <Printer className="w-3.5 h-3.5" />
               Cetak
             </button>
           </div>
-          <div className="rounded-xl border border-slate-200 bg-slate-100 p-3 sm:p-4 overflow-auto max-h-[min(75vh,900px)] print:p-0 print:border-none print:bg-transparent print:max-h-none print:overflow-visible print:rounded-none">
+          <div className="rounded-xl border border-slate-200 bg-slate-200/80 p-3 sm:p-5 overflow-auto max-h-[min(75vh,900px)] shadow-inner print:p-0 print:border-none print:bg-transparent print:max-h-none print:overflow-visible print:rounded-none print:shadow-none">
 <div
           ref={printRef}
           className="bg-white border border-slate-200 print-container text-[12pt] w-[210mm] max-w-none shrink-0 p-[15mm] print:max-w-full print:w-full print:p-0 mx-auto print:border-none"
@@ -1649,7 +1671,13 @@ export default function Print() {
                     <tbody>
                       {(() => {
                         const validKeluarga = keluarga.filter((k) => k.name);
-                        const emptyRowContext: any = {
+                        const emptyRowContext: {
+                          name: string;
+                          birthDate: string;
+                          marriageDate: string;
+                          occupation?: string;
+                          description?: string;
+                        } = {
                           name: "",
                           birthDate: "",
                           marriageDate: "",

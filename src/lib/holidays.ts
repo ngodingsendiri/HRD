@@ -25,12 +25,6 @@ export const PUBLIC_HOLIDAYS: string[] = [
   "2026-06-16", "2026-08-17", "2026-12-25",
 ];
 
-/** True if the date (YYYY-MM-DD) is a weekend (Sat/Sun). */
-export function isWeekend(dateStr: string): boolean {
-  const day = new Date(dateStr).getDay();
-  return day === 0 || day === 6;
-}
-
 /** Count working days between two dates (inclusive), excluding weekends + holidays. */
 export function countWorkingDays(start: string, end: string): number {
   const startD = new Date(start);

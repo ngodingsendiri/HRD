@@ -148,7 +148,7 @@ npm run create-admin # ADMIN_EMAIL + ADMIN_PASSWORD (+ ADMIN_ROLE)
 - Kamus CSV cached 60s in-process (`getKamusCsv`); invalidate on settings save.
 - Stats: SQL `groupBy` for counts; slim select for timelines.
 - No full-list polling every 60s — manual refresh or refetch on mutation.
-- Vite `manualChunks`: `xlsx`, `charts`, `motion`, `react-vendor`.
+- Vite `manualChunks`: `xlsx`, `motion`, `react-vendor`, `ui-vendor`.
 - Log slow handlers via `x-response-time` header (`withErrorBoundary`).
 
 ## 8. What not to do

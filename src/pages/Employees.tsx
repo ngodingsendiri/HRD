@@ -1,18 +1,16 @@
-import React, { useState, useEffect } from "react";
-import { useSearchParams } from "react-router-dom";
+import React, { useState, useEffect, useRef } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { AnimatePresence, motion } from "motion/react";
 import { Employee, AppSettings } from "../types";
 import { Modal } from "../components/Modal";
-import { EmployeeForm } from "../components/EmployeeForm";
 import {
   Plus,
   Search,
   Edit2,
   Trash2,
-  Download,
   Upload,
   FileSpreadsheet,
   Loader2,
-  X,
   AlertCircle,
   AlertTriangle,
   MoreHorizontal,
@@ -20,7 +18,6 @@ import {
 } from "lucide-react";
 import { handleApiError, OperationType } from "../lib/error";
 import { api, type BulkImportError } from "../lib/api";
-import { motion } from "motion/react";
 import { PageHeader } from "../components/PageHeader";
 import { EmptyState } from "../components/EmptyState";
 import {
@@ -28,12 +25,13 @@ import {
   btnPrimary,
   btnSecondary,
   card,
+  easeOut,
   pageContainerVariants,
   pageItemVariants,
   pageShellWide,
   statusBadge,
-  chip,
 } from "../lib/ui";
+import { useDocumentTitle } from "../lib/useDocumentTitle";
 import {
   checkKGBandKP,
   formatKPLabel,
@@ -92,8 +90,11 @@ function KPKGBBadges({ emp }: { emp: Employee }) {
 }
 
 export default function Employees() {
+  useDocumentTitle("Pegawai");
   const { canWrite } = useAuth();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const moreRef = useRef<HTMLDivElement>(null);
   const [rawEmployees, setRawEmployees] = useState<Employee[]>([]);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [searchTerm, setSearchTerm] = useState(searchParams.get("q") || "");
@@ -111,8 +112,6 @@ export default function Employees() {
   const [total, setTotal] = useState(0);
   const [debouncedQ, setDebouncedQ] = useState(searchTerm);
   const [moreOpen, setMoreOpen] = useState(false);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingEmployee, setEditingEmployee] = useState<Employee | undefined>();
   const [detailEmp, setDetailEmp] = useState<Employee | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
@@ -127,8 +126,6 @@ export default function Employees() {
     skipped: number;
     errorDetails: BulkImportError[];
   } | null>(null);
-  const [formDirty, setFormDirty] = useState(false);
-  const [discardFormOpen, setDiscardFormOpen] = useState(false);
 
   const employees = rawEmployees;
 
@@ -172,28 +169,31 @@ export default function Employees() {
     }
   };
 
-  const openEdit = async (id?: string) => {
+  const openEdit = (id?: string) => {
     if (!id) {
-      setEditingEmployee(undefined);
-      setIsModalOpen(true);
+      navigate("/employees/new");
       return;
     }
-    try {
-      notify.info("Memuat data lengkap…");
-      const full = await api.getEmployee(id);
-      if (!full) {
-        notify.error("Data tidak ditemukan");
-        return;
-      }
-      setEditingEmployee(full);
-      setIsModalOpen(true);
-    } catch (e) {
-      notify.error(
-        "Gagal memuat data edit",
-        handleApiError(e, OperationType.GET, `/api/employees/${id}`).message,
-      );
-    }
+    navigate(`/employees/${id}/edit`);
   };
+
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (moreRef.current && !moreRef.current.contains(e.target as Node)) {
+        setMoreOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMoreOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [moreOpen]);
 
   useEffect(() => {
     const q = searchParams.get("q");
@@ -246,26 +246,6 @@ export default function Employees() {
 
   const displayedEmployees = employees;
   const totalPages = Math.max(1, Math.ceil(total / rowsPerPage));
-
-  const handleSave = async (data: Employee) => {
-    try {
-      if (editingEmployee?.id) {
-        await api.updateEmployee(editingEmployee.id, data);
-        notify.success("Perubahan disimpan");
-      } else {
-        await api.createEmployee(data);
-        notify.success("Pegawai ditambahkan");
-      }
-      await refreshList();
-      setIsModalOpen(false);
-      setEditingEmployee(undefined);
-    } catch (e) {
-      notify.error(
-        "Gagal menyimpan",
-        handleApiError(e, OperationType.WRITE, "/api/employees").message,
-      );
-    }
-  };
 
   const confirmDelete = async () => {
     if (!employeeToDelete) return;
@@ -550,73 +530,87 @@ export default function Employees() {
           description="Cari, kelola, dan impor data kepegawaian."
           actions={
             <>
-              {canWrite && selectedIds.size > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setIsBulkDeleteModalOpen(true)}
-                  className={`${btnDanger} w-full sm:w-auto`}
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  Hapus {selectedIds.size}
-                </button>
-              )}
-              <div className="relative">
+              <div className="relative" ref={moreRef}>
                 <button
                   type="button"
                   onClick={() => setMoreOpen((v) => !v)}
                   className={btnSecondary}
+                  aria-expanded={moreOpen}
                 >
                   <MoreHorizontal className="w-4 h-4" />
                   Lainnya
                 </button>
-                {moreOpen && (
-                  <div className="absolute right-0 mt-1 z-40 w-48 bg-white border border-slate-200 rounded-xl p-1">
-                    {canWrite && (
-                      <>
-                        <button
-                          type="button"
-                          className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-slate-50"
-                          onClick={handleDownloadTemplate}
-                        >
-                          Unduh template
-                        </button>
-                        <label className="w-full block px-3 py-2 text-sm rounded-lg hover:bg-slate-50 cursor-pointer">
-                          Impor Excel
-                          <input
-                            type="file"
-                            accept=".xlsx,.xls"
-                            className="hidden"
-                            onChange={handleImport}
-                          />
-                        </label>
-                      </>
-                    )}
-                    <button
-                      type="button"
-                      className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-slate-50"
-                      onClick={handleExport}
+                <AnimatePresence>
+                  {moreOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 4 }}
+                      transition={easeOut}
+                      className="absolute right-0 mt-1 z-40 w-52 bg-white border border-slate-200 rounded-xl p-1 shadow-sm"
+                      role="menu"
                     >
-                      Ekspor data
-                    </button>
-                    <button
-                      type="button"
-                      className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-slate-50"
-                      onClick={handleExportBezetting}
-                    >
-                      Ekspor bezetting
-                    </button>
-                  </div>
-                )}
+                      {canWrite && (
+                        <>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-slate-50"
+                            onClick={() => {
+                              setMoreOpen(false);
+                              handleDownloadTemplate();
+                            }}
+                          >
+                            Unduh template
+                          </button>
+                          <label className="w-full block px-3 py-2 text-sm rounded-lg hover:bg-slate-50 cursor-pointer">
+                            Impor Excel
+                            <input
+                              type="file"
+                              accept=".xlsx,.xls"
+                              className="hidden"
+                              onChange={(e) => {
+                                setMoreOpen(false);
+                                void handleImport(e);
+                              }}
+                            />
+                          </label>
+                        </>
+                      )}
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-slate-50"
+                        onClick={() => {
+                          setMoreOpen(false);
+                          void handleExport();
+                        }}
+                      >
+                        Ekspor data
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-slate-50"
+                        onClick={() => {
+                          setMoreOpen(false);
+                          void handleExportBezetting();
+                        }}
+                      >
+                        Ekspor bezetting
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
               {canWrite && (
-                <button
-                  type="button"
-                  onClick={() => void openEdit()}
+                <Link
+                  to="/employees/new"
                   className={`${btnPrimary} w-full sm:w-auto`}
                 >
                   <Plus className="w-3.5 h-3.5" />
                   Tambah
-                </button>
+                </Link>
               )}
             </>
           }
@@ -646,8 +640,9 @@ export default function Employees() {
       )}
 
       <motion.div variants={pageItemVariants} className="space-y-3">
-        <div className="flex flex-col lg:flex-row gap-3 lg:items-center">
-          <div className="relative flex-1">
+        {/* Compact toolbar */}
+        <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+          <div className="relative flex-1 min-w-0">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
               type="search"
@@ -657,49 +652,45 @@ export default function Employees() {
               className="w-full pl-10 pr-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900"
             />
           </div>
-          <select
-            value={rowsPerPage}
-            onChange={(e) => setRowsPerPage(Number(e.target.value))}
-            className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700"
-          >
-            {[25, 50, 100, 200, 500].map((n) => (
-              <option key={n} value={n}>
-                {n} / halaman
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          {statusOptions.map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => setStatusFilter(s)}
-              className={chip(statusFilter === s)}
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 max-w-[140px]"
+              aria-label="Filter status"
             >
-              {s === "all" ? "Semua status" : s}
-            </button>
-          ))}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {(
-            [
-              ["all", "Semua peringatan"],
-              ["any", "Ada peringatan"],
-              ["kp", "KP"],
-              ["kgb", "KGB"],
-            ] as const
-          ).map(([k, label]) => (
-            <button
-              key={k}
-              type="button"
-              onClick={() => setAlertFilter(k)}
-              className={chip(alertFilter === k)}
+              {statusOptions.map((s) => (
+                <option key={s} value={s}>
+                  {s === "all" ? "Semua status" : s}
+                </option>
+              ))}
+            </select>
+            <select
+              value={alertFilter}
+              onChange={(e) =>
+                setAlertFilter(e.target.value as "all" | "any" | "kp" | "kgb")
+              }
+              className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 max-w-[150px]"
+              aria-label="Filter peringatan"
             >
-              {label}
-            </button>
-          ))}
+              <option value="all">Semua peringatan</option>
+              <option value="any">Ada peringatan</option>
+              <option value="kp">KP</option>
+              <option value="kgb">KGB</option>
+            </select>
+            <select
+              value={rowsPerPage}
+              onChange={(e) => setRowsPerPage(Number(e.target.value))}
+              className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700"
+              aria-label="Baris per halaman"
+            >
+              {[25, 50, 100, 200, 500].map((n) => (
+                <option key={n} value={n}>
+                  {n}/hal
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
@@ -707,6 +698,19 @@ export default function Employees() {
             Menampilkan {displayedEmployees.length ? page * rowsPerPage + 1 : 0}
             –
             {page * rowsPerPage + displayedEmployees.length} dari {total} data
+            {(statusFilter !== "all" || alertFilter !== "all" || debouncedQ) && (
+              <button
+                type="button"
+                className="ml-2 text-slate-700 font-semibold underline-offset-2 hover:underline"
+                onClick={() => {
+                  setStatusFilter("all");
+                  setAlertFilter("all");
+                  setSearchTerm("");
+                }}
+              >
+                Reset filter
+              </button>
+            )}
           </p>
           <div className="flex items-center gap-2">
             <button
@@ -757,17 +761,10 @@ export default function Employees() {
                     onChange={handleImport}
                   />
                 </label>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditingEmployee(undefined);
-                    setIsModalOpen(true);
-                  }}
-                  className={btnPrimary}
-                >
+                <Link to="/employees/new" className={btnPrimary}>
                   <Plus className="w-4 h-4" />
                   Tambah manual
-                </button>
+                </Link>
               </div>
             )}
           </div>
@@ -779,7 +776,7 @@ export default function Employees() {
                 <thead className="sticky top-0 z-10 bg-slate-50 border-b border-slate-100">
                   <tr className="text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
                     {canWrite && (
-                      <th className="px-3 py-3 w-10">
+                      <th className="px-3 py-3 w-10 sticky left-0 z-[12] bg-slate-50">
                         <input
                           type="checkbox"
                           className="rounded border-slate-300"
@@ -803,7 +800,14 @@ export default function Employees() {
                         />
                       </th>
                     )}
-                    <th className="px-3 py-3">Nama</th>
+                    <th
+                      className={cn(
+                        "px-3 py-3 sticky z-[11] bg-slate-50 min-w-[140px]",
+                        canWrite ? "left-10" : "left-0",
+                      )}
+                    >
+                      Nama
+                    </th>
                     <th className="px-3 py-3">NIP</th>
                     <th className="px-3 py-3">Status</th>
                     <th className="px-3 py-3">Jabatan</th>
@@ -816,10 +820,10 @@ export default function Employees() {
                   {displayedEmployees.map((emp) => (
                     <tr
                       key={emp.id}
-                      className="border-b border-slate-50 hover:bg-slate-50/80 transition-colors"
+                      className="group border-b border-slate-50 hover:bg-slate-50/80 transition-colors"
                     >
                       {canWrite && (
-                        <td className="px-3 py-2.5">
+                        <td className="px-3 py-2.5 sticky left-0 z-[2] bg-white group-hover:bg-slate-50">
                           <input
                             type="checkbox"
                             className="rounded border-slate-300"
@@ -834,7 +838,12 @@ export default function Employees() {
                           />
                         </td>
                       )}
-                      <td className="px-3 py-2.5 font-medium text-slate-900">
+                      <td
+                        className={cn(
+                          "px-3 py-2.5 font-medium text-slate-900 sticky z-[1] bg-white group-hover:bg-slate-50",
+                          canWrite ? "left-10" : "left-0",
+                        )}
+                      >
                         {emp.nama || "—"}
                       </td>
                       <td className="px-3 py-2.5 text-slate-600 tabular-nums text-xs">
@@ -991,45 +1000,64 @@ export default function Employees() {
         )}
       </motion.div>
 
-      {/* Edit / create — full-width modal, clearer form chrome */}
-      <Modal
-        isOpen={isModalOpen}
-        onClose={() => {
-          if (formDirty) setDiscardFormOpen(true);
-          else {
-            setIsModalOpen(false);
-            setFormDirty(false);
-          }
-        }}
-        title={editingEmployee ? "Edit pegawai" : "Tambah pegawai"}
-        size="xl"
-      >
-        <EmployeeForm
-          initialData={editingEmployee}
-          settings={settings}
-          onSubmit={handleSave}
-          onCancel={() => {
-            setIsModalOpen(false);
-            setFormDirty(false);
-          }}
-          onDirtyChange={setFormDirty}
-        />
-      </Modal>
+      {/* Bottom pagination */}
+      {total > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 pb-16 lg:pb-0">
+          <p className="tabular-nums">
+            Halaman {page + 1} / {totalPages} · {total} data
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className={btnSecondary}
+              disabled={page <= 0 || loading}
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+            >
+              Sebelumnya
+            </button>
+            <button
+              type="button"
+              className={btnSecondary}
+              disabled={page + 1 >= totalPages || loading}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              Berikutnya
+            </button>
+          </div>
+        </div>
+      )}
 
-      <ConfirmDialog
-        open={discardFormOpen}
-        onClose={() => setDiscardFormOpen(false)}
-        title="Buang perubahan?"
-        description="Ada perubahan yang belum disimpan. Tutup formulir ini?"
-        confirmLabel="Buang & tutup"
-        cancelLabel="Tetap mengisi"
-        variant="danger"
-        onConfirm={() => {
-          setDiscardFormOpen(false);
-          setIsModalOpen(false);
-          setFormDirty(false);
-        }}
-      />
+      {/* Bulk selection bar */}
+      <AnimatePresence>
+        {canWrite && selectedIds.size > 0 && (
+          <motion.div
+            initial={{ y: 24, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 24, opacity: 0 }}
+            transition={easeOut}
+            className="fixed bottom-20 lg:bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 px-4 py-3 rounded-xl border border-slate-200 bg-white shadow-sm"
+          >
+            <span className="text-sm font-semibold text-slate-800 tabular-nums">
+              {selectedIds.size} dipilih
+            </span>
+            <button
+              type="button"
+              className={btnSecondary}
+              onClick={() => setSelectedIds(new Set())}
+            >
+              Batal
+            </button>
+            <button
+              type="button"
+              className={btnDanger}
+              onClick={() => setIsBulkDeleteModalOpen(true)}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Hapus
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <Modal
         isOpen={!!detailEmp}

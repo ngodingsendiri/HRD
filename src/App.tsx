@@ -7,7 +7,7 @@ import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import Layout from "./components/Layout";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { useEffect, useState, lazy, Suspense, type ReactNode } from "react";
-import { LogIn, Loader2 } from "lucide-react";
+import { Loader2, Eye, EyeOff } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { motion } from "motion/react";
 import { useAuth } from "./lib/auth";
@@ -16,6 +16,7 @@ import { btnPrimary, easeOut, input, label } from "./lib/ui";
 /** Route-level code split — keep initial JS small. */
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Employees = lazy(() => import("./pages/Employees"));
+const EmployeeFormPage = lazy(() => import("./pages/EmployeeFormPage"));
 const Print = lazy(() => import("./pages/Print"));
 const Settings = lazy(() => import("./pages/Settings"));
 
@@ -46,6 +47,22 @@ const appRouter = createBrowserRouter([
         element: (
           <LazyPage>
             <Dashboard />
+          </LazyPage>
+        ),
+      },
+      {
+        path: "employees/new",
+        element: (
+          <LazyPage>
+            <EmployeeFormPage />
+          </LazyPage>
+        ),
+      },
+      {
+        path: "employees/:id/edit",
+        element: (
+          <LazyPage>
+            <EmployeeFormPage />
           </LazyPage>
         ),
       },
@@ -81,6 +98,8 @@ export default function App() {
   const { user, loading, setUser } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -119,6 +138,7 @@ export default function App() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
+    setLoginError(null);
     try {
       const res = await fetch("/api/auth/login", {
         method: "POST",
@@ -136,30 +156,26 @@ export default function App() {
             : typeof data?.message === "string"
               ? data.message
               : null;
-        const detail =
-          typeof data?.detail === "string" ? data.detail : null;
-        const code = typeof data?.code === "string" ? data.code : null;
-        toast.error("Login gagal", {
-          description: [
-            serverMsg ||
-              (res.status === 404
-                ? "Endpoint API tidak ditemukan (routing)."
-                : res.status === 503
-                  ? "Server belum siap (AUTH_SECRET / database)."
-                  : `Status ${res.status}`),
-            code ? `[${code}]` : null,
-            detail,
-          ]
-            .filter(Boolean)
-            .join(" · "),
-        });
+        const msg =
+          serverMsg ||
+          (res.status === 404
+            ? "Layanan login tidak ditemukan."
+            : res.status === 503
+              ? "Server belum siap. Hubungi admin (database / AUTH_SECRET)."
+              : res.status === 429
+                ? "Terlalu banyak percobaan. Coba lagi nanti."
+                : "Email atau password salah.");
+        setLoginError(msg);
+        toast.error("Login gagal", { description: msg });
       } else {
         toast.success("Login berhasil");
         setUser(data.user);
       }
     } catch (err: unknown) {
       console.error("Detail error login:", err);
-      const message = err instanceof Error ? err.message : String(err);
+      const message =
+        err instanceof Error ? err.message : "Tidak dapat terhubung ke server.";
+      setLoginError(message);
       toast.error("Terjadi kesalahan saat login.", { description: message });
     } finally {
       setIsSubmitting(false);
@@ -184,16 +200,16 @@ export default function App() {
 
   if (!user) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="min-h-screen flex items-center justify-center p-4 bg-slate-100">
         <Toaster position="top-right" richColors closeButton />
         <motion.div
-          initial={{ opacity: 0, y: 10 }}
+          initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={easeOut}
           className="max-w-md w-full bg-white p-6 sm:p-8 rounded-xl border border-slate-200"
         >
-          <div className="w-12 h-12 bg-slate-900 text-white rounded-xl flex items-center justify-center mx-auto mb-5">
-            <LogIn className="w-5 h-5" />
+          <div className="w-12 h-12 bg-slate-900 text-white rounded-xl flex items-center justify-center mx-auto mb-5 text-xs font-bold tracking-tight">
+            HA
           </div>
           <h1 className="text-xl font-bold tracking-tight text-slate-900 mb-1 text-center">
             HRD ASN
@@ -203,6 +219,14 @@ export default function App() {
           </p>
 
           <form onSubmit={handleLogin} className="flex flex-col gap-4">
+            {loginError && (
+              <div
+                role="alert"
+                className="p-3 rounded-lg border border-red-100 bg-red-50 text-red-700 text-sm"
+              >
+                {loginError}
+              </div>
+            )}
             <div className="space-y-1.5">
               <label htmlFor="login-email" className={label}>
                 Email
@@ -213,7 +237,10 @@ export default function App() {
                 required
                 autoComplete="email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  if (loginError) setLoginError(null);
+                }}
                 className={input}
                 placeholder="email@contoh.com"
               />
@@ -222,17 +249,34 @@ export default function App() {
               <label htmlFor="login-password" className={label}>
                 Password
               </label>
-              <input
-                id="login-password"
-                type="password"
-                required
-                minLength={6}
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className={input}
-                placeholder="••••••••"
-              />
+              <div className="relative">
+                <input
+                  id="login-password"
+                  type={showPassword ? "text" : "password"}
+                  required
+                  minLength={8}
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    if (loginError) setLoginError(null);
+                  }}
+                  className={`${input} pr-10`}
+                  placeholder="••••••••"
+                />
+                <button
+                  type="button"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-50"
+                  onClick={() => setShowPassword((v) => !v)}
+                  aria-label={showPassword ? "Sembunyikan password" : "Tampilkan password"}
+                >
+                  {showPassword ? (
+                    <EyeOff className="w-4 h-4" />
+                  ) : (
+                    <Eye className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
             </div>
 
             <button

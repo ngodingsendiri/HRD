@@ -55,8 +55,6 @@ export function normalizeBidangLabel(raw: string): string {
   return b;
 }
 
-const normalizeBidang = normalizeBidangLabel;
-
 function daysUntil(target: Date, today: Date): number {
   return Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 }
@@ -195,62 +193,6 @@ export function buildPensiunList(
   }
 
   return list.sort((a, b) => a.nextDate.localeCompare(b.nextDate));
-}
-
-/** Build full dashboard payload from employee rows (lean fields enough). */
-export function buildDashboardStats(
-  employees: Pick<
-    EmployeeT,
-    | "id"
-    | "nik"
-    | "nama"
-    | "nip"
-    | "status"
-    | "gol"
-    | "pangkatGolongan"
-    | "bidang"
-    | "jabatan"
-    | "tanggalBerkalaTerakhir"
-    | "tmtKerja"
-    | "tmtGolonganRuang"
-    | "tanggalLahir"
-  >[],
-): DashboardStats {
-  const totals = {
-    total: employees.length,
-    pns: 0,
-    cpns: 0,
-    pppk: 0,
-    pppkpw: 0,
-    honorer: 0,
-    lainnya: 0,
-  };
-  const bidangMap: Record<string, number> = {};
-
-  for (const e of employees) {
-    if (e.status === "PNS") totals.pns++;
-    else if (e.status === "CPNS") totals.cpns++;
-    else if (e.status === "PPPK") totals.pppk++;
-    else if (e.status === "PPPKPW") totals.pppkpw++;
-    else if (e.status === "Honorer") totals.honorer++;
-    else totals.lainnya++;
-
-    const bidang = normalizeBidang(e.bidang || "Lainnya");
-    bidangMap[bidang] = (bidangMap[bidang] || 0) + 1;
-  }
-
-  const byBidang = Object.entries(bidangMap)
-    .map(([name, value]) => ({ name, value }))
-    .sort((a, b) => b.value - a.value);
-
-  return {
-    totals,
-    byBidang,
-    kgb: buildKgbList(employees),
-    kp: buildKpList(employees),
-    pensiun: buildPensiunList(employees),
-    generatedAt: new Date().toISOString(),
-  };
 }
 
 export function formatRelativeTime(diffDays: number): string {

@@ -58,7 +58,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!id) return sendError(res, 400, "id required");
 
     const emp = await getEmployee(id);
-    if (!emp) return sendError(res, 404, "Not found");
+    if (!emp) return sendError(res, 404, "Pegawai tidak ditemukan");
 
     res.setHeader("Cache-Control", "private, no-store");
     return res.status(200).json(emp);

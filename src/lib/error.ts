@@ -51,14 +51,28 @@ export function handleApiError(
       message,
     );
   const isBareStatus = /^Request failed:\s*\d+$/i.test(message);
+  const isEnglishGeneric = /^(Unauthorized|Forbidden|Not found)$/i.test(
+    message.trim(),
+  );
   if (
     message &&
     !isNetwork &&
     !isBareStatus &&
+    !isEnglishGeneric &&
     message.length > 0 &&
     message.length < 280
   ) {
     return new Error(message);
+  }
+
+  if (/unauthorized/i.test(message)) {
+    return new Error("Sesi berakhir. Silakan masuk lagi.");
+  }
+  if (/forbidden/i.test(message)) {
+    return new Error("Anda tidak punya izin untuk aksi ini.");
+  }
+  if (/not found/i.test(message)) {
+    return new Error("Data tidak ditemukan.");
   }
 
   return new Error(friendly[operationType]);

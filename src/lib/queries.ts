@@ -13,10 +13,9 @@ import {
 } from "./schemas.js";
 import { DEFAULT_KAMUS } from "../constants.js";
 import { calculateMasaKerja, checkKGBandKP } from "./employeeUtils.js";
-import { lookupKamus } from "./kamus.js";
+import { invalidateEmployeeStatsCache } from "./buildEmployeeStats.js";
+import { invalidateKamusLookupCache, lookupKamus } from "./kamus.js";
 import { normalizeEmployeeForImport } from "./employeeImport.js";
-
-export { lookupKamus };
 
 // --- Internal: map a Prisma row to the app Employee shape ---
 type PrismaEmployee = {
@@ -175,6 +174,7 @@ export async function getKamusCsv(): Promise<string> {
 
 export function invalidateKamusCache(): void {
   kamusCache = null;
+  invalidateKamusLookupCache();
 }
 
 // ============ Employees ============
@@ -316,20 +316,6 @@ export async function getEmployeesPage(opts?: GetEmployeesOptions): Promise<Empl
   return { data, total, limit, offset };
 }
 
-/** @deprecated Prefer getEmployeesPage — kept for simple internal callers. */
-export async function getEmployees(
-  kamusCsv?: string,
-  opts?: GetEmployeesOptions,
-): Promise<EmployeeT[]> {
-  const page = await getEmployeesPage({
-    ...opts,
-    kamusCsv: kamusCsv ?? opts?.kamusCsv,
-    limit: opts?.limit ?? MAX_LIST_LIMIT,
-    offset: opts?.offset ?? 0,
-  });
-  return page.data;
-}
-
 export async function getEmployee(id: string, kamusCsv?: string): Promise<EmployeeT | null> {
   const row = await prisma.employee.findUnique({ where: { id } });
   if (!row) return null;
@@ -376,6 +362,7 @@ function toPersistence(emp: Partial<EmployeeT>) {
 
 export async function createEmployee(emp: EmployeeT): Promise<EmployeeT> {
   const created = await prisma.employee.create({ data: toPersistence(emp) as never });
+  invalidateEmployeeStatsCache();
   return rowToEmployee(created as unknown as PrismaEmployee, await getKamusCsv());
 }
 
@@ -384,15 +371,18 @@ export async function updateEmployee(id: string, emp: Partial<EmployeeT>): Promi
     where: { id },
     data: toPersistence(emp) as never,
   });
+  invalidateEmployeeStatsCache();
   return rowToEmployee(updated as unknown as PrismaEmployee, await getKamusCsv());
 }
 
 export async function deleteEmployee(id: string): Promise<void> {
   await prisma.employee.delete({ where: { id } });
+  invalidateEmployeeStatsCache();
 }
 
 export async function deleteEmployees(ids: string[]): Promise<void> {
   await prisma.employee.deleteMany({ where: { id: { in: ids } } });
+  invalidateEmployeeStatsCache();
 }
 
 export type BulkImportError = {
@@ -569,6 +559,10 @@ export async function bulkUpsertEmployees(
         }
       }
     }
+  }
+
+  if (created > 0 || updated > 0) {
+    invalidateEmployeeStatsCache();
   }
 
   return {

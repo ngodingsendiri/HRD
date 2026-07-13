@@ -188,15 +188,72 @@ export function EmployeeForm({
     }
   }, [tmtGolonganRuang, setValue, dirtyFields.tmtGolonganRuang]);
 
+  const tabErrorCount = useMemo(() => {
+    const keys = Object.keys(errors) as string[];
+    const tab1 = new Set([
+      "nip",
+      "nik",
+      "nama",
+      "jk",
+      "tempatLahir",
+      "tanggalLahir",
+      "agama",
+      "statusKawin",
+      "nomorHp",
+      "jalanDusun",
+      "rt",
+      "rw",
+      "desaKelurahan",
+      "kecamatan",
+      "kabupaten",
+    ]);
+    const tab2 = new Set([
+      "status",
+      "jabatan",
+      "bidang",
+      "skTerakhir",
+      "pendidikan",
+      "jurusan",
+      "diklatJenjang",
+      "tahunDiklat",
+    ]);
+    const tab3 = new Set([
+      "pangkat",
+      "gol",
+      "tmtGolonganRuang",
+      "tmtKerja",
+      "tanggalBerkalaTerakhir",
+      "gajiPokok",
+      "besaranGajiKotor",
+      "noRekeningBank",
+      "npwp",
+      "nomorKarpeg",
+    ]);
+    const tab4Keys = new Set([
+      "dataKeluarga",
+      "sisaCutiN",
+      "sisaCutiN1",
+      "sisaCutiN2",
+      "jumlahTertanggung",
+    ]);
+    return {
+      1: keys.filter((k) => tab1.has(k)).length,
+      2: keys.filter((k) => tab2.has(k)).length,
+      3: keys.filter((k) => tab3.has(k)).length,
+      4: keys.filter(
+        (k) => tab4Keys.has(k) || k.startsWith("dataKeluarga."),
+      ).length,
+    };
+  }, [errors]);
+
   useEffect(() => {
     if (Object.keys(errors).length > 0) {
-      if (errors.nik || errors.nama || errors.nip) {
-        setActiveTab(1);
-      } else if (errors.dataKeluarga) {
-        setActiveTab(4);
-      }
+      if (tabErrorCount[1] > 0) setActiveTab(1);
+      else if (tabErrorCount[2] > 0) setActiveTab(2);
+      else if (tabErrorCount[3] > 0) setActiveTab(3);
+      else if (tabErrorCount[4] > 0) setActiveTab(4);
     }
-  }, [errors]);
+  }, [errors, tabErrorCount]);
 
   useEffect(() => {
     onDirtyChange?.(isDirty);
@@ -208,10 +265,10 @@ export function EmployeeForm({
   };
 
   const tabs = [
-    { id: 1, label: "Identitas Pribadi" },
-    { id: 2, label: "Jabatan & Penempatan" },
-    { id: 3, label: "Kepangkatan & Gaji" },
-    { id: 4, label: "Keluarga & Lainnya" },
+    { id: 1 as const, label: "Identitas", short: "1" },
+    { id: 2 as const, label: "Jabatan", short: "2" },
+    { id: 3 as const, label: "Pangkat & gaji", short: "3" },
+    { id: 4 as const, label: "Keluarga", short: "4" },
   ];
 
   return (
@@ -222,25 +279,40 @@ export function EmployeeForm({
       onSubmit(data);
     })} className="space-y-6">
       
-      {/* Navigation Tabs */}
-      <div className="flex space-x-1 border-b border-slate-200 overflow-x-auto whitespace-nowrap [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] pb-px">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-all active:scale-95 ${
-              activeTab === tab.id
-                ? "border-slate-900 text-slate-900"
-                : "border-transparent text-slate-500 hover:text-slate-900 hover:border-slate-300"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
+      {/* Stepper tabs + error badges */}
+      <div className="flex space-x-1 border-b border-slate-200 overflow-x-auto whitespace-nowrap scrollbar-hide pb-px">
+        {tabs.map((tab) => {
+          const errN = tabErrorCount[tab.id] || 0;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`inline-flex items-center gap-1.5 px-3 sm:px-4 py-2.5 text-sm font-medium border-b-2 transition-all active:scale-95 ${
+                activeTab === tab.id
+                  ? "border-slate-900 text-slate-900"
+                  : "border-transparent text-slate-500 hover:text-slate-900 hover:border-slate-300"
+              }`}
+            >
+              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold border border-slate-200 bg-slate-50 text-slate-600">
+                {tab.short}
+              </span>
+              <span className="hidden sm:inline">{tab.label}</span>
+              {errN > 0 && (
+                <span className="inline-flex items-center justify-center min-w-[1.1rem] h-4 px-1 rounded-full bg-red-600 text-white text-[10px] font-bold">
+                  {errN}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
+      <p className="text-[11px] text-slate-400 -mt-3">
+        Langkah {activeTab} dari 4
+        {isDirty ? " · Ada perubahan belum disimpan" : ""}
+      </p>
 
-      <div className="h-[60vh] sm:h-[65vh] overflow-y-auto pr-2 pb-4 space-y-6">
+      <div className="h-[min(60vh,520px)] sm:h-[65vh] overflow-y-auto pr-2 pb-4 space-y-6">
         {/* Tab 1: Identitas Pribadi */}
         <div className={activeTab === 1 ? "space-y-6 block" : "hidden"}>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -714,8 +786,8 @@ export function EmployeeForm({
           </div>
       </div>
 
-      <div className="flex justify-between pt-6 border-t border-slate-100">
-        <div>
+      <div className="flex flex-col-reverse sm:flex-row sm:justify-between gap-3 pt-6 border-t border-slate-100">
+        <div className="flex gap-2">
           {activeTab > 1 && (
             <button
               type="button"
@@ -725,8 +797,6 @@ export function EmployeeForm({
               Kembali
             </button>
           )}
-        </div>
-        <div className="flex gap-3">
           <button
             type="button"
             onClick={requestCancel}
@@ -734,19 +804,21 @@ export function EmployeeForm({
           >
             Batal
           </button>
-          {activeTab < 4 ? (
+        </div>
+        <div className="flex flex-wrap gap-2 justify-end">
+          {activeTab < 4 && (
             <button
               type="button"
               onClick={() => setActiveTab(activeTab + 1)}
-              className={`${btnSecondary} px-5 py-2.5 text-sm bg-slate-50`}
+              className={`${btnSecondary} px-5 py-2.5 text-sm`}
             >
               Selanjutnya
             </button>
-          ) : (
-            <button type="submit" className={`${btnPrimary} px-5 py-2.5 text-sm`}>
-              Simpan
-            </button>
           )}
+          {/* Simpan always available — operator need not reach step 4 to save */}
+          <button type="submit" className={`${btnPrimary} px-5 py-2.5 text-sm`}>
+            Simpan
+          </button>
         </div>
       </div>
 

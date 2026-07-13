@@ -9,21 +9,16 @@ import { cn } from "./utils.js";
 /** Standard ease-out used for mount / route transitions. */
 export const easeOut = { duration: 0.2, ease: "easeOut" as const };
 
-export const fadeIn = {
-  initial: { opacity: 0 },
-  animate: { opacity: 1 },
-  exit: { opacity: 0 },
-  transition: easeOut,
-};
+/** True when user prefers reduced motion (no transform choreography). */
+export function prefersReducedMotion(): boolean {
+  if (typeof window === "undefined" || !window.matchMedia) return false;
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
 
-export const fadeSlideUp = {
-  initial: { opacity: 0, y: 10 },
-  animate: { opacity: 1, y: 0 },
-  exit: { opacity: 0, y: -6 },
-  transition: easeOut,
-};
-
-/** Parent for staggered page sections. */
+/**
+ * Page enter: stagger children (max ~6). Skip rise when reduced-motion.
+ * Prefer this over also animating the Layout route wrapper (avoid double fade).
+ */
 export const pageContainerVariants = {
   hidden: { opacity: 0 },
   visible: {
@@ -32,9 +27,9 @@ export const pageContainerVariants = {
   },
 };
 
-/** Child items: subtle fade + 10px rise (no bounce). */
+/** Child items: subtle fade + small rise (no bounce). */
 export const pageItemVariants = {
-  hidden: { opacity: 0, y: 10 },
+  hidden: { opacity: 0, y: 6 },
   visible: {
     opacity: 1,
     y: 0,
@@ -44,10 +39,18 @@ export const pageItemVariants = {
 
 /** List row / card enter-exit. */
 export const listItemMotion = {
-  initial: { opacity: 0, y: 8 },
+  initial: { opacity: 0, y: 4 },
   animate: { opacity: 1, y: 0 },
-  exit: { opacity: 0, y: -4 },
+  exit: { opacity: 0 },
   transition: easeOut,
+};
+
+/** Route-level: opacity only (Layout) — pages own their stagger. */
+export const routeFade = {
+  initial: { opacity: 0 },
+  animate: { opacity: 1 },
+  exit: { opacity: 0 },
+  transition: { duration: 0.15, ease: "easeOut" as const },
 };
 
 // ─── Layout shells ───────────────────────────────────────────────────────────
@@ -74,8 +77,6 @@ export const card =
 export const cardHeader =
   "px-5 py-4 border-b border-slate-100 bg-slate-50";
 
-export const cardBody = "p-4 sm:p-5 md:p-6";
-
 // ─── Controls ────────────────────────────────────────────────────────────────
 
 export const focusRing =
@@ -86,17 +87,9 @@ export const input = cn(
   focusRing,
 );
 
-export const inputCompact = cn(
-  "w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-900 placeholder:text-slate-400 transition-colors",
-  focusRing,
-);
-
 export const select = cn(input, "cursor-pointer");
 
 export const label = "block text-sm font-medium text-slate-700";
-
-export const labelUpper =
-  "block text-[11px] font-bold text-slate-500 uppercase tracking-wider";
 
 export const btnPrimary = cn(
   "inline-flex items-center justify-center gap-1.5 px-4 py-2 text-[13px] font-semibold text-white bg-slate-900 rounded-lg",
@@ -154,17 +147,8 @@ export function statusBadge(status: string | undefined | null) {
 
 // ─── Feedback ────────────────────────────────────────────────────────────────
 
-export const alertSuccess =
-  "p-4 rounded-xl text-sm font-medium flex items-center gap-3 bg-emerald-50 text-emerald-700 border border-emerald-100";
-
-export const alertError =
-  "p-4 rounded-xl text-sm font-medium flex items-center gap-3 bg-red-50 text-red-700 border border-red-100";
-
 export const emptyIconWrap =
   "w-14 h-14 bg-slate-50 rounded-xl flex items-center justify-center mb-4 border border-slate-100";
-
-export const sectionRule =
-  "space-y-6 pt-8 sm:pt-10 mt-6 sm:mt-8 border-t border-slate-200";
 
 export const sectionTitle =
   "text-sm border-l-2 pl-3 border-slate-900 font-bold text-slate-800 uppercase tracking-wide flex items-center gap-2";
