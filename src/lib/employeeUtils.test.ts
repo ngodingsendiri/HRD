@@ -34,6 +34,27 @@ describe("getBupYears / calculateBUP", () => {
   it("returns null for empty birth", () => {
     expect(calculateBUP("", "Staf")).toBeNull();
   });
+
+  it("prefers manual BUP override", () => {
+    expect(calculateBUP("1968-03-15", "Staf", "2030-06-01")).toBe("2030-06-01");
+  });
+});
+
+describe("formatGolonganDisplay", () => {
+  it("normalizes separators and letter case", async () => {
+    const { formatGolonganDisplay } = await import("./employeeUtils");
+    expect(formatGolonganDisplay("III.A")).toBe("III/a");
+    expect(formatGolonganDisplay("ii-b")).toBe("II/b");
+  });
+});
+
+describe("checkKGBandKP tmtKp override", () => {
+  it("uses tmtKp as KP base when set", () => {
+    const r = checkKGBandKP("2010-01-01", "2024-01-01", {
+      tmtKp: "2022-01-01",
+    });
+    expect(r.kp.targetDate).toBe("2026-01-01");
+  });
 });
 
 describe("resolveKgbCycle", () => {

@@ -77,7 +77,13 @@ Vite+Vercel: `/api/(.*)` → `/api?path=$1` (`vercel.json`).
 - Rate limit: IP + per-key (e.g. employees ~120/min IP, ~300/min key).
 - `lastUsedAt` throttled (5 min) and awaited (serverless-safe).
 
-Import machine: client maps Excel → `normalizeEmployeeForImport` (also on server bulk).  
+Import machine: Excel → sparse fields → `normalizeEmployeeForImport` (server bulk).  
+Modes: **patch** (default, empty cells keep DB) | **replace** (full overwrite).  
+Always **dry-run** preview first (`dryRun: true`), then apply.  
+Status/JK invalid → row rejected. Jabatan ∉ kamus → warning.  
+Templates: **ringkas** (`IMPORT_CORE_FIELDS`) | **lengkap** (`IMPORT_COLUMNS`).  
+Domain overrides (stored): `bupTanggal`, `tmtKp` — empty = compute indikatif.  
+KP/KGB/BUP labels are **indikatif** unless manual override set.  
 Template source of truth: `src/lib/employeeImport.ts` (`IMPORT_COLUMNS`).
 
 ---

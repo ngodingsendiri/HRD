@@ -25,6 +25,7 @@ describe("buildPensiunList", () => {
         pangkatGolongan: "IV/a",
         tanggalLahir: "1968-03-15",
         jabatan: "JF Ahli Madya",
+        bupTanggal: "",
       },
     ]);
     expect(list).toHaveLength(1);
@@ -44,9 +45,28 @@ describe("buildPensiunList", () => {
         pangkatGolongan: "III/a",
         tanggalLahir: "1968-03-15",
         jabatan: "Pengelola Umum",
+        bupTanggal: "",
       },
     ]);
     expect(list[0]!.nextDate).toBe("2026-04-01");
+  });
+
+  it("honors manual BUP override", () => {
+    const list = buildPensiunList([
+      {
+        id: "3",
+        nik: "",
+        nama: "C",
+        nip: "3",
+        status: "PNS",
+        gol: "III/a",
+        pangkatGolongan: "III/a",
+        tanggalLahir: "1968-03-15",
+        jabatan: "Pengelola Umum",
+        bupTanggal: "2031-01-01",
+      },
+    ]);
+    expect(list[0]!.nextDate).toBe("2031-01-01");
   });
 });
 

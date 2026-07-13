@@ -106,6 +106,10 @@ export const EmployeeSchema = z.object({
   tmtGolonganRuang: optionalText,
   masaKerjaGolonganRuang: optionalText,
   tanggalBerkalaTerakhir: optionalText,
+  /** Manual BUP date (YYYY-MM-DD); empty = compute from birth + jabatan */
+  bupTanggal: optionalText,
+  /** Manual KP base date; empty = use tmtGolonganRuang */
+  tmtKp: optionalText,
 
   // --- Salary ---
   gajiPokok: optionalText,
@@ -152,6 +156,8 @@ export const EmployeeFormSchema = EmployeeSchema.extend({
   status: EmployeeStatusSchema.default("PNS"),
   jumlahTertanggung: z.number().int().min(0).max(50).default(0),
   dataKeluarga: z.array(FamilyMemberSchema).max(50).default([]),
+  bupTanggal: optionalText.default(""),
+  tmtKp: optionalText.default(""),
 });
 
 // --- App settings (single shared document) ---

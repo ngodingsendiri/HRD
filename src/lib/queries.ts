@@ -15,7 +15,14 @@ import { DEFAULT_KAMUS } from "../constants.js";
 import { calculateMasaKerja, checkKGBandKP } from "./employeeUtils.js";
 import { invalidateEmployeeStatsCache } from "./buildEmployeeStats.js";
 import { invalidateKamusLookupCache, lookupKamus } from "./kamus.js";
-import { normalizeEmployeeForImport } from "./employeeImport.js";
+import {
+  hasFamilyKeys,
+  kamusWarningForJabatan,
+  mergeEmployeePatch,
+  mergeFamilyPatch,
+  normalizeEmployeeForImport,
+  type ImportMode,
+} from "./employeeImport.js";
 
 // --- Internal: map a Prisma row to the app Employee shape ---
 type PrismaEmployee = {
@@ -74,6 +81,8 @@ function mapRow(row: PrismaEmployee, kamusCsv?: string, lean = false): EmployeeT
     tmtGolonganRuang: String(row.tmtGolonganRuang ?? ""),
     masaKerjaGolonganRuang: String(row.masaKerjaGolonganRuang ?? ""),
     tanggalBerkalaTerakhir: String(row.tanggalBerkalaTerakhir ?? ""),
+    bupTanggal: String(row.bupTanggal ?? ""),
+    tmtKp: String(row.tmtKp ?? ""),
     gajiPokok: lean ? "" : String(row.gajiPokok ?? ""),
     besaranGajiKotor: lean ? "" : String(row.besaranGajiKotor ?? ""),
     digajiMenurut: lean ? "" : String(row.digajiMenurut ?? ""),
@@ -127,6 +136,8 @@ const LEAN_SELECT = {
   tmtGolonganRuang: true,
   masaKerjaGolonganRuang: true,
   tanggalBerkalaTerakhir: true,
+  bupTanggal: true,
+  tmtKp: true,
   nomorHp: true,
   jumlahTertanggung: true,
   createdAt: true,
@@ -233,6 +244,7 @@ function matchesAlert(
     status?: string | null;
     gol?: string | null;
     pangkatGolongan?: string | null;
+    tmtKp?: string | null;
   },
   alert: "kp" | "kgb" | "any",
 ): boolean {
@@ -244,6 +256,7 @@ function matchesAlert(
       status: emp.status,
       gol: emp.gol,
       pangkatGolongan: emp.pangkatGolongan,
+      tmtKp: emp.tmtKp,
     },
   );
   if (alert === "any") return !clear;
@@ -272,6 +285,7 @@ export async function getEmployeesPage(opts?: GetEmployeesOptions): Promise<Empl
         status: true,
         gol: true,
         pangkatGolongan: true,
+        tmtKp: true,
       },
       orderBy: { nama: "asc" },
       take: 5000,
@@ -393,11 +407,26 @@ export type BulkImportError = {
   message: string;
 };
 
+export type BulkImportWarning = {
+  row: number;
+  nip?: string;
+  nama?: string;
+  message: string;
+};
+
+export type BulkUpsertOptions = {
+  mode?: ImportMode;
+  dryRun?: boolean;
+};
+
 export type BulkUpsertResult = {
   created: number;
   updated: number;
   errors: number;
   errorDetails: BulkImportError[];
+  warnings: BulkImportWarning[];
+  dryRun: boolean;
+  mode: ImportMode;
 };
 
 const BULK_CHUNK = 40;
@@ -405,50 +434,184 @@ const BULK_CHUNK = 40;
 /**
  * Bulk import with per-row errors and chunked transactions.
  * Match key: NIP first, else NIK.
+ * mode patch (default): merge non-empty cells onto existing.
+ * mode replace: full row overwrite.
+ * dryRun: validate + count only, no writes.
  */
 export async function bulkUpsertEmployees(
   rows: Record<string, unknown>[],
+  opts?: BulkUpsertOptions,
 ): Promise<BulkUpsertResult> {
+  const mode: ImportMode = opts?.mode === "replace" ? "replace" : "patch";
+  const dryRun = Boolean(opts?.dryRun);
   let created = 0;
   let updated = 0;
   const errorDetails: BulkImportError[] = [];
+  const warnings: BulkImportWarning[] = [];
+  const kamusCsv = await getKamusCsv();
 
   const existingByNip = new Map<string, string>();
   const existingByNik = new Map<string, string>();
-  const all = await prisma.employee.findMany({ select: { id: true, nip: true, nik: true } });
+  const all = await prisma.employee.findMany({
+    select: { id: true, nip: true, nik: true },
+  });
   for (const e of all) {
-    const nip = String(e.nip ?? "").trim();
-    const nik = String(e.nik ?? "").trim();
+    const nip = String(e.nip ?? "").replace(/\D/g, "") || String(e.nip ?? "").trim();
+    const nik = String(e.nik ?? "").replace(/\D/g, "") || String(e.nik ?? "").trim();
     if (nip) existingByNip.set(nip, e.id);
     if (nik) existingByNik.set(nik, e.id);
   }
 
   type Op =
-    | { kind: "create"; row: number; data: Record<string, unknown>; nipKey: string; nikKey: string; nama: string }
-    | { kind: "update"; row: number; id: string; data: Record<string, unknown>; nipKey: string; nikKey: string; nama: string };
+    | {
+        kind: "create";
+        row: number;
+        data: Record<string, unknown>;
+        nipKey: string;
+        nikKey: string;
+        nama: string;
+      }
+    | {
+        kind: "update";
+        row: number;
+        id: string;
+        data: Record<string, unknown>;
+        nipKey: string;
+        nikKey: string;
+        nama: string;
+      };
 
   const ops: Op[] = [];
+  const seenNip = new Set<string>();
+  const seenNik = new Set<string>();
 
-  for (let i = 0; i < rows.length; i++) {
-    const rowNum = i + 1;
-    const normalized = normalizeEmployeeForImport(rows[i] as Record<string, unknown>);
-    const parsed = EmployeeSchema.safeParse(normalized);
+  // Pre-resolve match ids so patch can batch-load existing rows (no N+1)
+  type RowPlan = {
+    rowNum: number;
+    raw: Record<string, unknown>;
+    existingId?: string;
+    peekNip: string;
+    peekNik: string;
+  };
+  const plans: RowPlan[] = rows.map((raw, i) => {
+    const peekNip = String(raw.nip ?? "").replace(/\D/g, "");
+    const peekNik = String(raw.nik ?? "").replace(/\D/g, "");
+    const existingId =
+      (peekNip && existingByNip.get(peekNip)) ||
+      (peekNik && existingByNik.get(peekNik)) ||
+      undefined;
+    return {
+      rowNum: i + 1,
+      raw: raw as Record<string, unknown>,
+      existingId,
+      peekNip,
+      peekNik,
+    };
+  });
+
+  const patchIds = [
+    ...new Set(
+      plans
+        .filter((p) => p.existingId && mode === "patch")
+        .map((p) => p.existingId!),
+    ),
+  ];
+  const existingFullById = new Map<string, Record<string, unknown>>();
+  if (patchIds.length > 0) {
+    const fullRows = await prisma.employee.findMany({
+      where: { id: { in: patchIds } },
+    });
+    for (const row of fullRows) {
+      const emp = mapRow(row as unknown as PrismaEmployee, kamusCsv, false);
+      existingFullById.set(row.id, emp as unknown as Record<string, unknown>);
+    }
+  }
+
+  for (const plan of plans) {
+    const { rowNum, raw, existingId, peekNip, peekNik } = plan;
+    const isCreate = !existingId;
+    // patch+create and replace both need full shape; patch+update is sparse merge
+    const norm = normalizeEmployeeForImport(raw, {
+      mode,
+      full: isCreate || mode === "replace",
+    });
+
+    if (!norm.ok) {
+      errorDetails.push({
+        row: rowNum,
+        nip: norm.nip,
+        nik: norm.nik,
+        nama: norm.nama,
+        message: norm.error,
+      });
+      continue;
+    }
+
+    for (const w of norm.warnings) {
+      warnings.push({
+        row: rowNum,
+        nip: String(norm.data.nip || peekNip || ""),
+        nama: String(norm.data.nama || ""),
+        message: w,
+      });
+    }
+
+    let finalData: Record<string, unknown> = norm.data;
+
+    if (existingId && mode === "patch") {
+      const existingEmp = existingFullById.get(existingId);
+      if (!existingEmp) {
+        errorDetails.push({
+          row: rowNum,
+          message: "Pegawai match hilang saat merge",
+        });
+        continue;
+      }
+      finalData = mergeEmployeePatch(existingEmp, norm.data);
+      // If only pangkat or gol patched, rebuild composite from merged pair
+      if (
+        ("pangkat" in raw || "gol" in raw) &&
+        !("pangkatGolongan" in raw)
+      ) {
+        const p = String(finalData.pangkat || "").trim();
+        const g = String(finalData.gol || "").trim();
+        finalData.pangkatGolongan = [p, g].filter(Boolean).join(" / ");
+      }
+      // Flat family columns: merge slots so partial spouse/child edits keep the rest
+      if (hasFamilyKeys(raw) && !Array.isArray(raw.dataKeluarga)) {
+        const jk = (String(finalData.jk || existingEmp.jk || "L") === "P"
+          ? "P"
+          : "L") as "L" | "P";
+        const existingFam = Array.isArray(existingEmp.dataKeluarga)
+          ? (existingEmp.dataKeluarga as FamilyMemberT[])
+          : [];
+        finalData.dataKeluarga = mergeFamilyPatch(existingFam, raw, jk);
+        if (!("jumlahTertanggung" in raw)) {
+          finalData.jumlahTertanggung = (
+            finalData.dataKeluarga as FamilyMemberT[]
+          ).length;
+        }
+      }
+    }
+
+    const parsed = EmployeeSchema.safeParse(finalData);
     if (!parsed.success) {
       const first = parsed.error.issues[0];
       errorDetails.push({
         row: rowNum,
-        nip: String(normalized.nip || ""),
-        nik: String(normalized.nik || ""),
-        nama: String(normalized.nama || ""),
+        nip: String(finalData.nip || ""),
+        nik: String(finalData.nik || ""),
+        nama: String(finalData.nama || ""),
         message: first
           ? `${first.path.join(".") || "data"}: ${first.message}`
           : "Data tidak valid",
       });
       continue;
     }
+
     const emp = parsed.data;
-    const nipKey = emp.nip?.trim() || "";
-    const nikKey = emp.nik?.trim() || "";
+    const nipKey = (emp.nip || "").replace(/\D/g, "") || emp.nip?.trim() || "";
+    const nikKey = (emp.nik || "").replace(/\D/g, "") || emp.nik?.trim() || "";
     if (!nipKey && !nikKey) {
       errorDetails.push({
         row: rowNum,
@@ -457,16 +620,51 @@ export async function bulkUpsertEmployees(
       });
       continue;
     }
-    const existingId =
+
+    // In-file duplicates
+    if (nipKey && seenNip.has(nipKey)) {
+      errorDetails.push({
+        row: rowNum,
+        nip: nipKey,
+        nama: emp.nama,
+        message: `NIP duplikat dalam file (sudah ada di baris sebelumnya)`,
+      });
+      continue;
+    }
+    if (nikKey && seenNik.has(nikKey)) {
+      errorDetails.push({
+        row: rowNum,
+        nik: nikKey,
+        nama: emp.nama,
+        message: `NIK duplikat dalam file (sudah ada di baris sebelumnya)`,
+      });
+      continue;
+    }
+    if (nipKey) seenNip.add(nipKey);
+    if (nikKey) seenNik.add(nikKey);
+
+    const kw = kamusWarningForJabatan(emp.jabatan, kamusCsv);
+    if (kw) {
+      warnings.push({
+        row: rowNum,
+        nip: nipKey,
+        nama: emp.nama,
+        message: kw,
+      });
+    }
+
+    const data = toPersistence(emp) as Record<string, unknown>;
+    const matchId =
+      existingId ||
       (nipKey && existingByNip.get(nipKey)) ||
       (nikKey && existingByNik.get(nikKey)) ||
       undefined;
-    const data = toPersistence(emp) as Record<string, unknown>;
-    if (existingId) {
+
+    if (matchId) {
       ops.push({
         kind: "update",
         row: rowNum,
-        id: existingId,
+        id: matchId,
         data,
         nipKey,
         nikKey,
@@ -484,6 +682,18 @@ export async function bulkUpsertEmployees(
     }
   }
 
+  if (dryRun) {
+    return {
+      created: ops.filter((o) => o.kind === "create").length,
+      updated: ops.filter((o) => o.kind === "update").length,
+      errors: errorDetails.length,
+      errorDetails: errorDetails.slice(0, 50),
+      warnings: warnings.slice(0, 50),
+      dryRun: true,
+      mode,
+    };
+  }
+
   for (let i = 0; i < ops.length; i += BULK_CHUNK) {
     const chunk = ops.slice(i, i + BULK_CHUNK);
     try {
@@ -499,18 +709,16 @@ export async function bulkUpsertEmployees(
         }),
       );
       for (const op of chunk) {
-        if (op.kind === "update") {
-          updated++;
-        } else {
-          created++;
-          // IDs for new rows not in map yet — next chunks in same import
-          // may not need them if NIP unique; refresh maps from op keys is incomplete without id.
-        }
+        if (op.kind === "update") updated++;
+        else created++;
       }
-      // Re-fetch ids for created rows in this chunk (for in-batch duplicate NIPs)
       if (chunk.some((c) => c.kind === "create")) {
-        const createdNips = chunk.filter((c) => c.kind === "create" && c.nipKey).map((c) => c.nipKey);
-        const createdNiks = chunk.filter((c) => c.kind === "create" && c.nikKey).map((c) => c.nikKey);
+        const createdNips = chunk
+          .filter((c) => c.kind === "create" && c.nipKey)
+          .map((c) => c.nipKey);
+        const createdNiks = chunk
+          .filter((c) => c.kind === "create" && c.nikKey)
+          .map((c) => c.nikKey);
         if (createdNips.length || createdNiks.length) {
           const fresh = await prisma.employee.findMany({
             where: {
@@ -522,13 +730,14 @@ export async function bulkUpsertEmployees(
             select: { id: true, nip: true, nik: true },
           });
           for (const e of fresh) {
-            if (e.nip) existingByNip.set(String(e.nip).trim(), e.id);
-            if (e.nik) existingByNik.set(String(e.nik).trim(), e.id);
+            const n = String(e.nip ?? "").replace(/\D/g, "");
+            const k = String(e.nik ?? "").replace(/\D/g, "");
+            if (n) existingByNip.set(n, e.id);
+            if (k) existingByNik.set(k, e.id);
           }
         }
       }
     } catch {
-      // Fall back to per-row so one conflict doesn't kill the chunk
       for (const op of chunk) {
         try {
           if (op.kind === "update") {
@@ -538,7 +747,9 @@ export async function bulkUpsertEmployees(
             });
             updated++;
           } else {
-            const created_row = await prisma.employee.create({ data: op.data as never });
+            const created_row = await prisma.employee.create({
+              data: op.data as never,
+            });
             if (op.nipKey) existingByNip.set(op.nipKey, created_row.id);
             if (op.nikKey) existingByNik.set(op.nikKey, created_row.id);
             created++;
@@ -569,7 +780,10 @@ export async function bulkUpsertEmployees(
     created,
     updated,
     errors: errorDetails.length,
-    errorDetails: errorDetails.slice(0, 50), // cap payload
+    errorDetails: errorDetails.slice(0, 50),
+    warnings: warnings.slice(0, 50),
+    dryRun: false,
+    mode,
   };
 }
 

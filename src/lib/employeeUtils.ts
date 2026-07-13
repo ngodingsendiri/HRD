@@ -87,11 +87,19 @@ export function getBupYears(jabatan: string): number {
 /**
  * TMT pensiun: awal bulan setelah ulang tahun BUP (YYYY-MM-DD).
  * Shared by form, export, and dashboard timeline.
+ * @param bupTanggalManual if set (YYYY-MM-DD), used as authoritative override.
  */
 export function calculateBUP(
   tanggalLahir: string,
   jabatan: string,
+  bupTanggalManual?: string | null,
 ): string | null {
+  const manual = (bupTanggalManual || "").trim().slice(0, 10);
+  if (manual && /^\d{4}-\d{2}-\d{2}$/.test(manual)) {
+    const d = new Date(manual);
+    if (!isNaN(d.getTime())) return manual;
+  }
+
   if (!tanggalLahir) return null;
 
   const birthDate = new Date(tanggalLahir);
@@ -104,6 +112,14 @@ export function calculateBUP(
   const pad = (num: number) => num.toString().padStart(2, "0");
 
   return `${tmtPensiun.getFullYear()}-${pad(tmtPensiun.getMonth() + 1)}-${pad(tmtPensiun.getDate())}`;
+}
+
+/** Display form for golongan (III.A / III-A → III/a). */
+export function formatGolonganDisplay(raw: string): string {
+  const n = normalizeGolongan(raw || "");
+  const m = n.match(/^([IVX]+)\/([A-E])$/);
+  if (m) return `${m[1]}/${m[2]!.toLowerCase()}`;
+  return (raw || "").trim();
 }
 
 export function calculateMasaKerja(startDate: string): string | null {
@@ -149,6 +165,8 @@ export type KgbKpContext = {
   status?: string | null;
   gol?: string | null;
   pangkatGolongan?: string | null;
+  /** Optional manual base for KP cycle (else tmtGolonganRuang). */
+  tmtKp?: string | null;
 };
 
 const WARNING_DAYS = 90; // H-90 dianggap "mendekati"
@@ -244,11 +262,16 @@ export function resolveKgbCycle(input: {
 }
 
 /** Normalize golongan for exact compare (II.A / II-A / II/A → II/A). */
-function normalizeGolToken(raw: string): string {
+export function normalizeGolongan(raw: string): string {
   return raw
     .toUpperCase()
     .replace(/\s/g, "")
     .replace(/[.\-]/g, "/");
+}
+
+/** @deprecated use normalizeGolongan */
+function normalizeGolToken(raw: string): string {
+  return normalizeGolongan(raw);
 }
 
 /**
@@ -260,7 +283,9 @@ export function checkKGBandKP(
   tanggalBerkalaTerakhir: string | null | undefined,
   ctx?: KgbKpContext,
 ): KPStatusResult {
-  const kp = buildStatus(tmtGolonganRuang, 4);
+  // KP base: manual tmtKp wins over tmt golongan (indikatif +4 th)
+  const kpBase = (ctx?.tmtKp || "").trim() || tmtGolonganRuang;
+  const kp = buildStatus(kpBase, 4);
 
   const { baseDate, cycleYears } = resolveKgbCycle({
     tanggalBerkalaTerakhir,
@@ -276,8 +301,8 @@ export function checkKGBandKP(
   const warningKGB = kgb.due || kgb.overdue;
 
   const statuses: string[] = [];
-  if (warningKP) statuses.push("Mendekati/Lewat KP (4 Thn)");
-  if (warningKGB) statuses.push("Mendekati/Lewat KGB (2 Thn)");
+  if (warningKP) statuses.push("Mendekati/Lewat KP (indikatif +4 th)");
+  if (warningKGB) statuses.push("Mendekati/Lewat KGB (indikatif)");
 
   return {
     warningKP,
@@ -289,13 +314,13 @@ export function checkKGBandKP(
   };
 }
 
-/** Render label ringkas untuk badge, mis. "KP H-30" atau "KGB Lewat". */
+/** Render label ringkas untuk badge, mis. "KP ~H-30" (indikatif). */
 export function formatKPLabel(kind: "KP" | "KGB", status: KPStatus): string {
-  if (status.overdue) return `${kind} Lewat`;
+  if (status.overdue) return `${kind} lewat*`;
   if (status.due) {
-    if (status.daysLeft === null) return kind;
-    if (status.daysLeft === 0) return `${kind} Hari Ini`;
-    return `${kind} H-${status.daysLeft}`;
+    if (status.daysLeft === null) return `${kind}*`;
+    if (status.daysLeft === 0) return `${kind} hari ini*`;
+    return `${kind} H-${status.daysLeft}*`;
   }
-  return kind;
+  return `${kind}*`;
 }

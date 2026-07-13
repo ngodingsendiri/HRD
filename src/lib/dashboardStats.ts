@@ -124,6 +124,7 @@ export function buildKpList(
     | "gol"
     | "pangkatGolongan"
     | "tmtGolonganRuang"
+    | "tmtKp"
   >[],
 ): TimelineItem[] {
   const today = new Date();
@@ -131,8 +132,9 @@ export function buildKpList(
   const list: TimelineItem[] = [];
 
   for (const emp of employees) {
-    if (!emp.tmtGolonganRuang) continue;
-    const baselineDate = new Date(emp.tmtGolonganRuang);
+    const base = (emp.tmtKp || emp.tmtGolonganRuang || "").trim();
+    if (!base) continue;
+    const baselineDate = new Date(base);
     if (isNaN(baselineDate.getTime())) continue;
     const nextDate = new Date(baselineDate);
     nextDate.setFullYear(nextDate.getFullYear() + 4);
@@ -165,6 +167,7 @@ export function buildPensiunList(
     | "pangkatGolongan"
     | "tanggalLahir"
     | "jabatan"
+    | "bupTanggal"
   >[],
 ): TimelineItem[] {
   const today = new Date();
@@ -172,8 +175,12 @@ export function buildPensiunList(
   const list: TimelineItem[] = [];
 
   for (const emp of employees) {
-    if (!emp.tanggalLahir) continue;
-    const nextStr = calculateBUP(emp.tanggalLahir, emp.jabatan || "");
+    if (!emp.tanggalLahir && !emp.bupTanggal) continue;
+    const nextStr = calculateBUP(
+      emp.tanggalLahir || "",
+      emp.jabatan || "",
+      emp.bupTanggal,
+    );
     if (!nextStr) continue;
     const nextDate = new Date(nextStr);
     if (isNaN(nextDate.getTime())) continue;

@@ -98,6 +98,26 @@ const RULES: FieldRule[] = [
     synonyms: ["sk terakhir", "sk terakhir yang dimiliki"],
   },
   { field: "jumlahTertanggung", synonyms: ["jumlah tertanggung", "jml tertanggung"] },
+  {
+    field: "bupTanggal",
+    synonyms: [
+      "bup manual",
+      "bup tanggal",
+      "tmt pensiun manual",
+      "tanggal pensiun manual",
+      "override bup",
+    ],
+  },
+  {
+    field: "tmtKp",
+    synonyms: [
+      "tmt kp manual",
+      "tmt kp",
+      "dasar kp",
+      "override tmt kp",
+      "tanggal kp manual",
+    ],
+  },
   // Derived — mapper may still see them; import layer ignores via DERIVED_HEADERS
 ];
 

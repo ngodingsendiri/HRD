@@ -53,11 +53,21 @@ export type BulkImportError = {
   message: string;
 };
 
+export type BulkImportWarning = {
+  row: number;
+  nip?: string;
+  nama?: string;
+  message: string;
+};
+
 export type BulkUpsertResult = {
   created: number;
   updated: number;
   errors: number;
   errorDetails?: BulkImportError[];
+  warnings?: BulkImportWarning[];
+  dryRun?: boolean;
+  mode?: "patch" | "replace";
 };
 
 export type SettingsInclude = "core" | "logo" | "kamus" | "peta" | "all";
@@ -172,12 +182,20 @@ export const api = {
     invalidateEmployeeReads();
   },
 
-  async bulkUpsert(employees: Record<string, unknown>[]): Promise<BulkUpsertResult> {
+  async bulkUpsert(
+    employees: Record<string, unknown>[],
+    opts?: { mode?: "patch" | "replace"; dryRun?: boolean },
+  ): Promise<BulkUpsertResult> {
     const result = await request<BulkUpsertResult>("/api/employees", {
       method: "PUT",
-      body: JSON.stringify({ action: "bulk-upsert", employees }),
+      body: JSON.stringify({
+        action: "bulk-upsert",
+        employees,
+        mode: opts?.mode ?? "patch",
+        dryRun: Boolean(opts?.dryRun),
+      }),
     });
-    invalidateEmployeeReads();
+    if (!opts?.dryRun) invalidateEmployeeReads();
     return result;
   },
 

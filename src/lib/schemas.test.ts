@@ -55,6 +55,8 @@ describe("EmployeeSchema", () => {
     tmtGolonganRuang: "",
     masaKerjaGolonganRuang: "",
     tanggalBerkalaTerakhir: "",
+    bupTanggal: "",
+    tmtKp: "",
     gajiPokok: "",
     besaranGajiKotor: "",
     digajiMenurut: "",

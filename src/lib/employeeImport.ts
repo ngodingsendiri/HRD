@@ -8,6 +8,9 @@
  * - NIP (18 digit, PNS/CPNS) can fill tanggalLahir, tmtKerja, jk when empty.
  * - masaKerjaGolonganRuang is auto-filled from tmtGolonganRuang when empty.
  * - Match key for upsert: NIP first, else NIK.
+ * - mode "patch" (default): only non-empty Excel cells update DB; empty = keep.
+ * - mode "replace": full row write (blank cells clear stored fields).
+ * - Status/JK tidak dikenali → baris ditolak (bukan default diam-diam).
  */
 import type { Employee, EmployeeStatus, FamilyMember } from "../types.js";
 import {
@@ -15,9 +18,15 @@ import {
   validateAndExtractNIP,
   calculateBUP,
   checkKGBandKP,
+  formatGolonganDisplay,
 } from "./employeeUtils.js";
 import { buildFamilyExportFields } from "./employeeExport.js";
 import { mapExcelHeaders } from "./excelMapping.js";
+import { lookupKamus } from "./kamus.js";
+import { differenceInYears } from "date-fns";
+
+/** How bulk import merges with existing rows. */
+export type ImportMode = "patch" | "replace";
 
 // ─── Column definition (template header ↔ app field) ─────────────────────────
 
@@ -51,8 +60,16 @@ export const IMPORT_COLUMNS: ImportColumn[] = [
   { header: "Nama", field: "nama", hint: "Wajib. Nama lengkap sesuai KTP.", required: true },
   { header: "NIP", field: "nip", hint: "18 digit untuk PNS/CPNS (mesin isi tgl lahir, TMT, JK jika kosong)." },
   { header: "NIK", field: "nik", hint: "16 digit. Dipakai match jika NIP kosong." },
-  { header: "Status", field: "status", hint: "PNS | CPNS | PPPK | PPPKPW | Honorer | Lainnya" },
-  { header: "JK", field: "jk", hint: "L atau P (bisa diisi otomatis dari NIP PNS/CPNS)." },
+  {
+    header: "Status",
+    field: "status",
+    hint: "PNS | CPNS | PPPK | PPPKPW | Honorer | Lainnya. Nilai lain ditolak.",
+  },
+  {
+    header: "JK",
+    field: "jk",
+    hint: "L atau P. Wajib jika bukan NIP 18 digit PNS/CPNS. Nilai lain ditolak.",
+  },
   { header: "Tempat Lahir", field: "tempatLahir", hint: "" },
   { header: "Tanggal Lahir", field: "tanggalLahir", hint: "YYYY-MM-DD atau tanggal Excel. Bisa dari NIP." },
 
@@ -81,7 +98,17 @@ export const IMPORT_COLUMNS: ImportColumn[] = [
   {
     header: "Tanggal Berkala Terakhir",
     field: "tanggalBerkalaTerakhir",
-    hint: "Dasar prediksi KGB (+2 th).",
+    hint: "Dasar prediksi KGB indikatif (+2 th / siklus pertama).",
+  },
+  {
+    header: "BUP Manual",
+    field: "bupTanggal",
+    hint: "Opsional YYYY-MM-DD. Isi jika TMT pensiun beda dari hitungan otomatis.",
+  },
+  {
+    header: "TMT KP Manual",
+    field: "tmtKp",
+    hint: "Opsional YYYY-MM-DD. Dasar prediksi KP indikatif (+4 th). Kosong = TMT Golongan.",
   },
 
   // Salary
@@ -172,26 +199,65 @@ export function excelDateToIso(serial: unknown): string {
   return s;
 }
 
-export function parseStatus(raw: unknown): EmployeeStatus {
-  const s = String(raw || "PNS")
+export type StatusResolve =
+  | { kind: "empty" }
+  | { kind: "ok"; status: EmployeeStatus }
+  | { kind: "invalid"; raw: string };
+
+/** Strict status parse — empty vs recognized vs garbage. */
+export function resolveStatus(raw: unknown): StatusResolve {
+  if (raw == null || String(raw).trim() === "") return { kind: "empty" };
+  const s = String(raw)
     .toUpperCase()
     .replace(/\s+/g, "");
-  if (s.includes("CPNS")) return "CPNS";
-  if (s.includes("PPPKPW") || s === "PPPK-PW" || s.includes("PPPKP")) return "PPPKPW";
-  if (s.includes("PPPK")) return "PPPK";
-  if (s.includes("HONOR")) return "Honorer";
-  if (s.includes("LAIN")) return "Lainnya";
-  if (s.includes("PNS")) return "PNS";
+  // Order matters: CPNS before PNS, PPPKPW before PPPK
+  if (s === "CPNS" || s.includes("CPNS")) return { kind: "ok", status: "CPNS" };
+  if (
+    s === "PPPKPW" ||
+    s === "PPPK-PW" ||
+    s === "PPPKP" ||
+    s.includes("PPPKPW") ||
+    s.includes("PPPKP")
+  )
+    return { kind: "ok", status: "PPPKPW" };
+  if (s === "PPPK" || s.includes("PPPK")) return { kind: "ok", status: "PPPK" };
+  if (s.includes("HONOR")) return { kind: "ok", status: "Honorer" };
+  if (s === "LAINNYA" || s.includes("LAIN")) return { kind: "ok", status: "Lainnya" };
+  // Exact PNS only — avoid mapping "PNSTEST" etc.
+  if (s === "PNS") return { kind: "ok", status: "PNS" };
+  return { kind: "invalid", raw: String(raw).trim() };
+}
+
+/** @deprecated prefer resolveStatus — maps empty/invalid to PNS for legacy callers */
+export function parseStatus(raw: unknown): EmployeeStatus {
+  const r = resolveStatus(raw);
+  if (r.kind === "ok") return r.status;
   return "PNS";
 }
 
+export type JkResolve =
+  | { kind: "empty" }
+  | { kind: "ok"; jk: "L" | "P" }
+  | { kind: "invalid"; raw: string };
+
+export function resolveJk(raw: unknown): JkResolve {
+  if (raw == null || String(raw).trim() === "") return { kind: "empty" };
+  const s = String(raw).toUpperCase().trim();
+  if (s.startsWith("L") || s === "1" || s.includes("PRIA") || s.includes("LAKI"))
+    return { kind: "ok", jk: "L" };
+  if (
+    s.startsWith("P") ||
+    s === "2" ||
+    s.includes("WANITA") ||
+    s.includes("PEREMPUAN")
+  )
+    return { kind: "ok", jk: "P" };
+  return { kind: "invalid", raw: String(raw).trim() };
+}
+
 export function parseJk(raw: unknown): "L" | "P" | "" {
-  const s = String(raw || "")
-    .toUpperCase()
-    .trim();
-  if (!s) return "";
-  if (s.startsWith("L") || s === "1" || s.includes("PRIA") || s.includes("LAKI")) return "L";
-  if (s.startsWith("P") || s === "2" || s.includes("WANITA") || s.includes("PEREMPUAN")) return "P";
+  const r = resolveJk(raw);
+  if (r.kind === "ok") return r.jk;
   return "";
 }
 
@@ -200,119 +266,409 @@ function str(v: unknown): string {
   return String(v).trim();
 }
 
+export function hasFamilyKeys(raw: Record<string, unknown>): boolean {
+  if (Array.isArray(raw.dataKeluarga)) return true;
+  return Object.keys(raw).some(
+    (k) =>
+      k.startsWith("spouse") ||
+      k.startsWith("childName") ||
+      k.startsWith("childBirth") ||
+      k.startsWith("childMarriage") ||
+      k.startsWith("childJob") ||
+      k.startsWith("childNote"),
+  );
+}
+
+function hasSpouseKeys(raw: Record<string, unknown>): boolean {
+  return ["spouseName", "spouseBirth", "spouseMarriage", "spouseJob", "spouseNote"].some(
+    (k) => k in raw,
+  );
+}
+
+function hasChildSlotKeys(raw: Record<string, unknown>, n: 1 | 2 | 3 | 4 | 5): boolean {
+  return (
+    `childName${n}` in raw ||
+    `childBirth${n}` in raw ||
+    `childMarriage${n}` in raw ||
+    `childJob${n}` in raw ||
+    `childNote${n}` in raw
+  );
+}
+
 // ─── Normalize one row for API / Prisma ──────────────────────────────────────
 
 export type NormalizedImport = Record<string, unknown>;
 
+export type NormalizeResult =
+  | {
+      ok: true;
+      data: NormalizedImport;
+      /** Keys included in `data` (for patch merge). */
+      presentKeys: string[];
+      warnings: string[];
+    }
+  | {
+      ok: false;
+      error: string;
+      nama?: string;
+      nip?: string;
+      nik?: string;
+    };
+
+export type NormalizeOptions = {
+  mode?: ImportMode;
+  /**
+   * When true (create path / replace): fill full Employee shape with defaults.
+   * When false (patch update): only keys present in Excel + machine fills.
+   */
+  full?: boolean;
+};
+
 /**
- * Coerce a partial mapped row into a full Employee-shaped object ready for
- * EmployeeSchema / bulkUpsert. Applies machine enrichments.
+ * Coerce a sparse Excel-mapped row into employee fields.
+ * Returns ok/error — never silently maps garbage status/JK to PNS/L.
  */
 export function normalizeEmployeeForImport(
   raw: Record<string, unknown>,
-): NormalizedImport {
-  const status = parseStatus(raw.status);
+  opts?: NormalizeOptions,
+): NormalizeResult {
+  const mode: ImportMode = opts?.mode ?? "patch";
+  const full = opts?.full ?? mode === "replace";
+  const warnings: string[] = [];
+  const presentKeys = new Set<string>();
+
+  const mark = (key: string) => presentKeys.add(key);
+  const put = (data: NormalizedImport, key: string, value: unknown) => {
+    data[key] = value;
+    mark(key);
+  };
+
+  const data: NormalizedImport = {};
+
+  // ── identity keys always considered if provided ──
   let nip = str(raw.nip).replace(/\s/g, "");
-  let nik = str(raw.nik).replace(/\D/g, "") || str(raw.nik);
-  // Keep NIP digits only for storage consistency
   const nipDigits = nip.replace(/\D/g, "");
   if (nipDigits) nip = nipDigits;
+  let nik = str(raw.nik).replace(/\D/g, "");
+  const nama = str(raw.nama);
 
-  let nama = str(raw.nama);
-  let jk = parseJk(raw.jk);
-  let tanggalLahir = excelDateToIso(raw.tanggalLahir);
-  let tmtKerja = excelDateToIso(raw.tmtKerja);
-  let tmtGolonganRuang = excelDateToIso(raw.tmtGolonganRuang);
-  let tanggalBerkalaTerakhir = excelDateToIso(raw.tanggalBerkalaTerakhir);
+  if ("nip" in raw || nip) put(data, "nip", nip);
+  if ("nik" in raw || nik) put(data, "nik", nik);
+  if ("nama" in raw || nama) put(data, "nama", nama);
 
-  // NIP machine (PNS/CPNS, 18 digit)
-  if (nip && (status === "PNS" || status === "CPNS")) {
-    const extracted = validateAndExtractNIP(nip, status);
-    if (!tanggalLahir && extracted.tanggalLahir) tanggalLahir = extracted.tanggalLahir;
-    if (!tmtKerja && extracted.tmtKerja) tmtKerja = extracted.tmtKerja;
-    if (!jk && extracted.jk) jk = extracted.jk;
+  // ── status ──
+  let status: EmployeeStatus | undefined;
+  if ("status" in raw) {
+    const rs = resolveStatus(raw.status);
+    if (rs.kind === "invalid") {
+      return {
+        ok: false,
+        error: `Status tidak dikenali: "${rs.raw}" (pakai PNS|CPNS|PPPK|PPPKPW|Honorer|Lainnya)`,
+        nama,
+        nip,
+        nik,
+      };
+    }
+    if (rs.kind === "ok") {
+      status = rs.status;
+      put(data, "status", status);
+    } else if (full) {
+      status = "PNS";
+      put(data, "status", status);
+      warnings.push("Status kosong → diisi PNS");
+    }
+  } else if (full) {
+    status = "PNS";
+    put(data, "status", status);
   }
 
-  if (!jk) jk = "L"; // schema requires L|P; default L when unknown
-
-  const pangkat = str(raw.pangkat);
-  const gol = str(raw.gol);
-  let pangkatGolongan = str(raw.pangkatGolongan);
-  if (!pangkatGolongan && (pangkat || gol)) {
-    pangkatGolongan = [pangkat, gol].filter(Boolean).join(" / ");
+  // ── JK ──
+  let jk: "L" | "P" | "" = "";
+  if ("jk" in raw) {
+    const rj = resolveJk(raw.jk);
+    if (rj.kind === "invalid") {
+      return {
+        ok: false,
+        error: `JK tidak dikenali: "${rj.raw}" (pakai L atau P)`,
+        nama,
+        nip,
+        nik,
+      };
+    }
+    if (rj.kind === "ok") {
+      jk = rj.jk;
+      put(data, "jk", jk);
+    }
   }
 
-  let masaKerjaGolonganRuang = str(raw.masaKerjaGolonganRuang);
-  if (!masaKerjaGolonganRuang && tmtGolonganRuang) {
-    masaKerjaGolonganRuang = calculateMasaKerja(tmtGolonganRuang) || "";
+  // dates / text helpers — only if key in raw (patch) or full replace
+  const takeText = (key: string, transform: (v: unknown) => string = str) => {
+    if (full || key in raw) {
+      put(data, key, transform(raw[key]));
+    }
+  };
+  const takeDate = (key: string) => {
+    if (full || key in raw) {
+      put(data, key, excelDateToIso(raw[key]));
+    }
+  };
+
+  takeText("tempatLahir");
+  takeDate("tanggalLahir");
+  takeText("jalanDusun");
+  takeText("rt");
+  takeText("rw");
+  takeText("desaKelurahan");
+  takeText("kecamatan");
+  takeText("kabupaten");
+  takeText("jabatan");
+  takeText("bidang");
+  takeDate("tmtKerja");
+  // pangkat / gol / pangkatGolongan handled below (patch-safe composite)
+  takeDate("tmtGolonganRuang");
+  takeText("masaKerjaGolonganRuang");
+  takeDate("tanggalBerkalaTerakhir");
+  takeDate("bupTanggal");
+  takeDate("tmtKp");
+  takeText("gajiPokok");
+  takeText("besaranGajiKotor");
+  takeText("digajiMenurut");
+  takeText("noRekeningBank");
+  takeText("npwp");
+  takeText("nomorKarpeg");
+  takeText("pendidikan");
+  takeText("jurusan");
+  takeText("diklatJenjang");
+  takeText("tahunDiklat");
+  takeText("statusKawin");
+  takeText("agama");
+  takeText("nomorHp");
+  takeText("sisaCutiN");
+  takeText("sisaCutiN1");
+  takeText("sisaCutiN2");
+  takeText("skTerakhir");
+
+  // NIP machine — ONLY on full create/replace.
+  // Patch updates must not inject tgl lahir/TMT/JK just because NIP is present
+  // (e.g. re-import sisa cuti alone would overwrite biodata).
+  const statusForNip =
+    status ||
+    (typeof data.status === "string" ? (data.status as EmployeeStatus) : undefined);
+  if (
+    full &&
+    nip &&
+    (statusForNip === "PNS" || statusForNip === "CPNS" || !statusForNip)
+  ) {
+    const st = statusForNip === "CPNS" ? "CPNS" : "PNS";
+    const extracted = validateAndExtractNIP(nip, st);
+    if (
+      extracted.tanggalLahir &&
+      (!("tanggalLahir" in data) || !data.tanggalLahir)
+    ) {
+      put(data, "tanggalLahir", extracted.tanggalLahir);
+      warnings.push("Tanggal lahir diisi dari NIP");
+    }
+    if (extracted.tmtKerja && (!("tmtKerja" in data) || !data.tmtKerja)) {
+      put(data, "tmtKerja", extracted.tmtKerja);
+      warnings.push("TMT kerja diisi dari NIP");
+    }
+    if (extracted.jk && !jk) {
+      jk = extracted.jk;
+      put(data, "jk", jk);
+      warnings.push("JK diisi dari NIP");
+    }
+  }
+
+  // Rank fields — patch must not rebuild pangkatGolongan from half a pair
+  if (full || "pangkat" in raw) put(data, "pangkat", str(raw.pangkat));
+  if (full || "gol" in raw) {
+    const golRaw = str(raw.gol);
+    put(data, "gol", golRaw ? formatGolonganDisplay(golRaw) : "");
+  }
+  if (full || "pangkatGolongan" in raw) {
+    let pangkatGolongan = str(raw.pangkatGolongan);
+    if (!pangkatGolongan) {
+      const p = str(data.pangkat ?? raw.pangkat);
+      const g = str(data.gol ?? raw.gol);
+      if (p || g) pangkatGolongan = [p, g].filter(Boolean).join(" / ");
+    }
+    put(data, "pangkatGolongan", pangkatGolongan);
+  } else if (full) {
+    const p = str(data.pangkat);
+    const g = str(data.gol);
+    put(data, "pangkatGolongan", [p, g].filter(Boolean).join(" / "));
+  } else if ("pangkat" in raw && "gol" in raw) {
+    // Both present in patch Excel → safe to recompute composite
+    const p = str(data.pangkat);
+    const g = str(data.gol);
+    put(data, "pangkatGolongan", [p, g].filter(Boolean).join(" / "));
+  }
+
+  // masa kerja golongan auto — only when TMT gol is in this payload (not every patch)
+  const tmtGol = str(data.tmtGolonganRuang ?? "");
+  if (
+    tmtGol &&
+    (full || "tmtGolonganRuang" in raw) &&
+    (!("masaKerjaGolonganRuang" in data) || !data.masaKerjaGolonganRuang)
+  ) {
+    const mk = calculateMasaKerja(tmtGol);
+    if (mk) put(data, "masaKerjaGolonganRuang", mk);
   }
 
   // Family
-  let dataKeluarga: FamilyMember[] = Array.isArray(raw.dataKeluarga)
-    ? (raw.dataKeluarga as FamilyMember[])
-    : [];
-
-  if (dataKeluarga.length === 0) {
-    dataKeluarga = buildFamilyFromFlat(raw, jk);
+  // - full/replace: always set (build from flat or empty)
+  // - patch + JSON array: replace
+  // - patch + flat spouse/child columns: DO NOT put incomplete family here —
+  //   bulkUpsert merges with existing via mergeFamilyPatch (preserves other members)
+  if (Array.isArray(raw.dataKeluarga)) {
+    put(data, "dataKeluarga", raw.dataKeluarga as FamilyMember[]);
+    if (full || "jumlahTertanggung" in raw) {
+      let jumlahTertanggung = Number(raw.jumlahTertanggung);
+      if (!Number.isFinite(jumlahTertanggung) || jumlahTertanggung < 0) {
+        jumlahTertanggung = (raw.dataKeluarga as FamilyMember[]).length;
+      }
+      put(data, "jumlahTertanggung", jumlahTertanggung);
+    }
+  } else if (full) {
+    const dataKeluarga = buildFamilyFromFlat(raw, jk || "L");
+    put(data, "dataKeluarga", dataKeluarga);
+    let jumlahTertanggung = Number(raw.jumlahTertanggung);
+    if (!Number.isFinite(jumlahTertanggung) || jumlahTertanggung < 0) {
+      jumlahTertanggung = dataKeluarga.length;
+    }
+    put(data, "jumlahTertanggung", jumlahTertanggung);
+  } else if ("jumlahTertanggung" in raw) {
+    let jumlahTertanggung = Number(raw.jumlahTertanggung);
+    if (!Number.isFinite(jumlahTertanggung) || jumlahTertanggung < 0) {
+      jumlahTertanggung = 0;
+    }
+    put(data, "jumlahTertanggung", jumlahTertanggung);
   }
 
-  let jumlahTertanggung = Number(raw.jumlahTertanggung);
-  if (!Number.isFinite(jumlahTertanggung) || jumlahTertanggung < 0) {
-    jumlahTertanggung = dataKeluarga.length;
+  // Create/replace must satisfy schema gender
+  if (full && !data.jk) {
+    return {
+      ok: false,
+      error:
+        "JK wajib (L/P) — isi kolom JK atau gunakan NIP 18 digit PNS/CPNS",
+      nama,
+      nip,
+      nik,
+    };
+  }
+  if (full && !data.nama) {
+    return { ok: false, error: "Nama wajib diisi", nama, nip, nik };
+  }
+  if (full && !data.nip && !data.nik) {
+    return {
+      ok: false,
+      error: "NIP atau NIK wajib untuk match impor",
+      nama,
+      nip,
+      nik,
+    };
+  }
+
+  // Ensure full shape defaults for create/replace
+  if (full) {
+    const defaults: NormalizedImport = {
+      nip: "",
+      nik: "",
+      nama: "",
+      jk: "L",
+      status: "PNS",
+      tempatLahir: "",
+      tanggalLahir: "",
+      jalanDusun: "",
+      rt: "",
+      rw: "",
+      desaKelurahan: "",
+      kecamatan: "",
+      kabupaten: "",
+      jabatan: "",
+      bidang: "",
+      tmtKerja: "",
+      pangkat: "",
+      gol: "",
+      pangkatGolongan: "",
+      tmtGolonganRuang: "",
+      masaKerjaGolonganRuang: "",
+      tanggalBerkalaTerakhir: "",
+      bupTanggal: "",
+      tmtKp: "",
+      gajiPokok: "",
+      besaranGajiKotor: "",
+      digajiMenurut: "",
+      noRekeningBank: "",
+      npwp: "",
+      nomorKarpeg: "",
+      pendidikan: "",
+      jurusan: "",
+      diklatJenjang: "",
+      tahunDiklat: "",
+      statusKawin: "",
+      agama: "",
+      nomorHp: "",
+      sisaCutiN: "",
+      sisaCutiN1: "",
+      sisaCutiN2: "",
+      skTerakhir: "",
+      jumlahTertanggung: 0,
+      dataKeluarga: [],
+    };
+    return {
+      ok: true,
+      data: { ...defaults, ...data },
+      presentKeys: Object.keys({ ...defaults, ...data }),
+      warnings,
+    };
   }
 
   return {
-    // identity
-    nama,
-    nip,
-    nik,
-    jk,
-    status,
-    tempatLahir: str(raw.tempatLahir),
-    tanggalLahir,
-    // address
-    jalanDusun: str(raw.jalanDusun),
-    rt: str(raw.rt),
-    rw: str(raw.rw),
-    desaKelurahan: str(raw.desaKelurahan),
-    kecamatan: str(raw.kecamatan),
-    kabupaten: str(raw.kabupaten),
-    // position
-    jabatan: str(raw.jabatan),
-    bidang: str(raw.bidang),
-    tmtKerja,
-    // rank
-    pangkat,
-    gol,
-    pangkatGolongan,
-    tmtGolonganRuang,
-    masaKerjaGolonganRuang,
-    tanggalBerkalaTerakhir,
-    // salary
-    gajiPokok: str(raw.gajiPokok),
-    besaranGajiKotor: str(raw.besaranGajiKotor),
-    digajiMenurut: str(raw.digajiMenurut),
-    noRekeningBank: str(raw.noRekeningBank),
-    npwp: str(raw.npwp),
-    // admin
-    nomorKarpeg: str(raw.nomorKarpeg),
-    pendidikan: str(raw.pendidikan),
-    jurusan: str(raw.jurusan),
-    diklatJenjang: str(raw.diklatJenjang),
-    tahunDiklat: str(raw.tahunDiklat),
-    statusKawin: str(raw.statusKawin),
-    agama: str(raw.agama),
-    nomorHp: str(raw.nomorHp),
-    // leave
-    sisaCutiN: str(raw.sisaCutiN),
-    sisaCutiN1: str(raw.sisaCutiN1),
-    sisaCutiN2: str(raw.sisaCutiN2),
-    skTerakhir: str(raw.skTerakhir),
-    // family
-    jumlahTertanggung,
-    dataKeluarga,
-    // NEVER pass derived fields through — stripped explicitly
+    ok: true,
+    data,
+    presentKeys: [...presentKeys],
+    warnings,
   };
+}
+
+/** Merge patch fields onto existing employee plain object (stored fields only). */
+export function mergeEmployeePatch(
+  existing: Record<string, unknown>,
+  patch: NormalizedImport,
+): NormalizedImport {
+  const {
+    masaKerja: _mk,
+    kelasJabatan: _kj,
+    bebanKerja: _bk,
+    pensiun: _p,
+    id: _id,
+    createdAt: _c,
+    updatedAt: _u,
+    ...base
+  } = existing;
+  void _mk;
+  void _kj;
+  void _bk;
+  void _p;
+  void _id;
+  void _c;
+  void _u;
+  return { ...base, ...patch };
+}
+
+/** Warn when jabatan is set but missing from kamus. */
+export function kamusWarningForJabatan(
+  jabatan: string | undefined,
+  kamusCsv?: string,
+): string | null {
+  const j = (jabatan || "").trim();
+  if (!j) return null;
+  const { kelas, beban } = lookupKamus(j, kamusCsv);
+  if (!kelas && !beban) {
+    return `Jabatan tidak ada di kamus: "${j}"`;
+  }
+  return null;
 }
 
 function buildFamilyFromFlat(
@@ -342,6 +698,99 @@ function buildFamilyFromFlat(
       occupation: str(raw[`childJob${n}`]) || undefined,
       description: str(raw[`childNote${n}`]) || undefined,
     });
+  }
+  return out;
+}
+
+/**
+ * Patch-safe family merge: only replace spouse / child slots that appear in Excel.
+ * Prevents "isi nama pasangan saja" from wiping all children.
+ */
+export function mergeFamilyPatch(
+  existing: FamilyMember[],
+  raw: Record<string, unknown>,
+  jk: "L" | "P" | "",
+): FamilyMember[] {
+  if (Array.isArray(raw.dataKeluarga)) {
+    return raw.dataKeluarga as FamilyMember[];
+  }
+
+  let spouse = existing.find(
+    (m) => m.relation === "Istri" || m.relation === "Suami",
+  );
+  const children = existing
+    .filter((m) => m.relation === "Anak")
+    .map((m) => ({ ...m }));
+
+  if (hasSpouseKeys(raw)) {
+    // Keep existing name if Excel only patches birth/job/etc.
+    const name =
+      "spouseName" in raw ? str(raw.spouseName) : spouse?.name || "";
+    if (name) {
+      spouse = {
+        name,
+        relation: jk === "P" ? "Suami" : "Istri",
+        birthDate:
+          "spouseBirth" in raw
+            ? excelDateToIso(raw.spouseBirth) || undefined
+            : spouse?.birthDate,
+        marriageDate:
+          "spouseMarriage" in raw
+            ? excelDateToIso(raw.spouseMarriage) || undefined
+            : spouse?.marriageDate,
+        occupation:
+          "spouseJob" in raw
+            ? str(raw.spouseJob) || undefined
+            : spouse?.occupation,
+        description:
+          "spouseNote" in raw
+            ? str(raw.spouseNote) || undefined
+            : spouse?.description,
+      };
+    } else if ("spouseName" in raw) {
+      // Name explicitly empty in payload — drop spouse
+      spouse = undefined;
+    }
+  }
+
+  for (const n of [1, 2, 3, 4, 5] as const) {
+    if (!hasChildSlotKeys(raw, n)) continue;
+    const idx = n - 1;
+    const prev = children[idx];
+    const nameKey = `childName${n}`;
+    const name = nameKey in raw ? str(raw[nameKey]) : prev?.name || "";
+    if (!name && !prev) continue;
+    if (!name && nameKey in raw) {
+      // Name cleared — drop this slot
+      children[idx] = { name: "", relation: "Anak" };
+      continue;
+    }
+    children[idx] = {
+      name: name || prev?.name || "",
+      relation: "Anak",
+      birthDate:
+        `childBirth${n}` in raw
+          ? excelDateToIso(raw[`childBirth${n}`]) || undefined
+          : prev?.birthDate,
+      marriageDate:
+        `childMarriage${n}` in raw
+          ? excelDateToIso(raw[`childMarriage${n}`]) || undefined
+          : prev?.marriageDate,
+      occupation:
+        `childJob${n}` in raw
+          ? str(raw[`childJob${n}`]) || undefined
+          : prev?.occupation,
+      description:
+        `childNote${n}` in raw
+          ? str(raw[`childNote${n}`]) || undefined
+          : prev?.description,
+    };
+  }
+
+  const out: FamilyMember[] = [];
+  if (spouse?.name) out.push(spouse);
+  for (const c of children) {
+    if (c?.name) out.push(c);
   }
   return out;
 }
@@ -459,7 +908,8 @@ export function parseEmployeeImportGrid(
       continue;
     }
 
-    payload.push(normalizeEmployeeForImport(raw));
+    // Sparse field map only — server normalizes with mode patch|replace
+    payload.push(raw);
   }
 
   return { payload, skipped };
@@ -467,10 +917,46 @@ export function parseEmployeeImportGrid(
 
 // ─── Template & export builders ──────────────────────────────────────────────
 
-export function buildImportTemplateAoa(): (string | number)[][] {
-  const headers = IMPORT_COLUMNS.map((c) => c.header);
+/** Core columns for compact operator template (identity + rank + leave). */
+export const IMPORT_CORE_FIELDS = new Set([
+  "nama",
+  "nip",
+  "nik",
+  "status",
+  "jk",
+  "tempatLahir",
+  "tanggalLahir",
+  "jabatan",
+  "bidang",
+  "tmtKerja",
+  "pangkat",
+  "gol",
+  "tmtGolonganRuang",
+  "tanggalBerkalaTerakhir",
+  "bupTanggal",
+  "tmtKp",
+  "sisaCutiN",
+  "sisaCutiN1",
+  "sisaCutiN2",
+  "nomorHp",
+]);
+
+export type TemplateVariant = "core" | "full";
+
+export function columnsForTemplate(variant: TemplateVariant = "full"): ImportColumn[] {
+  if (variant === "core") {
+    return IMPORT_COLUMNS.filter((c) => IMPORT_CORE_FIELDS.has(String(c.field)));
+  }
+  return IMPORT_COLUMNS;
+}
+
+export function buildImportTemplateAoa(
+  variant: TemplateVariant = "full",
+): (string | number)[][] {
+  const cols = columnsForTemplate(variant);
+  const headers = cols.map((c) => c.header);
   // One sample row aligned with machine expectations
-  const sample: (string | number)[] = IMPORT_COLUMNS.map((c) => {
+  const sample: (string | number)[] = cols.map((c) => {
     switch (c.field) {
       case "nama":
         return "Contoh Nama Lengkap, S.Kom.";
@@ -514,6 +1000,10 @@ export function buildImportTemplateAoa(): (string | number)[][] {
         return ""; // machine fills
       case "tanggalBerkalaTerakhir":
         return "2023-10-01";
+      case "bupTanggal":
+        return ""; // empty = hitung otomatis
+      case "tmtKp":
+        return ""; // empty = pakai TMT golongan
       case "gajiPokok":
         return "3000000";
       case "besaranGajiKotor":
@@ -573,10 +1063,11 @@ export function buildImportTemplateAoa(): (string | number)[][] {
   return [headers, sample];
 }
 
-export function buildImportGuideAoa(): string[][] {
+export function buildImportGuideAoa(variant: TemplateVariant = "full"): string[][] {
+  const cols = columnsForTemplate(variant);
   return [
     ["Kolom", "Wajib?", "Keterangan"],
-    ...IMPORT_COLUMNS.map((c) => [
+    ...cols.map((c) => [
       c.header,
       c.required ? "Ya" : "Tidak",
       c.hint ||
@@ -587,18 +1078,36 @@ export function buildImportGuideAoa(): string[][] {
     [],
     ["CATATAN MESIN"],
     [
-      "1. Kolom Usia, Masa Kerja, Kelas Jabatan, Beban Kerja, Pensiun, Prediksi KP/KGB TIDAK perlu diisi — dihitung sistem.",
+      "1. Usia, Masa Kerja, Kelas, Beban, Prediksi KP/KGB dihitung sistem (indikatif*) — jangan diisi di sheet data.",
     ],
     [
-      "2. NIP 18 digit (PNS/CPNS): jika Tanggal Lahir / TMT Kerja / JK kosong, diisi otomatis dari NIP.",
+      "2. NIP 18 digit (PNS/CPNS): Tanggal Lahir / TMT Kerja / JK kosong → diisi otomatis dari NIP.",
     ],
     [
-      "3. Match update: baris dengan NIP yang sama (atau NIK jika NIP kosong) akan di-UPDATE, bukan double.",
+      "3. Match update: NIP sama (atau NIK jika NIP kosong) = update, bukan double.",
     ],
     [
-      "4. Jabatan sebaiknya sama teksnya dengan Kamus Jabatan di Pengaturan agar kelas/beban terisi.",
+      "4. Jabatan sebaiknya sama teksnya dengan Kamus Jabatan di Pengaturan.",
     ],
-    ["5. Format tanggal disarankan YYYY-MM-DD (contoh 2021-10-01)."],
+    ["5. Format tanggal: YYYY-MM-DD (contoh 2021-10-01)."],
+    [
+      "6. Mode PATCH (default): sel kosong TIDAK menghapus data lama. Mode GANTI: sel kosong menimpa kosong.",
+    ],
+    [
+      "7. Status/JK tidak dikenali → baris ditolak (bukan diubah diam-diam jadi PNS/L).",
+    ],
+    [
+      "8. Impor = pratinjau dulu, baru terapkan. Template RINGKAS = kolom inti; LENGKAP = semua + keluarga.",
+    ],
+    [
+      "9. BUP Manual / TMT KP Manual meng-override prediksi otomatis bila diisi (untuk kasus khusus Umpeg).",
+    ],
+    [
+      "10. *Prediksi KP/KGB/BUP bersifat indikatif (bukan penetapan legal) kecuali diisi tanggal manual.",
+    ],
+    [
+      "11. Patch keluarga: hanya kolom yang diisi yang berubah (pasangan/anak lain tetap).",
+    ],
   ];
 }
 
@@ -698,13 +1207,12 @@ export function buildDerivedReportRows(employees: Employee[]): Record<string, st
     if (emp.tanggalLahir) {
       const birth = new Date(emp.tanggalLahir);
       if (!isNaN(birth.getTime())) {
-        const ageDate = new Date(today.getTime() - birth.getTime());
-        usia = String(Math.abs(ageDate.getUTCFullYear() - 1970));
+        usia = String(differenceInYears(today, birth));
       }
     }
     const bup =
       emp.pensiun ||
-      (emp.tanggalLahir ? calculateBUP(emp.tanggalLahir, emp.jabatan || "") : "") ||
+      calculateBUP(emp.tanggalLahir || "", emp.jabatan || "", emp.bupTanggal) ||
       "";
     const { kp, kgb } = checkKGBandKP(
       emp.tmtGolonganRuang,
@@ -714,6 +1222,7 @@ export function buildDerivedReportRows(employees: Employee[]): Record<string, st
         status: emp.status,
         gol: emp.gol,
         pangkatGolongan: emp.pangkatGolongan,
+        tmtKp: emp.tmtKp,
       },
     );
     return {
@@ -724,12 +1233,16 @@ export function buildDerivedReportRows(employees: Employee[]): Record<string, st
       "Masa Kerja": emp.masaKerja || "",
       "Kelas Jabatan": emp.kelasJabatan || "",
       "Beban Kerja": emp.bebanKerja || "",
-      "Pensiun (BUP)": bup,
-      "Prediksi KP": kp.targetDate || "",
-      "Prediksi KGB": kgb.targetDate || "",
+      "Pensiun (BUP) indikatif": bup,
+      "Prediksi KP indikatif*": kp.targetDate || "",
+      "Prediksi KGB indikatif*": kgb.targetDate || "",
+      "Override BUP Manual": emp.bupTanggal || "",
+      "Override TMT KP": emp.tmtKp || "",
       Status: emp.status || "",
       Jabatan: emp.jabatan || "",
       Bidang: emp.bidang || "",
+      Catatan:
+        "*Prediksi indikatif (+4 th KP / siklus KGB) kecuali override manual diisi.",
     };
   });
 }

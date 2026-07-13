@@ -3,7 +3,12 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Employee, AppSettings } from "../types";
 import { Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { validateAndExtractNIP, calculateBUP, calculateMasaKerja } from "../lib/employeeUtils";
+import {
+  validateAndExtractNIP,
+  calculateBUP,
+  calculateMasaKerja,
+  formatGolonganDisplay,
+} from "../lib/employeeUtils";
 import { EmployeeFormSchema } from "../lib/schemas";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { btnPrimary, btnSecondary, input, label } from "../lib/ui";
@@ -57,6 +62,8 @@ export function EmployeeForm({
       pensiun: "",
       tmtGolonganRuang: "",
       masaKerjaGolonganRuang: "",
+      bupTanggal: "",
+      tmtKp: "",
       noRekeningBank: "",
       npwp: "",
       pangkat: "",
@@ -137,10 +144,11 @@ export function EmployeeForm({
     }
 
     if (matchedKelas || matchedBeban) {
+      // Display-only derived fields — don't mark form dirty by themselves
       if (matchedKelas)
-        setValue("kelasJabatan", matchedKelas, { shouldDirty: true });
+        setValue("kelasJabatan", matchedKelas, { shouldDirty: false });
       if (matchedBeban)
-        setValue("bebanKerja", matchedBeban, { shouldDirty: true });
+        setValue("bebanKerja", matchedBeban, { shouldDirty: false });
     }
   }, [jabatan, settings?.jabatanKamusCsv, setValue, dirtyFields.jabatan]);
 
@@ -161,20 +169,27 @@ export function EmployeeForm({
     }
   }, [nip, setValue, getValues, dirtyFields.nip]);
 
+  const bupTanggalWatch = watch("bupTanggal");
+
+  // Always refresh display field (read-only) from manual override or formula
   useEffect(() => {
-    if (tanggalLahir && jabatan && (dirtyFields.tanggalLahir || dirtyFields.jabatan)) {
-      const calculatedPensiun = calculateBUP(tanggalLahir, jabatan);
-      if (calculatedPensiun) {
-        setValue("pensiun", calculatedPensiun, { shouldDirty: true });
-      }
+    const calculatedPensiun = calculateBUP(
+      tanggalLahir || "",
+      jabatan || "",
+      bupTanggalWatch,
+    );
+    if (calculatedPensiun) {
+      setValue("pensiun", calculatedPensiun, { shouldDirty: false });
+    } else {
+      setValue("pensiun", "", { shouldDirty: false });
     }
-  }, [tanggalLahir, jabatan, setValue, dirtyFields.tanggalLahir, dirtyFields.jabatan]);
+  }, [tanggalLahir, jabatan, bupTanggalWatch, setValue]);
 
   useEffect(() => {
     if (tmtKerja && dirtyFields.tmtKerja) {
       const calculatedMasaKerja = calculateMasaKerja(tmtKerja);
       if (calculatedMasaKerja) {
-        setValue("masaKerja", calculatedMasaKerja, { shouldDirty: true });
+        setValue("masaKerja", calculatedMasaKerja, { shouldDirty: false });
       }
     }
   }, [tmtKerja, setValue, dirtyFields.tmtKerja]);
@@ -183,6 +198,7 @@ export function EmployeeForm({
     if (tmtGolonganRuang && dirtyFields.tmtGolonganRuang) {
       const calculatedMKG = calculateMasaKerja(tmtGolonganRuang);
       if (calculatedMKG) {
+        // MKG is stored — user edited TMT gol, so this is intentional update
         setValue("masaKerjaGolonganRuang", calculatedMKG, { shouldDirty: true });
       }
     }
@@ -273,9 +289,23 @@ export function EmployeeForm({
 
   return (
     <form onSubmit={handleSubmit((data) => {
-      let combined = `${data.pangkat || ""} / ${data.gol || ""}`.trim();
-      if (combined === "/") combined = "";
+      const gol = formatGolonganDisplay(data.gol || "");
+      data.gol = gol;
+      let combined = `${data.pangkat || ""} / ${gol}`.trim();
+      if (combined === "/" || combined === "/ ") combined = "";
+      // Avoid " / III/c" when pangkat empty
+      if (!(data.pangkat || "").trim() && gol) combined = gol;
+      else if ((data.pangkat || "").trim() && !gol) combined = (data.pangkat || "").trim();
+      else if ((data.pangkat || "").trim() && gol)
+        combined = `${(data.pangkat || "").trim()} / ${gol}`;
       data.pangkatGolongan = combined;
+      // Derived display-only — never persist
+      delete (data as { pensiun?: string }).pensiun;
+      delete (data as { masaKerja?: string }).masaKerja;
+      delete (data as { kelasJabatan?: string }).kelasJabatan;
+      delete (data as { bebanKerja?: string }).bebanKerja;
+      data.bupTanggal = data.bupTanggal || "";
+      data.tmtKp = data.tmtKp || "";
       onSubmit(data);
     })} className="space-y-6">
       
@@ -554,8 +584,25 @@ export function EmployeeForm({
               <div className="space-y-1.5">
                 <label className={label}>Golongan</label>
                 <input
-                  {...register("gol")}
+                  {...register("gol", {
+                    setValueAs: (v) =>
+                      formatGolonganDisplay(String(v ?? "")),
+                  })}
                   className={input}
+                  placeholder="III/c"
+                  onBlur={(e) => {
+                    const n = formatGolonganDisplay(e.target.value);
+                    if (n !== e.target.value) {
+                      setValue("gol", n, { shouldDirty: true });
+                    }
+                    const pangkat = getValues("pangkat") || "";
+                    const pg = pangkat.trim()
+                      ? n
+                        ? `${pangkat.trim()} / ${n}`
+                        : pangkat.trim()
+                      : n;
+                    setValue("pangkatGolongan", pg, { shouldDirty: true });
+                  }}
                 />
               </div>
               <div className="space-y-1.5">
@@ -597,6 +644,31 @@ export function EmployeeForm({
                   {...register("tanggalBerkalaTerakhir")}
                   className={input}
                 />
+                <p className="text-[10px] text-slate-400">
+                  Dasar prediksi KGB (indikatif)
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <label className={label}>TMT KP manual (opsional)</label>
+                <input
+                  type="date"
+                  {...register("tmtKp")}
+                  className={input}
+                />
+                <p className="text-[10px] text-slate-400">
+                  Override dasar prediksi KP (+4 th). Kosong = TMT golongan.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <label className={label}>BUP / pensiun manual (opsional)</label>
+                <input
+                  type="date"
+                  {...register("bupTanggal")}
+                  className={input}
+                />
+                <p className="text-[10px] text-slate-400">
+                  Override TMT pensiun. Kosong = hitung dari tgl lahir + jabatan.
+                </p>
               </div>
               <div className="space-y-1.5">
                 <label className={label}>Gaji Pokok</label>
@@ -641,12 +713,16 @@ export function EmployeeForm({
                 />
               </div>
               <div className="space-y-1.5">
-                <label className={label}>TMT Pensiun (BUP)</label>
+                <label className={label}>TMT Pensiun (tampil, indikatif)</label>
                 <input
                   {...register("pensiun")}
-                  placeholder="Terhitung otomatis"
-                  className={input}
+                  placeholder="Hitung otomatis / dari BUP manual"
+                  className={`${input} bg-slate-50`}
+                  readOnly
                 />
+                <p className="text-[10px] text-slate-400">
+                  Bukan field legal — isi &quot;BUP manual&quot; di atas jika perlu override.
+                </p>
               </div>
             </div>
           </div>

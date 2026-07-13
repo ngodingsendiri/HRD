@@ -130,18 +130,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (incoming.length > MAX_BULK_EMPLOYEES) {
         return sendError(res, 400, `Maksimal ${MAX_BULK_EMPLOYEES} baris per impor`);
       }
-      const result = await bulkUpsertEmployees(incoming);
-      await writeAuditLog({
-        actor: admin,
-        action: "employee.import",
-        entityType: "employee",
-        meta: {
-          created: result.created,
-          updated: result.updated,
-          errors: result.errors,
-          requestId,
-        },
-      });
+      const mode =
+        req.body?.mode === "replace" ? ("replace" as const) : ("patch" as const);
+      const dryRun = Boolean(req.body?.dryRun);
+      const result = await bulkUpsertEmployees(incoming, { mode, dryRun });
+      if (!dryRun) {
+        await writeAuditLog({
+          actor: admin,
+          action: "employee.import",
+          entityType: "employee",
+          meta: {
+            created: result.created,
+            updated: result.updated,
+            errors: result.errors,
+            mode: result.mode,
+            requestId,
+          },
+        });
+      }
       return res.status(200).json(result);
     }
 

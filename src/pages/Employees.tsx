@@ -33,6 +33,7 @@ import {
 } from "../lib/ui";
 import { useDocumentTitle } from "../lib/useDocumentTitle";
 import {
+  calculateBUP,
   checkKGBandKP,
   formatKPLabel,
   type KPStatus,
@@ -78,11 +79,12 @@ function KPKGBBadges({ emp }: { emp: Employee }) {
       status: emp.status,
       gol: emp.gol,
       pangkatGolongan: emp.pangkatGolongan,
+      tmtKp: emp.tmtKp,
     },
   );
   if (clear) return null;
   return (
-    <div className="flex flex-wrap items-center gap-1">
+    <div className="flex flex-wrap items-center gap-1" title="* Prediksi indikatif">
       <KPBadge kind="KP" status={kp} />
       <KPBadge kind="KGB" status={kgb} />
     </div>
@@ -125,7 +127,15 @@ export default function Employees() {
     errors: number;
     skipped: number;
     errorDetails: BulkImportError[];
+    warnings?: { row: number; nip?: string; nama?: string; message: string }[];
+    dryRun?: boolean;
+    mode?: "patch" | "replace";
   } | null>(null);
+  const [importMode, setImportMode] = useState<"patch" | "replace">("patch");
+  const [pendingImportRows, setPendingImportRows] = useState<
+    Record<string, unknown>[] | null
+  >(null);
+  const [importApplying, setImportApplying] = useState(false);
 
   const employees = rawEmployees;
 
@@ -436,20 +446,95 @@ export default function Employees() {
     setMoreOpen(false);
   };
 
-  const handleDownloadTemplate = async () => {
+  const handleDownloadTemplate = async (variant: "core" | "full" = "full") => {
     const XLSX = await import("xlsx");
     const wb = XLSX.utils.book_new();
-    const dataSheet = XLSX.utils.aoa_to_sheet(buildImportTemplateAoa());
-    dataSheet["!cols"] = buildImportTemplateAoa()[0]!.map(() => ({ wch: 18 }));
+    const aoa = buildImportTemplateAoa(variant);
+    const dataSheet = XLSX.utils.aoa_to_sheet(aoa);
+    dataSheet["!cols"] = aoa[0]!.map(() => ({ wch: 18 }));
     XLSX.utils.book_append_sheet(wb, dataSheet, "Data_Import");
     XLSX.utils.book_append_sheet(
       wb,
-      XLSX.utils.aoa_to_sheet(buildImportGuideAoa()),
+      XLSX.utils.aoa_to_sheet(buildImportGuideAoa(variant)),
       "Petunjuk",
     );
-    XLSX.writeFile(wb, "Template_Import_Pegawai_HRD_ASN.xlsx");
-    notify.success("Template diunduh");
+    const name =
+      variant === "core"
+        ? "Template_Import_Pegawai_RINGKAS.xlsx"
+        : "Template_Import_Pegawai_LENGKAP.xlsx";
+    XLSX.writeFile(wb, name);
+    notify.success(
+      variant === "core" ? "Template ringkas diunduh" : "Template lengkap diunduh",
+    );
     setMoreOpen(false);
+  };
+
+  const runBulkImport = async (
+    payload: Record<string, unknown>[],
+    opts: { dryRun: boolean; mode: "patch" | "replace"; skipped: number },
+  ) => {
+    let created = 0;
+    let updated = 0;
+    let errors = 0;
+    const errorDetails: BulkImportError[] = [];
+    const warnings: {
+      row: number;
+      nip?: string;
+      nama?: string;
+      message: string;
+    }[] = [];
+    const CHUNK = 100;
+    for (let i = 0; i < payload.length; i += CHUNK) {
+      const slice = payload.slice(i, i + CHUNK);
+      const result = await api.bulkUpsert(slice, {
+        mode: opts.mode,
+        dryRun: opts.dryRun,
+      });
+      created += result.created;
+      updated += result.updated;
+      errors += result.errors;
+      if (result.errorDetails) {
+        errorDetails.push(
+          ...result.errorDetails.map((e) => ({
+            ...e,
+            row: e.row + i,
+          })),
+        );
+      }
+      if (result.warnings) {
+        warnings.push(
+          ...result.warnings.map((w) => ({
+            ...w,
+            row: w.row + i,
+          })),
+        );
+      }
+    }
+    setImportResult({
+      created,
+      updated,
+      errors,
+      skipped: opts.skipped,
+      errorDetails: errorDetails.slice(0, 50),
+      warnings: warnings.slice(0, 50),
+      dryRun: opts.dryRun,
+      mode: opts.mode,
+    });
+    if (!opts.dryRun) {
+      setPendingImportRows(null);
+      await refreshList();
+      if (errors > 0) {
+        notify.warning(
+          "Impor selesai dengan penolakan",
+          `${created} baru, ${updated} diperbarui, ${errors} ditolak`,
+        );
+      } else {
+        notify.success(
+          "Impor selesai",
+          `${created} baru, ${updated} diperbarui`,
+        );
+      }
+    }
   };
 
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -458,6 +543,7 @@ export default function Employees() {
     const reader = new FileReader();
     reader.onload = async (evt) => {
       try {
+        notify.info("Memeriksa file impor…");
         const XLSX = await import("xlsx");
         const wb = XLSX.read(evt.target?.result, { type: "binary" });
         const preferred =
@@ -473,45 +559,43 @@ export default function Employees() {
             "Tidak ada baris valid. Cek sheet Petunjuk di template.",
           );
         }
-        // Chunk bulk to stay under body/timeout limits
-        let created = 0;
-        let updated = 0;
-        let errors = 0;
-        const errorDetails: BulkImportError[] = [];
-        const CHUNK = 100;
-        for (let i = 0; i < payload.length; i += CHUNK) {
-          const slice = payload.slice(i, i + CHUNK);
-          const result = await api.bulkUpsert(slice);
-          created += result.created;
-          updated += result.updated;
-          errors += result.errors;
-          if (result.errorDetails) {
-            errorDetails.push(
-              ...result.errorDetails.map((e) => ({
-                ...e,
-                row: e.row + i,
-              })),
-            );
-          }
-        }
-        setImportResult({
-          created,
-          updated,
-          errors,
+        setPendingImportRows(payload);
+        // Dry-run first — operator confirms before write
+        await runBulkImport(payload, {
+          dryRun: true,
+          mode: importMode,
           skipped,
-          errorDetails: errorDetails.slice(0, 50),
         });
-        await refreshList();
       } catch (err) {
         notify.error(
           "Impor gagal",
           err instanceof Error ? err.message : "Format file tidak dikenali.",
         );
+        setPendingImportRows(null);
       } finally {
         e.target.value = "";
       }
     };
     reader.readAsBinaryString(file);
+  };
+
+  const handleConfirmImport = async () => {
+    if (!pendingImportRows?.length || !importResult) return;
+    setImportApplying(true);
+    try {
+      await runBulkImport(pendingImportRows, {
+        dryRun: false,
+        mode: importResult.mode || importMode,
+        skipped: importResult.skipped,
+      });
+    } catch (err) {
+      notify.error(
+        "Gagal menerapkan impor",
+        err instanceof Error ? err.message : undefined,
+      );
+    } finally {
+      setImportApplying(false);
+    }
   };
 
   const statusOptions = ["all", "PNS", "CPNS", "PPPK", "PPPKPW", "Honorer", "Lainnya"];
@@ -566,13 +650,47 @@ export default function Employees() {
                             className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-slate-50"
                             onClick={() => {
                               setMoreOpen(false);
-                              handleDownloadTemplate();
+                              void handleDownloadTemplate("core");
                             }}
                           >
-                            Unduh template
+                            Template ringkas
                           </button>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-slate-50"
+                            onClick={() => {
+                              setMoreOpen(false);
+                              void handleDownloadTemplate("full");
+                            }}
+                          >
+                            Template lengkap
+                          </button>
+                          <div className="px-3 py-2 border-t border-slate-100 mt-1">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                              Mode impor
+                            </p>
+                            <select
+                              className="w-full text-xs rounded-lg border border-slate-200 px-2 py-1.5 bg-white"
+                              value={importMode}
+                              onChange={(e) =>
+                                setImportMode(
+                                  e.target.value === "replace"
+                                    ? "replace"
+                                    : "patch",
+                                )
+                              }
+                            >
+                              <option value="patch">
+                                Patch — sel kosong aman
+                              </option>
+                              <option value="replace">
+                                Ganti penuh — sel kosong menghapus
+                              </option>
+                            </select>
+                          </div>
                           <label className="w-full block px-3 py-2 text-sm rounded-lg hover:bg-slate-50 cursor-pointer">
-                            Impor Excel
+                            Impor Excel (pratinjau dulu)
                             <input
                               type="file"
                               accept=".xlsx,.xls"
@@ -753,15 +871,23 @@ export default function Employees() {
               <div className="flex flex-wrap justify-center gap-2 pb-6">
                 <button
                   type="button"
-                  onClick={handleDownloadTemplate}
+                  onClick={() => void handleDownloadTemplate("core")}
                   className={btnSecondary}
                 >
                   <FileSpreadsheet className="w-4 h-4" />
-                  Unduh template
+                  Template ringkas
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleDownloadTemplate("full")}
+                  className={btnSecondary}
+                >
+                  <FileSpreadsheet className="w-4 h-4" />
+                  Template lengkap
                 </button>
                 <label className={`${btnSecondary} cursor-pointer`}>
                   <Upload className="w-4 h-4" />
-                  Impor Excel
+                  Impor Excel (pratinjau)
                   <input
                     type="file"
                     accept=".xlsx,.xls"
@@ -1082,30 +1208,63 @@ export default function Employees() {
               <KPKGBBadges emp={detailEmp} />
             </div>
             <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {[
-                ["Nama", detailEmp.nama],
-                ["NIP", detailEmp.nip],
-                ["NIK", detailEmp.nik],
-                ["Jabatan", detailEmp.jabatan],
-                ["Bidang", detailEmp.bidang],
-                ["Pangkat/Gol", detailEmp.pangkatGolongan],
-                ["TMT Kerja", detailEmp.tmtKerja],
-                ["TMT Golongan", detailEmp.tmtGolonganRuang],
-                ["Berkala terakhir", detailEmp.tanggalBerkalaTerakhir],
-                ["No. HP", detailEmp.nomorHp],
-                ["Masa kerja", detailEmp.masaKerja],
-                ["Kelas jabatan", detailEmp.kelasJabatan],
-              ].map(([k, v]) => (
-                <div key={k as string} className="border border-slate-100 rounded-lg p-3">
-                  <dt className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">
-                    {k}
-                  </dt>
-                  <dd className="mt-1 font-medium text-slate-900">
-                    {(v as string) || "—"}
-                  </dd>
-                </div>
-              ))}
+              {(() => {
+                const { kp, kgb } = checkKGBandKP(
+                  detailEmp.tmtGolonganRuang,
+                  detailEmp.tanggalBerkalaTerakhir,
+                  {
+                    tmtKerja: detailEmp.tmtKerja,
+                    status: detailEmp.status,
+                    gol: detailEmp.gol,
+                    pangkatGolongan: detailEmp.pangkatGolongan,
+                    tmtKp: detailEmp.tmtKp,
+                  },
+                );
+                const bup =
+                  calculateBUP(
+                    detailEmp.tanggalLahir || "",
+                    detailEmp.jabatan || "",
+                    detailEmp.bupTanggal,
+                  ) || "";
+                return (
+                  [
+                    ["Nama", detailEmp.nama],
+                    ["NIP", detailEmp.nip],
+                    ["NIK", detailEmp.nik],
+                    ["Jabatan", detailEmp.jabatan],
+                    ["Bidang", detailEmp.bidang],
+                    ["Pangkat/Gol", detailEmp.pangkatGolongan || detailEmp.gol],
+                    ["TMT Kerja", detailEmp.tmtKerja],
+                    ["TMT Golongan", detailEmp.tmtGolonganRuang],
+                    ["Berkala terakhir", detailEmp.tanggalBerkalaTerakhir],
+                    ["TMT KP manual", detailEmp.tmtKp],
+                    ["BUP manual", detailEmp.bupTanggal],
+                    ["Pensiun (indikatif)*", bup],
+                    ["Prediksi KP (indikatif)*", kp.targetDate || ""],
+                    ["Prediksi KGB (indikatif)*", kgb.targetDate || ""],
+                    ["No. HP", detailEmp.nomorHp],
+                    ["Masa kerja", detailEmp.masaKerja],
+                    ["Kelas jabatan", detailEmp.kelasJabatan],
+                  ] as [string, string | undefined][]
+                ).map(([k, v]) => (
+                  <div
+                    key={k}
+                    className="border border-slate-100 rounded-lg p-3"
+                  >
+                    <dt className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">
+                      {k}
+                    </dt>
+                    <dd className="mt-1 font-medium text-slate-900">
+                      {v || "—"}
+                    </dd>
+                  </div>
+                ));
+              })()}
             </dl>
+            <p className="text-[11px] text-slate-400">
+              * Prediksi indikatif (bukan penetapan legal), kecuali tanggal
+              manual diisi.
+            </p>
             {canWrite && (
               <div className="flex justify-end gap-2 pt-2">
                 <button
@@ -1190,12 +1349,21 @@ export default function Employees() {
 
       <ImportResultDialog
         open={!!importResult}
-        onClose={() => setImportResult(null)}
+        onClose={() => {
+          if (importApplying) return;
+          setImportResult(null);
+          setPendingImportRows(null);
+        }}
         created={importResult?.created ?? 0}
         updated={importResult?.updated ?? 0}
         errors={importResult?.errors ?? 0}
         skipped={importResult?.skipped}
         errorDetails={importResult?.errorDetails}
+        warnings={importResult?.warnings}
+        dryRun={importResult?.dryRun}
+        mode={importResult?.mode || importMode}
+        applying={importApplying}
+        onConfirmApply={() => void handleConfirmImport()}
       />
     </motion.div>
   );

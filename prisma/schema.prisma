@@ -45,6 +45,10 @@ model Employee {
   tmtGolonganRuang       String
   masaKerjaGolonganRuang String
   tanggalBerkalaTerakhir String
+  /// Manual BUP / TMT pensiun (YYYY-MM-DD). Empty = hitung dari tgl lahir + jabatan.
+  bupTanggal String @default("")
+  /// Dasar prediksi KP manual (YYYY-MM-DD). Empty = pakai tmtGolonganRuang.
+  tmtKp String @default("")
 
   // --- Salary ---
   gajiPokok       String

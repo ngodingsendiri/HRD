@@ -275,7 +275,7 @@ export default function Dashboard() {
           description={
             updatedAt
               ? `Angka SDM & proyeksi. Diperbarui ${new Date(updatedAt).toLocaleString("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}.`
-              : "Angka SDM, peringatan, dan proyeksi KP / KGB / pensiun."
+              : "Angka SDM dan peringatan KP / KGB / pensiun (prediksi indikatif*)."
           }
           actions={
             <button
