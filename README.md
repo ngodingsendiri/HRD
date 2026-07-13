@@ -33,6 +33,8 @@ npm run dev
 ```
 
 Panduan lengkap: **[SETUP.md](./SETUP.md)**  
+Prinsip tertinggi: **[constitution.md](./constitution.md)**  
+Spesifikasi produk: **[specify.md](./specify.md)**  
 Konvensi agent/kontributor: **[AGENTS.md](./AGENTS.md)**
 
 ## Keamanan

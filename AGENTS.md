@@ -165,7 +165,11 @@ npm run create-admin # ADMIN_EMAIL + ADMIN_PASSWORD (+ ADMIN_ROLE)
 
 | File | Purpose |
 |------|---------|
+| `constitution.md` | **Highest rules** — product/tech principles, what AI/humans must not break |
+| `specify.md` | Product vision, scope, domain, roadmap |
 | `README.md` | Product overview + quick start |
 | `SETUP.md` | Env, migrate, admin, deploy |
-| `AGENTS.md` | This file — conventions for humans & coding agents |
+| `AGENTS.md` | This file — architecture & coding conventions |
 | `AUDIT.md` | Historical security/UI audit notes |
+
+**Hierarchy:** `constitution.md` → `specify.md` → `AGENTS.md` → `SETUP.md` → code.
