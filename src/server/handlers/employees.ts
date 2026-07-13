@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import {
   getEmployeesPage,
+  getEmployeeBidangOptions,
   createEmployee,
   deleteEmployees,
   bulkUpsertEmployees,
@@ -37,9 +38,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       const q = typeof req.query.q === "string" ? req.query.q : undefined;
       const status = typeof req.query.status === "string" ? req.query.status : undefined;
+      const bidang = typeof req.query.bidang === "string" ? req.query.bidang : undefined;
       const alertRaw = typeof req.query.alert === "string" ? req.query.alert : undefined;
       const alert =
-        alertRaw === "kp" || alertRaw === "kgb" || alertRaw === "any"
+        alertRaw === "kp" ||
+        alertRaw === "kgb" ||
+        alertRaw === "any" ||
+        alertRaw === "pensiun" ||
+        alertRaw === "nonip"
           ? alertRaw
           : undefined;
       const limitRaw = typeof req.query.limit === "string" ? parseInt(req.query.limit, 10) : NaN;
@@ -52,7 +58,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         : DEFAULT_EMPLOYEES_PAGE;
       const offset = Number.isFinite(offsetRaw) ? Math.max(offsetRaw, 0) : 0;
 
-      const page = await getEmployeesPage({ q, status, alert, limit, offset, lean });
+      // Facet-only: unique bidang for filter dropdown
+      if (req.query.facets === "bidang") {
+        const bidangList = await getEmployeeBidangOptions();
+        return res.status(200).json({ bidang: bidangList, data: [], total: 0, limit: 0, offset: 0 });
+      }
+
+      const page = await getEmployeesPage({
+        q,
+        status,
+        bidang,
+        alert,
+        limit,
+        offset,
+        lean,
+      });
       res.setHeader("x-total-count", String(page.total));
       res.setHeader("Cache-Control", "private, no-cache");
       return res.status(200).json(page);

@@ -19,6 +19,7 @@ export const TIMELINE_SELECT = {
   tanggalLahir: true,
   bupTanggal: true,
   tmtKp: true,
+  nomorHp: true,
 } as const;
 
 export type TimelineRow = {
@@ -36,6 +37,7 @@ export type TimelineRow = {
   tanggalLahir: string;
   bupTanggal: string;
   tmtKp: string;
+  nomorHp: string;
 };
 
 /** Hard safety against runaway loops / memory (≈50k employees). */

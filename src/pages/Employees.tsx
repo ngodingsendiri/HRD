@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { AnimatePresence, motion } from "motion/react";
 import { Employee, AppSettings } from "../types";
@@ -15,6 +15,7 @@ import {
   AlertTriangle,
   MoreHorizontal,
   Eye,
+  Download,
 } from "lucide-react";
 import { handleApiError, OperationType } from "../lib/error";
 import { api, type BulkImportError } from "../lib/api";
@@ -25,6 +26,7 @@ import {
   btnPrimary,
   btnSecondary,
   card,
+  chip,
   easeOut,
   pageContainerVariants,
   pageItemVariants,
@@ -48,9 +50,61 @@ import {
 import { useAuth } from "../lib/auth";
 import { notify } from "../lib/notify";
 import { ImportResultDialog } from "../components/ImportResultDialog";
-import { ConfirmDialog } from "../components/ConfirmDialog";
 import { TableSkeleton } from "../components/Skeleton";
 import { cn } from "../lib/utils";
+
+type AlertFilter = "all" | "any" | "kp" | "kgb" | "pensiun" | "nonip";
+
+const STATUS_OPTIONS = [
+  "all",
+  "PNS",
+  "CPNS",
+  "PPPK",
+  "PPPKPW",
+  "Honorer",
+  "Lainnya",
+] as const;
+
+const ALERT_CHIPS: { value: AlertFilter; label: string }[] = [
+  { value: "all", label: "Semua" },
+  { value: "any", label: "Mendesak" },
+  { value: "kp", label: "KP" },
+  { value: "kgb", label: "KGB" },
+  { value: "pensiun", label: "Pensiun" },
+  { value: "nonip", label: "Tanpa NIP" },
+];
+
+function parseAlertParam(raw: string | null): AlertFilter {
+  if (
+    raw === "any" ||
+    raw === "kp" ||
+    raw === "kgb" ||
+    raw === "pensiun" ||
+    raw === "nonip"
+  ) {
+    return raw;
+  }
+  return "all";
+}
+
+function parseStatusParam(raw: string | null): string {
+  if (!raw || raw === "all") return "all";
+  return (STATUS_OPTIONS as readonly string[]).includes(raw) ? raw : "all";
+}
+
+function parsePageParam(raw: string | null): number {
+  const p = parseInt(raw || "1", 10);
+  return Number.isFinite(p) && p > 1 ? p - 1 : 0;
+}
+
+function golLabel(emp: Employee): string {
+  return (
+    (emp.pangkatGolongan || "").trim() ||
+    [emp.pangkat, emp.gol].filter(Boolean).join(" / ") ||
+    emp.gol ||
+    "—"
+  );
+}
 
 function KPBadge({ kind, status }: { kind: "KP" | "KGB"; status: KPStatus }) {
   if (!status.due && !status.overdue) return null;
@@ -70,8 +124,59 @@ function KPBadge({ kind, status }: { kind: "KP" | "KGB"; status: KPStatus }) {
   );
 }
 
-function KPKGBBadges({ emp }: { emp: Employee }) {
-  const { kp, kgb, clear } = checkKGBandKP(
+function PensiunBadge({ emp }: { emp: Employee }) {
+  const bup = calculateBUP(
+    emp.tanggalLahir || "",
+    emp.jabatan || "",
+    emp.bupTanggal,
+  );
+  if (!bup) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const d = new Date(bup);
+  if (isNaN(d.getTime())) return null;
+  d.setHours(0, 0, 0, 0);
+  const days = Math.ceil((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  if (days > 365) return null;
+  const overdue = days < 0;
+  return (
+    <span
+      title={bup}
+      className={cn(
+        "inline-flex items-center gap-1 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded-lg border whitespace-nowrap",
+        overdue
+          ? "bg-red-50 text-red-700 border-red-100"
+          : "bg-amber-50 text-amber-700 border-amber-100",
+      )}
+    >
+      <AlertTriangle className="w-2.5 h-2.5" />
+      {overdue
+        ? "Pensiun lewat*"
+        : days === 0
+          ? "Pensiun hari ini*"
+          : `Pensiun H-${days}*`}
+    </span>
+  );
+}
+
+function isPensiunInWindow(emp: Employee): boolean {
+  const bup = calculateBUP(
+    emp.tanggalLahir || "",
+    emp.jabatan || "",
+    emp.bupTanggal,
+  );
+  if (!bup) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const d = new Date(bup);
+  if (isNaN(d.getTime())) return false;
+  d.setHours(0, 0, 0, 0);
+  const days = Math.ceil((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  return days <= 365;
+}
+
+function AlertBadges({ emp }: { emp: Employee }) {
+  const { kp, kgb } = checkKGBandKP(
     emp.tmtGolonganRuang,
     emp.tanggalBerkalaTerakhir,
     {
@@ -82,11 +187,15 @@ function KPKGBBadges({ emp }: { emp: Employee }) {
       tmtKp: emp.tmtKp,
     },
   );
-  if (clear) return null;
+  const hasKp = kp.due || kp.overdue;
+  const hasKgb = kgb.due || kgb.overdue;
+  const hasPens = isPensiunInWindow(emp);
+  if (!hasKp && !hasKgb && !hasPens) return null;
   return (
     <div className="flex flex-wrap items-center gap-1" title="* Prediksi indikatif">
       <KPBadge kind="KP" status={kp} />
       <KPBadge kind="KGB" status={kgb} />
+      <PensiunBadge emp={emp} />
     </div>
   );
 }
@@ -95,22 +204,32 @@ export default function Employees() {
   useDocumentTitle("Pegawai");
   const { canWrite } = useAuth();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const moreRef = useRef<HTMLDivElement>(null);
   const [rawEmployees, setRawEmployees] = useState<Employee[]>([]);
   const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [bidangOptions, setBidangOptions] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState(searchParams.get("q") || "");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [alertFilter, setAlertFilter] = useState<"all" | "any" | "kp" | "kgb">(
-    () => {
-      const a = searchParams.get("alert");
-      return a === "kp" || a === "kgb" || a === "any" ? a : "all";
-    },
+  const [statusFilter, setStatusFilter] = useState(() =>
+    parseStatusParam(searchParams.get("status")),
+  );
+  const [alertFilter, setAlertFilter] = useState<AlertFilter>(() =>
+    parseAlertParam(searchParams.get("alert")),
+  );
+  const [bidangFilter, setBidangFilter] = useState(
+    () => searchParams.get("bidang") || "all",
   );
   const [loading, setLoading] = useState(true); // flipped false when list cache is warm
+  /** Soft refresh after first paint (filter/page change) — keep chrome, dim table. */
+  const [listRefreshing, setListRefreshing] = useState(false);
+  /** True after at least one list response — gates page clamp (avoid wiping ?page=N). */
+  const [listSettled, setListSettled] = useState(false);
+  const listSettledRef = useRef(false);
   const [listError, setListError] = useState<string | null>(null);
   const [rowsPerPage, setRowsPerPage] = useState(50);
-  const [page, setPage] = useState(0);
+  const [page, setPage] = useState(() =>
+    parsePageParam(searchParams.get("page")),
+  );
   const [total, setTotal] = useState(0);
   const [debouncedQ, setDebouncedQ] = useState(searchTerm);
   const [moreOpen, setMoreOpen] = useState(false);
@@ -118,6 +237,7 @@ export default function Employees() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
   const [isDeletingBulk, setIsDeletingBulk] = useState(false);
+  const [isExportingSelected, setIsExportingSelected] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [employeeToDelete, setEmployeeToDelete] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -138,26 +258,131 @@ export default function Employees() {
   const [importApplying, setImportApplying] = useState(false);
 
   const employees = rawEmployees;
+  /**
+   * Track last filter key so we only reset page when filters *change*.
+   * Safer than a boolean flag under React Strict Mode (effects run twice).
+   */
+  const prevFilterKeyRef = useRef<string | null>(null);
+  /** After inbound URL hydrate, don't wipe page that came with the new query. */
+  const skipNextFilterPageReset = useRef(false);
+  /** Ignore our own URL writes when hydrating from searchParams. */
+  const suppressUrlHydrate = useRef(false);
+
+  const filterKey = `${debouncedQ}\0${statusFilter}\0${alertFilter}\0${bidangFilter}\0${rowsPerPage}`;
+
+  const listParams = useMemo(
+    () => ({
+      q: debouncedQ || undefined,
+      status: statusFilter,
+      bidang: bidangFilter === "all" ? undefined : bidangFilter,
+      alert: (alertFilter === "all" ? undefined : alertFilter) as
+        | "any"
+        | "kp"
+        | "kgb"
+        | "pensiun"
+        | "nonip"
+        | undefined,
+      limit: rowsPerPage,
+      offset: page * rowsPerPage,
+      lean: true as const,
+    }),
+    [debouncedQ, statusFilter, bidangFilter, alertFilter, rowsPerPage, page],
+  );
+
+  const desiredSearch = useMemo(() => {
+    const sp = new URLSearchParams();
+    if (debouncedQ) sp.set("q", debouncedQ);
+    if (statusFilter !== "all") sp.set("status", statusFilter);
+    if (alertFilter !== "all") sp.set("alert", alertFilter);
+    if (bidangFilter !== "all") sp.set("bidang", bidangFilter);
+    if (page > 0) sp.set("page", String(page + 1));
+    return sp.toString();
+  }, [debouncedQ, statusFilter, alertFilter, bidangFilter, page]);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQ(searchTerm), 250);
     return () => clearTimeout(t);
   }, [searchTerm]);
 
+  // Reset page + selection when filters change — not on first mount / URL hydrate
   useEffect(() => {
+    if (prevFilterKeyRef.current === null) {
+      prevFilterKeyRef.current = filterKey;
+      return;
+    }
+    if (prevFilterKeyRef.current === filterKey) return;
+    prevFilterKeyRef.current = filterKey;
+    if (skipNextFilterPageReset.current) {
+      skipNextFilterPageReset.current = false;
+      setSelectedIds(new Set());
+      return;
+    }
     setPage(0);
     setSelectedIds(new Set());
-  }, [debouncedQ, statusFilter, alertFilter, rowsPerPage]);
+  }, [filterKey]);
+
+  // Page-scoped selection: changing page clears picks (matches “halaman ini”)
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [page]);
+
+  // After delete / filter shrink: don't stay on an empty page.
+  // Wait until listSettled — initial total=0 must not wipe ?page=N before fetch.
+  useEffect(() => {
+    if (!listSettled) return;
+    if (total <= 0) {
+      if (page !== 0) setPage(0);
+      return;
+    }
+    const maxPage = Math.max(0, Math.ceil(total / rowsPerPage) - 1);
+    if (page > maxPage) setPage(maxPage);
+  }, [listSettled, total, rowsPerPage, page]);
+
+  // State → URL only when *our* filters change (do NOT depend on searchParams,
+  // or back/forward would be immediately overwritten by stale state).
+  useEffect(() => {
+    const current = searchParams.toString();
+    if (desiredSearch === current) return;
+    suppressUrlHydrate.current = true;
+    setSearchParams(new URLSearchParams(desiredSearch), { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: only push when desiredSearch changes
+  }, [desiredSearch, setSearchParams]);
+
+  // Inbound URL → state (back/forward, Dashboard Link while already on /employees)
+  useEffect(() => {
+    // Skip the searchParams update that we just wrote ourselves
+    if (suppressUrlHydrate.current) {
+      suppressUrlHydrate.current = false;
+      return;
+    }
+    const q = searchParams.get("q") || "";
+    const status = parseStatusParam(searchParams.get("status"));
+    const alert = parseAlertParam(searchParams.get("alert"));
+    const bidang = searchParams.get("bidang") || "all";
+    const nextPage = parsePageParam(searchParams.get("page"));
+
+    const filterChanging =
+      q !== debouncedQ ||
+      status !== statusFilter ||
+      alert !== alertFilter ||
+      bidang !== bidangFilter;
+
+    if (filterChanging) {
+      // Preserve page from this URL (don't let filter-reset effect force page 0)
+      skipNextFilterPageReset.current = true;
+    }
+
+    if (q !== searchTerm) setSearchTerm(q);
+    if (q !== debouncedQ) setDebouncedQ(q);
+    if (status !== statusFilter) setStatusFilter(status);
+    if (alert !== alertFilter) setAlertFilter(alert);
+    if (bidang !== bidangFilter) setBidangFilter(bidang);
+    if (nextPage !== page) setPage(nextPage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberate: hydrate from searchParams only
+  }, [searchParams]);
 
   const refreshList = async () => {
-    const res = await api.getEmployeesPage({
-      q: debouncedQ || undefined,
-      status: statusFilter,
-      alert: alertFilter === "all" ? undefined : alertFilter,
-      limit: rowsPerPage,
-      offset: page * rowsPerPage,
-      lean: true,
-    });
+    const res = await api.getEmployeesPage(listParams);
     setRawEmployees(res.data);
     setTotal(res.total);
   };
@@ -206,19 +431,13 @@ export default function Employees() {
   }, [moreOpen]);
 
   useEffect(() => {
-    const q = searchParams.get("q");
-    if (q) setSearchTerm(q);
-    const alert = searchParams.get("alert");
-    if (alert === "kp" || alert === "kgb" || alert === "any") {
-      setAlertFilter(alert);
-    }
-  }, [searchParams]);
-
-  useEffect(() => {
     let cancelled = false;
     // kamus for form lookup + peta for bezetting export
     api.getSettings(["peta", "kamus"]).then((d) => {
       if (!cancelled) setSettings(d);
+    });
+    api.getEmployeeBidangOptions().then((list) => {
+      if (!cancelled) setBidangOptions(list);
     });
     return () => {
       cancelled = true;
@@ -227,14 +446,6 @@ export default function Employees() {
 
   useEffect(() => {
     let cancelled = false;
-    const listParams = {
-      q: debouncedQ || undefined,
-      status: statusFilter,
-      alert: alertFilter === "all" ? undefined : alertFilter,
-      limit: rowsPerPage,
-      offset: page * rowsPerPage,
-      lean: true as const,
-    };
     (async () => {
       try {
         setListError(null);
@@ -242,25 +453,41 @@ export default function Employees() {
         if (warm) {
           setRawEmployees(warm.data);
           setTotal(warm.total);
+          listSettledRef.current = true;
+          setListSettled(true);
           setLoading(false);
-        } else if (page === 0) {
+          setListRefreshing(false);
+        } else if (!listSettledRef.current) {
+          // Full-page skeleton only before first successful paint
           setLoading(true);
+        } else {
+          // Keep filters/chips visible; dim table until network returns
+          setListRefreshing(true);
         }
         const res = await api.getEmployeesPage(listParams);
         if (cancelled) return;
         setRawEmployees(res.data);
         setTotal(res.total);
+        listSettledRef.current = true;
+        setListSettled(true);
       } catch (e) {
         const err = handleApiError(e, OperationType.LIST, "/api/employees");
-        if (!cancelled) setListError(err.message);
+        if (!cancelled) {
+          setListError(err.message);
+          listSettledRef.current = true;
+          setListSettled(true);
+        }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          setListRefreshing(false);
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [debouncedQ, statusFilter, alertFilter, rowsPerPage, page]);
+  }, [listParams]);
 
   const displayedEmployees = employees;
   const totalPages = Math.max(1, Math.ceil(total / rowsPerPage));
@@ -296,16 +523,56 @@ export default function Employees() {
     }
   };
 
-  const handleExport = async () => {
+  const writeEmployeeWorkbook = async (
+    rows: Employee[],
+    filename: string,
+  ) => {
+    const XLSX = await import("xlsx");
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(buildReimportExportRows(rows)),
+      "Data_Pegawai",
+    );
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(buildDerivedReportRows(rows)),
+      "Dihitung_Sistem",
+    );
+    XLSX.writeFile(wb, filename);
+  };
+
+  const handleExport = async (scope: "all" | "filtered" = "all") => {
     try {
-      notify.info("Menyiapkan ekspor…");
-      const XLSX = await import("xlsx");
-      // Full dump for export only (capped by API max 500 — loop pages)
+      notify.info(
+        scope === "filtered"
+          ? "Menyiapkan ekspor (filter aktif)…"
+          : "Menyiapkan ekspor…",
+      );
+      // API max 500 — loop pages
       const all: Employee[] = [];
       let offset = 0;
       const pageSize = 500;
+      const base =
+        scope === "filtered"
+          ? {
+              q: debouncedQ || undefined,
+              status: statusFilter,
+              bidang: bidangFilter === "all" ? undefined : bidangFilter,
+              alert:
+                alertFilter === "all"
+                  ? undefined
+                  : (alertFilter as
+                      | "any"
+                      | "kp"
+                      | "kgb"
+                      | "pensiun"
+                      | "nonip"),
+            }
+          : {};
       for (;;) {
         const res = await api.getEmployeesPage({
+          ...base,
           limit: pageSize,
           offset,
           lean: false,
@@ -314,24 +581,58 @@ export default function Employees() {
         offset += res.data.length;
         if (offset >= res.total || res.data.length === 0) break;
       }
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(
-        wb,
-        XLSX.utils.json_to_sheet(buildReimportExportRows(all)),
-        "Data_Pegawai",
+      const name =
+        scope === "filtered"
+          ? "Data_Pegawai_Filter.xlsx"
+          : "Data_Pegawai_HRD_ASN.xlsx";
+      await writeEmployeeWorkbook(all, name);
+      notify.success(
+        scope === "filtered" ? "Ekspor filter selesai" : "Ekspor selesai",
+        `${all.length} baris`,
       );
-      XLSX.utils.book_append_sheet(
-        wb,
-        XLSX.utils.json_to_sheet(buildDerivedReportRows(all)),
-        "Dihitung_Sistem",
-      );
-      XLSX.writeFile(wb, "Data_Pegawai_HRD_ASN.xlsx");
-      notify.success("Ekspor selesai", `${all.length} baris`);
     } catch {
       notify.error("Ekspor gagal");
     }
     setMoreOpen(false);
   };
+
+  const handleExportSelected = async () => {
+    if (!selectedIds.size) return;
+    setIsExportingSelected(true);
+    try {
+      notify.info("Menyiapkan ekspor terpilih…");
+      const ids = Array.from(selectedIds);
+      // Full records (not lean) so re-import columns are complete
+      const results = await Promise.all(ids.map((id) => api.getEmployee(id)));
+      const full = results.filter((e): e is Employee => !!e);
+      if (!full.length) {
+        notify.error("Tidak ada data terpilih yang bisa diekspor");
+        return;
+      }
+      await writeEmployeeWorkbook(
+        full,
+        `Data_Pegawai_Terpilih_${full.length}.xlsx`,
+      );
+      notify.success("Ekspor terpilih selesai", `${full.length} baris`);
+    } catch {
+      notify.error("Ekspor terpilih gagal");
+    } finally {
+      setIsExportingSelected(false);
+    }
+  };
+
+  const resetFilters = () => {
+    setStatusFilter("all");
+    setAlertFilter("all");
+    setBidangFilter("all");
+    setSearchTerm("");
+  };
+
+  const hasActiveFilters =
+    statusFilter !== "all" ||
+    alertFilter !== "all" ||
+    bidangFilter !== "all" ||
+    !!debouncedQ;
 
   const handleExportBezetting = async () => {
     const XLSX = await import("xlsx");
@@ -598,7 +899,7 @@ export default function Employees() {
     }
   };
 
-  const statusOptions = ["all", "PNS", "CPNS", "PPPK", "PPPKPW", "Honorer", "Lainnya"];
+  const statusOptions = STATUS_OPTIONS;
 
   if (loading) {
     return (
@@ -709,11 +1010,24 @@ export default function Employees() {
                         className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-slate-50"
                         onClick={() => {
                           setMoreOpen(false);
-                          void handleExport();
+                          void handleExport("all");
                         }}
                       >
-                        Ekspor data
+                        Ekspor semua
                       </button>
+                      {hasActiveFilters && (
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-slate-50"
+                          onClick={() => {
+                            setMoreOpen(false);
+                            void handleExport("filtered");
+                          }}
+                        >
+                          Ekspor hasil filter
+                        </button>
+                      )}
                       <button
                         type="button"
                         role="menuitem"
@@ -765,7 +1079,43 @@ export default function Employees() {
         </div>
       )}
 
+      {canWrite && importMode === "replace" && (
+        <motion.div
+          variants={pageItemVariants}
+          className="p-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-900 text-xs flex items-start gap-2"
+          role="status"
+        >
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold">Mode impor: ganti penuh</p>
+            <p className="mt-0.5 text-amber-800/90">
+              Sel kosong di Excel akan mengosongkan data di sistem. Ganti ke
+              mode Patch di menu Lainnya bila hanya ingin mengisi celah.
+            </p>
+          </div>
+        </motion.div>
+      )}
+
       <motion.div variants={pageItemVariants} className="space-y-3">
+        {/* Alert chips — shareable via URL (Dashboard deep-link) */}
+        <div
+          className="flex flex-wrap gap-1.5"
+          role="group"
+          aria-label="Filter peringatan"
+        >
+          {ALERT_CHIPS.map((c) => (
+            <button
+              key={c.value}
+              type="button"
+              className={chip(alertFilter === c.value)}
+              onClick={() => setAlertFilter(c.value)}
+              aria-pressed={alertFilter === c.value}
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
+
         {/* Compact toolbar */}
         <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
           <div className="relative flex-1 min-w-0">
@@ -792,17 +1142,21 @@ export default function Employees() {
               ))}
             </select>
             <select
-              value={alertFilter}
-              onChange={(e) =>
-                setAlertFilter(e.target.value as "all" | "any" | "kp" | "kgb")
-              }
-              className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 max-w-[150px]"
-              aria-label="Filter peringatan"
+              value={bidangFilter}
+              onChange={(e) => setBidangFilter(e.target.value)}
+              className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 max-w-[180px]"
+              aria-label="Filter bidang"
             >
-              <option value="all">Semua peringatan</option>
-              <option value="any">Ada peringatan</option>
-              <option value="kp">KP</option>
-              <option value="kgb">KGB</option>
+              <option value="all">Semua bidang</option>
+              {bidangFilter !== "all" &&
+                !bidangOptions.includes(bidangFilter) && (
+                  <option value={bidangFilter}>{bidangFilter}</option>
+                )}
+              {bidangOptions.map((b) => (
+                <option key={b} value={b}>
+                  {b}
+                </option>
+              ))}
             </select>
             <select
               value={rowsPerPage}
@@ -819,20 +1173,34 @@ export default function Employees() {
           </div>
         </div>
 
+        {alertFilter !== "all" && (
+          <p className="text-[11px] text-slate-400">
+            {alertFilter === "any"
+              ? "Mendesak = KP/KGB ≤90 hari + pensiun ≤365 hari · diurutkan terdekat dulu*."
+              : alertFilter === "kp" ||
+                  alertFilter === "kgb" ||
+                  alertFilter === "pensiun"
+                ? "Diurutkan mendesak dulu (prediksi indikatif)."
+                : "Pegawai tanpa NIP (digit kosong)."}
+          </p>
+        )}
+
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
           <p>
             Menampilkan {displayedEmployees.length ? page * rowsPerPage + 1 : 0}
             –
             {page * rowsPerPage + displayedEmployees.length} dari {total} data
-            {(statusFilter !== "all" || alertFilter !== "all" || debouncedQ) && (
+            {listRefreshing && (
+              <span className="ml-2 inline-flex items-center gap-1 text-slate-400">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                Memuat…
+              </span>
+            )}
+            {hasActiveFilters && (
               <button
                 type="button"
                 className="ml-2 text-slate-700 font-semibold underline-offset-2 hover:underline"
-                onClick={() => {
-                  setStatusFilter("all");
-                  setAlertFilter("all");
-                  setSearchTerm("");
-                }}
+                onClick={resetFilters}
               >
                 Reset filter
               </button>
@@ -842,7 +1210,7 @@ export default function Employees() {
             <button
               type="button"
               className={btnSecondary}
-              disabled={page <= 0 || loading}
+              disabled={page <= 0 || loading || listRefreshing}
               onClick={() => setPage((p) => Math.max(0, p - 1))}
             >
               Sebelumnya
@@ -853,7 +1221,7 @@ export default function Employees() {
             <button
               type="button"
               className={btnSecondary}
-              disabled={page + 1 >= totalPages || loading}
+              disabled={page + 1 >= totalPages || loading || listRefreshing}
               onClick={() => setPage((p) => p + 1)}
             >
               Berikutnya
@@ -861,7 +1229,7 @@ export default function Employees() {
           </div>
         </div>
 
-        {!loading && total === 0 && !debouncedQ && statusFilter === "all" && alertFilter === "all" ? (
+        {!loading && total === 0 && !hasActiveFilters ? (
           <div className={`${card} py-6`}>
             <EmptyState
               title="Belum ada data pegawai"
@@ -903,46 +1271,49 @@ export default function Employees() {
             )}
           </div>
         ) : (
-          <div className={`${card} overflow-hidden flex flex-col max-h-[min(640px,70vh)]`}>
+          <div
+            className={cn(
+              `${card} overflow-hidden flex flex-col max-h-[min(640px,70vh)] transition-opacity`,
+              listRefreshing && "opacity-60",
+            )}
+            aria-busy={listRefreshing}
+          >
             {/* Desktop lean table */}
             <div className="hidden md:block flex-1 overflow-auto">
               <table className="w-full border-collapse text-sm">
                 <thead className="sticky top-0 z-10 bg-slate-50 border-b border-slate-100">
                   <tr className="text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-                    {canWrite && (
-                      <th className="px-3 py-3 w-10 sticky left-0 z-[12] bg-slate-50">
-                        <input
-                          type="checkbox"
-                          className="rounded border-slate-300"
-                          checked={
-                            displayedEmployees.length > 0 &&
-                            displayedEmployees.every(
-                              (e) => e.id && selectedIds.has(e.id),
-                            )
-                          }
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedIds(
-                                new Set(
-                                  displayedEmployees
-                                    .map((x) => x.id)
-                                    .filter(Boolean) as string[],
-                                ),
-                              );
-                            } else setSelectedIds(new Set());
-                          }}
-                        />
-                      </th>
-                    )}
-                    <th
-                      className={cn(
-                        "px-3 py-3 sticky z-[11] bg-slate-50 min-w-[140px]",
-                        canWrite ? "left-10" : "left-0",
-                      )}
-                    >
+                    <th className="px-3 py-3 w-10 sticky left-0 z-[12] bg-slate-50">
+                      <input
+                        type="checkbox"
+                        className="rounded border-slate-300"
+                        title="Pilih semua di halaman ini"
+                        aria-label="Pilih semua di halaman ini"
+                        checked={
+                          displayedEmployees.length > 0 &&
+                          displayedEmployees.every(
+                            (e) => e.id && selectedIds.has(e.id),
+                          )
+                        }
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedIds(
+                              new Set(
+                                displayedEmployees
+                                  .map((x) => x.id)
+                                  .filter(Boolean) as string[],
+                              ),
+                            );
+                          } else setSelectedIds(new Set());
+                        }}
+                      />
+                    </th>
+                    <th className="px-3 py-3 sticky left-10 z-[11] bg-slate-50 min-w-[140px]">
                       Nama
                     </th>
                     <th className="px-3 py-3">NIP</th>
+                    <th className="px-3 py-3">Gol</th>
+                    <th className="px-3 py-3">Kelas</th>
                     <th className="px-3 py-3">Status</th>
                     <th className="px-3 py-3">Jabatan</th>
                     <th className="px-3 py-3">Bidang</th>
@@ -954,50 +1325,65 @@ export default function Employees() {
                   {displayedEmployees.map((emp) => (
                     <tr
                       key={emp.id}
-                      className="group border-b border-slate-50 hover:bg-slate-50/80 transition-colors"
+                      className="group border-b border-slate-50 hover:bg-slate-50/80 transition-colors cursor-pointer"
+                      onClick={() => emp.id && void openDetail(emp.id)}
                     >
-                      {canWrite && (
-                        <td className="px-3 py-2.5 sticky left-0 z-[2] bg-white group-hover:bg-slate-50">
-                          <input
-                            type="checkbox"
-                            className="rounded border-slate-300"
-                            checked={!!emp.id && selectedIds.has(emp.id)}
-                            onChange={() => {
-                              if (!emp.id) return;
-                              const n = new Set(selectedIds);
-                              if (n.has(emp.id)) n.delete(emp.id);
-                              else n.add(emp.id);
-                              setSelectedIds(n);
-                            }}
-                          />
-                        </td>
-                      )}
                       <td
-                        className={cn(
-                          "px-3 py-2.5 font-medium text-slate-900 sticky z-[1] bg-white group-hover:bg-slate-50",
-                          canWrite ? "left-10" : "left-0",
-                        )}
+                        className="px-3 py-2.5 sticky left-0 z-[2] bg-white group-hover:bg-slate-50"
+                        onClick={(e) => e.stopPropagation()}
                       >
-                        {emp.nama || "—"}
+                        <input
+                          type="checkbox"
+                          className="rounded border-slate-300"
+                          checked={!!emp.id && selectedIds.has(emp.id)}
+                          onChange={() => {
+                            if (!emp.id) return;
+                            const n = new Set(selectedIds);
+                            if (n.has(emp.id)) n.delete(emp.id);
+                            else n.add(emp.id);
+                            setSelectedIds(n);
+                          }}
+                        />
+                      </td>
+                      <td className="px-3 py-2.5 font-medium text-slate-900 sticky left-10 z-[1] bg-white group-hover:bg-slate-50">
+                        <button
+                          type="button"
+                          className="text-left hover:underline focus:underline focus:outline-none"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (emp.id) void openDetail(emp.id);
+                          }}
+                        >
+                          {emp.nama || "—"}
+                        </button>
                       </td>
                       <td className="px-3 py-2.5 text-slate-600 tabular-nums text-xs">
                         {emp.nip || "—"}
+                      </td>
+                      <td className="px-3 py-2.5 text-slate-700 text-xs max-w-[100px] truncate">
+                        {golLabel(emp)}
+                      </td>
+                      <td className="px-3 py-2.5 text-slate-600 tabular-nums text-xs">
+                        {emp.kelasJabatan || "—"}
                       </td>
                       <td className="px-3 py-2.5">
                         <span className={statusBadge(emp.status)}>
                           {emp.status || "—"}
                         </span>
                       </td>
-                      <td className="px-3 py-2.5 text-slate-700 max-w-[180px] truncate">
+                      <td className="px-3 py-2.5 text-slate-700 max-w-[160px] truncate">
                         {emp.jabatan || "—"}
                       </td>
-                      <td className="px-3 py-2.5 text-slate-600 max-w-[120px] truncate">
+                      <td className="px-3 py-2.5 text-slate-600 max-w-[110px] truncate">
                         {emp.bidang || "—"}
                       </td>
                       <td className="px-3 py-2.5">
-                        <KPKGBBadges emp={emp} />
+                        <AlertBadges emp={emp} />
                       </td>
-                      <td className="px-3 py-2.5 text-right">
+                      <td
+                        className="px-3 py-2.5 text-right"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <div className="inline-flex items-center gap-1">
                           <button
                             type="button"
@@ -1036,10 +1422,10 @@ export default function Employees() {
                   ))}
                   {displayedEmployees.length === 0 && (
                     <tr>
-                      <td colSpan={8} className="py-8">
+                      <td colSpan={10} className="py-8">
                         <EmptyState
                           title="Tidak ada yang cocok"
-                          description="Ubah kata kunci atau filter status/peringatan."
+                          description="Ubah kata kunci atau filter status/bidang/peringatan."
                         />
                       </td>
                     </tr>
@@ -1050,19 +1436,50 @@ export default function Employees() {
 
             {/* Mobile cards */}
             <div className="md:hidden flex-1 overflow-y-auto p-3 space-y-3 bg-slate-50/50">
+              {displayedEmployees.length > 0 && (
+                <p className="text-[11px] text-slate-400 px-0.5">
+                  Centang = pilih di halaman ini saja (bukan seluruh filter).
+                </p>
+              )}
               {displayedEmployees.map((emp) => (
-                <div key={emp.id} className={`${card} overflow-hidden`}>
+                <div
+                  key={emp.id}
+                  className={`${card} overflow-hidden cursor-pointer`}
+                  onClick={() => emp.id && void openDetail(emp.id)}
+                >
                   <div className="p-3 border-b border-slate-100">
                     <div className="flex justify-between gap-2">
-                      <div className="min-w-0">
-                        <h3 className="text-sm font-bold text-slate-900 truncate">
-                          {emp.nama || "—"}
-                        </h3>
-                        <p className="text-xs text-slate-500 mt-0.5">
-                          {emp.nip ? `NIP ${emp.nip}` : "Tanpa NIP"}
-                        </p>
-                        <div className="mt-1">
-                          <KPKGBBadges emp={emp} />
+                      <div className="min-w-0 flex items-start gap-2">
+                        <input
+                          type="checkbox"
+                          className="rounded border-slate-300 mt-1 shrink-0"
+                          checked={!!emp.id && selectedIds.has(emp.id)}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={() => {
+                            if (!emp.id) return;
+                            const n = new Set(selectedIds);
+                            if (n.has(emp.id)) n.delete(emp.id);
+                            else n.add(emp.id);
+                            setSelectedIds(n);
+                          }}
+                          aria-label={`Pilih ${emp.nama || "pegawai"}`}
+                        />
+                        <div className="min-w-0">
+                          <h3 className="text-sm font-bold text-slate-900 truncate">
+                            {emp.nama || "—"}
+                          </h3>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            {emp.nip ? `NIP ${emp.nip}` : "Tanpa NIP"}
+                            {emp.kelasJabatan
+                              ? ` · Kelas ${emp.kelasJabatan}`
+                              : ""}
+                          </p>
+                          <p className="text-[11px] text-slate-500 mt-0.5 truncate">
+                            {golLabel(emp)}
+                          </p>
+                          <div className="mt-1">
+                            <AlertBadges emp={emp} />
+                          </div>
                         </div>
                       </div>
                       <span className={`${statusBadge(emp.status)} shrink-0`}>
@@ -1088,7 +1505,10 @@ export default function Employees() {
                       </div>
                     </div>
                   </div>
-                  <div className="p-2 border-t border-slate-100 flex gap-2">
+                  <div
+                    className="p-2 border-t border-slate-100 flex gap-2"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <button
                       type="button"
                       className={`${btnSecondary} flex-1`}
@@ -1144,7 +1564,7 @@ export default function Employees() {
             <button
               type="button"
               className={btnSecondary}
-              disabled={page <= 0 || loading}
+              disabled={page <= 0 || loading || listRefreshing}
               onClick={() => setPage((p) => Math.max(0, p - 1))}
             >
               Sebelumnya
@@ -1152,7 +1572,7 @@ export default function Employees() {
             <button
               type="button"
               className={btnSecondary}
-              disabled={page + 1 >= totalPages || loading}
+              disabled={page + 1 >= totalPages || loading || listRefreshing}
               onClick={() => setPage((p) => p + 1)}
             >
               Berikutnya
@@ -1163,16 +1583,19 @@ export default function Employees() {
 
       {/* Bulk selection bar */}
       <AnimatePresence>
-        {canWrite && selectedIds.size > 0 && (
+        {selectedIds.size > 0 && (
           <motion.div
             initial={{ y: 24, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 24, opacity: 0 }}
             transition={easeOut}
-            className="fixed bottom-20 lg:bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 px-4 py-3 rounded-xl border border-slate-200 bg-white shadow-sm"
+            className="fixed bottom-20 lg:bottom-6 left-1/2 -translate-x-1/2 z-40 flex flex-wrap items-center justify-center gap-2 px-4 py-3 rounded-xl border border-slate-200 bg-white shadow-sm max-w-[min(96vw,36rem)]"
           >
             <span className="text-sm font-semibold text-slate-800 tabular-nums">
               {selectedIds.size} dipilih
+            </span>
+            <span className="text-[10px] text-slate-400 hidden sm:inline">
+              (halaman ini)
             </span>
             <button
               type="button"
@@ -1183,12 +1606,27 @@ export default function Employees() {
             </button>
             <button
               type="button"
-              className={btnDanger}
-              onClick={() => setIsBulkDeleteModalOpen(true)}
+              className={btnSecondary}
+              disabled={isExportingSelected}
+              onClick={() => void handleExportSelected()}
             >
-              <Trash2 className="w-3.5 h-3.5" />
-              Hapus
+              {isExportingSelected ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Download className="w-3.5 h-3.5" />
+              )}
+              Ekspor
             </button>
+            {canWrite && (
+              <button
+                type="button"
+                className={btnDanger}
+                onClick={() => setIsBulkDeleteModalOpen(true)}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Hapus
+              </button>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -1205,7 +1643,7 @@ export default function Employees() {
               <span className={statusBadge(detailEmp.status)}>
                 {detailEmp.status}
               </span>
-              <KPKGBBadges emp={detailEmp} />
+              <AlertBadges emp={detailEmp} />
             </div>
             <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {(() => {
@@ -1265,8 +1703,26 @@ export default function Employees() {
               * Prediksi indikatif (bukan penetapan legal), kecuali tanggal
               manual diisi.
             </p>
-            {canWrite && (
-              <div className="flex justify-end gap-2 pt-2">
+            <div className="flex flex-wrap justify-end gap-2 pt-2">
+              {detailEmp.id && (
+                <>
+                  <Link
+                    to={`/print?doc=surat_cuti&id=${encodeURIComponent(detailEmp.id)}`}
+                    className={btnSecondary}
+                    onClick={() => setDetailEmp(null)}
+                  >
+                    Cetak cuti
+                  </Link>
+                  <Link
+                    to={`/print?doc=model_dk&id=${encodeURIComponent(detailEmp.id)}`}
+                    className={btnSecondary}
+                    onClick={() => setDetailEmp(null)}
+                  >
+                    Cetak Model DK
+                  </Link>
+                </>
+              )}
+              {canWrite && (
                 <button
                   type="button"
                   className={btnPrimary}
@@ -1279,8 +1735,8 @@ export default function Employees() {
                   <Edit2 className="w-4 h-4" />
                   Edit data
                 </button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         )}
       </Modal>

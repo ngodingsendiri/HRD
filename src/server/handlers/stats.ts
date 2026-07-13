@@ -21,8 +21,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return;
     }
 
-    const stats = await buildEmployeeStatsPayload();
-    res.setHeader("Cache-Control", "private, max-age=45");
+    const force =
+      req.query.force === "1" ||
+      req.query.force === "true" ||
+      typeof req.query._ === "string";
+    const stats = await buildEmployeeStatsPayload({ force });
+    // Short cache for normal loads; no-store when force-refresh from UI
+    res.setHeader(
+      "Cache-Control",
+      force ? "private, no-store" : "private, max-age=45",
+    );
     return res.status(200).json(stats);
   });
 }

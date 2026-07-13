@@ -91,7 +91,8 @@ export type EmployeeListParams = {
   offset?: number;
   lean?: boolean;
   status?: string;
-  alert?: "kp" | "kgb" | "any";
+  bidang?: string;
+  alert?: "kp" | "kgb" | "any" | "pensiun" | "nonip";
 };
 
 function employeesQuery(params?: EmployeeListParams): string {
@@ -102,6 +103,7 @@ function employeesQuery(params?: EmployeeListParams): string {
   if (params?.lean === false) sp.set("lean", "0");
   else if (params?.lean) sp.set("lean", "1");
   if (params?.status && params.status !== "all") sp.set("status", params.status);
+  if (params?.bidang && params.bidang !== "all") sp.set("bidang", params.bidang);
   if (params?.alert) sp.set("alert", params.alert);
   const qs = sp.toString();
   return qs ? `/api/employees?${qs}` : "/api/employees";
@@ -134,6 +136,15 @@ export const api = {
   async getEmployeesPage(params?: EmployeeListParams): Promise<EmployeesPage> {
     const key = `employees:${employeesQuery(params)}`;
     return cacheGetOrFetch(key, () => request<EmployeesPage>(employeesQuery(params)));
+  },
+
+  async getEmployeeBidangOptions(): Promise<string[]> {
+    return cacheGetOrFetch("employees:bidang-options", async () => {
+      const res = await request<{ bidang: string[] }>(
+        "/api/employees?facets=bidang&limit=1",
+      );
+      return res.bidang ?? [];
+    });
   },
 
   async getEmployee(id: string): Promise<Employee | null> {
@@ -225,10 +236,15 @@ export const api = {
     return saved;
   },
 
-  async getDashboardStats(): Promise<DashboardStats> {
+  async getDashboardStats(opts?: { force?: boolean }): Promise<DashboardStats> {
+    if (opts?.force) cacheInvalidate("stats");
+    // Cache-bust query so browser/server warm path can skip stale stats
+    const url = opts?.force
+      ? `/api/stats?force=1&_=${Date.now()}`
+      : "/api/stats";
     return cacheGetOrFetch(
       "stats",
-      () => request<DashboardStats>("/api/stats"),
+      () => request<DashboardStats>(url),
       DEFAULT_TTL_MS,
     );
   },

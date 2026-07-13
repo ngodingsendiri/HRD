@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  buildDataHealth,
   buildKgbList,
   buildPensiunList,
   normalizeBidangLabel,
@@ -67,6 +68,28 @@ describe("buildPensiunList", () => {
       },
     ]);
     expect(list[0]!.nextDate).toBe("2031-01-01");
+  });
+});
+
+describe("buildDataHealth", () => {
+  it("counts gaps", () => {
+    const h = buildDataHealth(
+      [
+        { nip: "", tmtGolonganRuang: "", jabatan: "X", nomorHp: "", status: "PNS" },
+        {
+          nip: "198001012010011001",
+          tmtGolonganRuang: "2020-01-01",
+          jabatan: "Analis",
+          nomorHp: "08",
+          status: "PNS",
+        },
+      ],
+      (j) => j === "Analis",
+    );
+    expect(h.withoutNip).toBe(1);
+    expect(h.withoutTmtGol).toBe(1);
+    expect(h.jabatanOffKamus).toBe(1);
+    expect(h.withoutHp).toBe(1);
   });
 });
 

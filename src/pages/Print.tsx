@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Employee, AppSettings } from "../types";
 import {
   Printer,
@@ -10,6 +11,8 @@ import {
   AlertCircle,
   ChevronRight,
   ChevronLeft,
+  Eye,
+  Shield,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { lookupKamus } from "../lib/kamus";
@@ -25,6 +28,7 @@ import {
   btnSecondary,
   card,
   cardHeader,
+  chip,
   input,
   pageContainerVariants,
   pageItemVariants,
@@ -33,6 +37,11 @@ import {
 } from "../lib/ui";
 import { useDocumentTitle } from "../lib/useDocumentTitle";
 import { peekAllEmployeesLean } from "../lib/bootstrap";
+import {
+  isCutiTahunanJenis,
+  parseDocParam,
+  resolveBidangLabel,
+} from "../lib/printParams";
 
 type PrintType =
   | "absen_global"
@@ -46,14 +55,35 @@ type MobileStep = 1 | 2 | 3;
 /** Snapshot sisa cuti for print (pre-deduction values on BKN form). */
 type CutiSisaSnapshot = { n: string; n1: string; n2: string };
 
+const LS_LAST_UNIT = "hrcube.print.lastUnit";
+const LS_LAST_SORT = "hrcube.print.lastSort";
+
 /** True only for "1. Cuti Tahunan" (not "10…"). */
 function isCutiTahunan(jenis: string): boolean {
-  return jenis.startsWith("1.");
+  return isCutiTahunanJenis(jenis);
+}
+
+function readLs(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeLs(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* ignore quota / private mode */
+  }
 }
 
 type PrintDoc = {
   category: "laporan" | "layanan";
   type: PrintType;
+  /** Catalog key (absen uses absen_global for both global/unit). */
+  catalogKey: PrintType | "absen_global";
   label: string;
   title: string;
   desc: string;
@@ -64,6 +94,7 @@ const DOCUMENTS: PrintDoc[] = [
   {
     category: "laporan",
     type: "absen_global",
+    catalogKey: "absen_global",
     label: "Absensi",
     title: "DAFTAR HADIR / ABSENSI PEGAWAI",
     desc: "Daftar hadir global atau per unit",
@@ -71,6 +102,7 @@ const DOCUMENTS: PrintDoc[] = [
   {
     category: "laporan",
     type: "tanda_terima",
+    catalogKey: "tanda_terima",
     label: "Tanda terima",
     title: "DAFTAR TANDA TERIMA ......................",
     desc: "Lembar tanda terima / serah terima",
@@ -78,13 +110,15 @@ const DOCUMENTS: PrintDoc[] = [
   {
     category: "laporan",
     type: "duk",
-    label: "DUK",
+    catalogKey: "duk",
+    label: "DUK (kepangkatan)",
     title: "DAFTAR URUT KEPANGKATAN (DUK)",
-    desc: "Urutan kepangkatan seluruh pegawai",
+    desc: "Urut gol/pangkat, jabatan, unit — bukan lembar TTD absensi",
   },
   {
     category: "layanan",
     type: "surat_cuti",
+    catalogKey: "surat_cuti",
     label: "Surat cuti",
     title: "SURAT IZIN CUTI PEGAWAI",
     desc: "Form izin cuti per pegawai",
@@ -93,6 +127,7 @@ const DOCUMENTS: PrintDoc[] = [
   {
     category: "layanan",
     type: "model_dk",
+    catalogKey: "model_dk",
     label: "Model DK",
     title:
       "SURAT KETERANGAN UNTUK MENDAPATKAN PEMBAYARAN TUNJANGAN KELUARGA",
@@ -101,9 +136,29 @@ const DOCUMENTS: PrintDoc[] = [
   },
 ];
 
+/** Quick subtitle chips for absensi / tanda terima. */
+const KEGIATAN_TEMPLATES = [
+  { label: "Rapat", value: "KEGIATAN: Rapat ......................................." },
+  {
+    label: "Penyerahan",
+    value: "KEGIATAN: Penyerahan .......................................",
+  },
+  {
+    label: "Diklat",
+    value: "KEGIATAN: Pelatihan / diklat .......................................",
+  },
+  {
+    label: "Kosong",
+    value: "KEGIATAN: .......................................",
+  },
+];
+
 export default function Print() {
   useDocumentTitle("Cetak");
   const { canWrite } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  /** Last applied query string — allow re-entry deep-links while already on /print. */
+  const lastDeepLinkKey = useRef<string>("");
   const [employees, setEmployees] = useState<Employee[]>(
     () => peekAllEmployeesLean() ?? [],
   );
@@ -116,19 +171,29 @@ export default function Print() {
   const [cutiConfirmOpen, setCutiConfirmOpen] = useState(false);
   const [cutiBusy, setCutiBusy] = useState(false);
 
-  // Print Configuration States
+  // Print Configuration States — restore last unit/sort for absensi habit
+  const savedUnit = readLs(LS_LAST_UNIT);
+  const savedSort = readLs(LS_LAST_SORT);
   const [printCategory, setPrintCategory] = useState<"laporan" | "layanan">(
     "laporan",
   );
-  const [printType, setPrintType] = useState<PrintType>("absen_global");
-  const [customTitle, setCustomTitle] = useState(
-    "DAFTAR HADIR / ABSENSI PEGAWAI",
+  const [printType, setPrintType] = useState<PrintType>(() =>
+    savedUnit && savedUnit !== "Semua" ? "absen_bidang" : "absen_global",
+  );
+  const [customTitle, setCustomTitle] = useState(() =>
+    savedUnit && savedUnit !== "Semua"
+      ? `DAFTAR HADIR UNIT KERJA ${savedUnit.toUpperCase()}`
+      : "DAFTAR HADIR / ABSENSI PEGAWAI",
   );
   const [customSubtitle, setCustomSubtitle] = useState(
     "KEGIATAN: .......................................",
   );
-  const [selectedBidang, setSelectedBidang] = useState<string>("Semua");
-  const [sortOption, setSortOption] = useState<SortAction>("default_kelas");
+  const [selectedBidang, setSelectedBidang] = useState<string>(
+    () => savedUnit || "Semua",
+  );
+  const [sortOption, setSortOption] = useState<SortAction>(() =>
+    savedSort === "abjad" ? "abjad" : "default_kelas",
+  );
 
   // Cuti Form Config — defaults intentionally empty so the user must fill them
   // (previously hardcoded "Mekah" / "082120202180" / etc., which risked being
@@ -168,13 +233,37 @@ export default function Print() {
     }
   }, [cutiMulai, cutiAkhir]);
 
+  // Prefill alasan only for sakit/melahirkan when field still empty (don't clobber edits)
   useEffect(() => {
     if (cutiJenis.startsWith("3.")) {
-      setCutiAlasan("Sakit");
+      setCutiAlasan((prev) => (prev.trim() ? prev : "Sakit"));
     } else if (cutiJenis.startsWith("4.")) {
-      setCutiAlasan("Melahirkan");
+      setCutiAlasan((prev) => (prev.trim() ? prev : "Melahirkan"));
     }
   }, [cutiJenis]);
+
+  // New employee → clear leave window so we never print person A's dates on person B
+  const prevCutiEmpRef = useRef<string>("");
+  useEffect(() => {
+    if (!cutiEmployeeId) {
+      prevCutiEmpRef.current = "";
+      return;
+    }
+    if (
+      prevCutiEmpRef.current &&
+      prevCutiEmpRef.current !== cutiEmployeeId
+    ) {
+      setCutiMulai("");
+      setCutiAkhir("");
+      setCutiAlamat("");
+      setCutiSisaPrint(null);
+      // Reset alasan; re-apply default for sakit/melahirkan
+      if (cutiJenis.startsWith("3.")) setCutiAlasan("Sakit");
+      else if (cutiJenis.startsWith("4.")) setCutiAlasan("Melahirkan");
+      else setCutiAlasan("");
+    }
+    prevCutiEmpRef.current = cutiEmployeeId;
+  }, [cutiEmployeeId, cutiJenis]);
 
   // Cleanup print listeners/timers if user leaves the page mid-print flow
   useEffect(() => {
@@ -377,7 +466,8 @@ export default function Print() {
   const filteredEmployees = useMemo(() => {
     return employees.filter((emp) => {
       if (printType === "absen_bidang" && selectedBidang !== "Semua") {
-        return (emp.bidang || "Tidak Ada Bidang") === selectedBidang;
+        const b = (emp.bidang || "Tidak Ada Bidang").trim();
+        return b.toLowerCase() === selectedBidang.trim().toLowerCase();
       }
       return true;
     });
@@ -394,7 +484,7 @@ export default function Print() {
     };
     return [...filteredEmployees].sort((a, b) => {
       if (sortOption === "abjad") {
-        return (a.nama || "").localeCompare(b.nama || "");
+        return (a.nama || "").localeCompare(b.nama || "", "id");
       }
       const statusA = statusOrder[a.status || ""] || 99;
       const statusB = statusOrder[b.status || ""] || 99;
@@ -416,7 +506,7 @@ export default function Print() {
         const golB = getGolonganWeight(b);
         if (golA !== golB) return golB - golA;
       }
-      return (a.nama || "").localeCompare(b.nama || "");
+      return (a.nama || "").localeCompare(b.nama || "", "id");
     });
   }, [filteredEmployees, sortOption, printType, getGolonganWeight]);
 
@@ -425,22 +515,142 @@ export default function Print() {
       ? "absen_global"
       : printType;
 
-  const activeDoc = DOCUMENTS.find((d) => d.type === activeDocKey);
+  const activeDoc = DOCUMENTS.find((d) => d.catalogKey === activeDocKey);
 
-  const selectDocument = useCallback((doc: PrintDoc) => {
+  const selectDocument = useCallback(
+    (doc: PrintDoc) => {
+      setPrintCategory(doc.category);
+      setEmpQuery("");
+      if (doc.type === "absen_global") {
+        const lastRaw = readLs(LS_LAST_UNIT);
+        const lastUnit =
+          lastRaw && lastRaw !== "Semua"
+            ? resolveBidangLabel(lastRaw, uniqueBidang) ||
+              (uniqueBidang.length === 0 ? lastRaw : null)
+            : null;
+        if (lastUnit) {
+          setSelectedBidang(lastUnit);
+          setPrintType("absen_bidang");
+          setCustomTitle(`DAFTAR HADIR UNIT KERJA ${lastUnit.toUpperCase()}`);
+        } else {
+          setSelectedBidang("Semua");
+          setPrintType("absen_global");
+          setCustomTitle(doc.title);
+        }
+        setCustomSubtitle("KEGIATAN: .......................................");
+      } else if (doc.type === "tanda_terima") {
+        setSelectedBidang("Semua");
+        setPrintType(doc.type);
+        setCustomTitle(doc.title);
+        setCustomSubtitle("KEGIATAN: .......................................");
+      } else if (doc.type === "duk") {
+        setSelectedBidang("Semua");
+        setPrintType(doc.type);
+        setCustomTitle(doc.title);
+        setCustomSubtitle(
+          `PER ${new Date().toLocaleDateString("id-ID", {
+            day: "numeric",
+            month: "long",
+            year: "numeric",
+          }).toUpperCase()}`,
+        );
+        setSortOption("default_kelas");
+      } else {
+        setSelectedBidang("Semua");
+        setPrintType(doc.type);
+        setCustomTitle(doc.title);
+      }
+      setMobileStep(2);
+    },
+    [uniqueBidang],
+  );
+
+  // Persist absensi unit + sort for next visit
+  useEffect(() => {
+    if (printType === "absen_global" || printType === "absen_bidang") {
+      writeLs(LS_LAST_UNIT, selectedBidang);
+    }
+  }, [selectedBidang, printType]);
+
+  useEffect(() => {
+    if (printCategory === "laporan") {
+      writeLs(LS_LAST_SORT, sortOption);
+    }
+  }, [sortOption, printCategory]);
+
+  // Deep-link: /print?doc=surat_cuti&id=…  ·  ?doc=absen&bidang=Sekretariat
+  useEffect(() => {
+    if (loading) return;
+    const key = searchParams.toString();
+    if (!key) return;
+    if (key === lastDeepLinkKey.current) return;
+
+    const docType = parseDocParam(searchParams.get("doc"));
+    const id = searchParams.get("id") || searchParams.get("employeeId");
+    const bidangQ = searchParams.get("bidang");
+    if (!docType && !id && !bidangQ) {
+      // Unknown / junk query — consume so URL stays clean
+      lastDeepLinkKey.current = key;
+      setSearchParams({}, { replace: true });
+      return;
+    }
+
+    // Wait for employee list before binding id (avoids partial hydrate).
+    // If load finished and list still empty (org kosong), consume the link.
+    if (id && employees.length === 0) {
+      if (!loading) {
+        lastDeepLinkKey.current = key;
+        setSearchParams({}, { replace: true });
+        notify.warning(
+          "Belum ada data pegawai",
+          "Impor atau tambah pegawai dulu, lalu buka tautan lagi.",
+        );
+      }
+      return;
+    }
+
+    // id without doc → assume layanan cuti (common deep-link from Pegawai)
+    const catalogType: PrintType =
+      docType === "absen_bidang"
+        ? "absen_global"
+        : docType || (id ? "surat_cuti" : "absen_global");
+    const doc =
+      DOCUMENTS.find((d) => d.catalogKey === catalogType || d.type === catalogType) ||
+      DOCUMENTS[0]!;
+
     setPrintCategory(doc.category);
     setEmpQuery("");
-    setSelectedBidang("Semua");
-    if (doc.type === "absen_global") {
-      setPrintType("absen_global");
-      setCustomTitle(doc.title);
+    if (doc.type === "absen_global" || docType === "absen_bidang") {
+      const rawUnit = bidangQ || readLs(LS_LAST_UNIT) || "Semua";
+      const bidangOpts = [
+        ...new Set(employees.map((e) => e.bidang || "Tidak Ada Bidang")),
+      ];
+      const canonical =
+        rawUnit === "Semua" ? null : resolveBidangLabel(rawUnit, bidangOpts);
+      // Unknown unit → semua (don't leave empty absensi filter)
+      const unit =
+        rawUnit === "Semua" ? "Semua" : canonical || "Semua";
+      if (rawUnit !== "Semua" && !canonical && employees.length > 0) {
+        notify.warning(
+          "Unit tidak ditemukan",
+          `“${rawUnit}” tidak ada di data — menampilkan semua unit.`,
+        );
+      }
+      setSelectedBidang(unit);
+      if (unit !== "Semua") {
+        setPrintType("absen_bidang");
+        setCustomTitle(`DAFTAR HADIR UNIT KERJA ${unit.toUpperCase()}`);
+      } else {
+        setPrintType("absen_global");
+        setCustomTitle(doc.title);
+      }
       setCustomSubtitle("KEGIATAN: .......................................");
     } else if (doc.type === "tanda_terima") {
-      setPrintType(doc.type);
+      setPrintType("tanda_terima");
       setCustomTitle(doc.title);
       setCustomSubtitle("KEGIATAN: .......................................");
     } else if (doc.type === "duk") {
-      setPrintType(doc.type);
+      setPrintType("duk");
       setCustomTitle(doc.title);
       setCustomSubtitle(
         `PER ${new Date().toLocaleDateString("id-ID", {
@@ -454,8 +664,49 @@ export default function Print() {
       setPrintType(doc.type);
       setCustomTitle(doc.title);
     }
+
+    if (id) {
+      if (employees.some((e) => e.id === id)) {
+        setCutiEmployeeId(id);
+      } else {
+        setCutiEmployeeId("");
+        notify.warning(
+          "Pegawai tidak di daftar",
+          "Tautan merujuk data yang tidak ada — pilih pegawai manual.",
+        );
+      }
+    }
     setMobileStep(2);
-  }, []);
+
+    lastDeepLinkKey.current = key;
+    // Strip query so refresh doesn't re-apply; keep clean URL
+    setSearchParams({}, { replace: true });
+  }, [loading, employees, searchParams, setSearchParams]);
+
+  // Allow the same deep-link again after we stripped the query (back button / re-click)
+  useEffect(() => {
+    if (!searchParams.toString()) {
+      lastDeepLinkKey.current = "";
+    }
+  }, [searchParams]);
+
+  // Drop / canonicalize remembered unit against master data
+  useEffect(() => {
+    if (loading || uniqueBidang.length === 0) return;
+    if (selectedBidang === "Semua") return;
+    const canonical = resolveBidangLabel(selectedBidang, uniqueBidang);
+    if (!canonical) {
+      setSelectedBidang("Semua");
+      if (printType === "absen_bidang") {
+        setPrintType("absen_global");
+        setCustomTitle("DAFTAR HADIR / ABSENSI PEGAWAI");
+      }
+      writeLs(LS_LAST_UNIT, "Semua");
+    } else if (canonical !== selectedBidang) {
+      setSelectedBidang(canonical);
+      writeLs(LS_LAST_UNIT, canonical);
+    }
+  }, [loading, uniqueBidang, selectedBidang, printType]);
 
   const readiness = useMemo(() => {
     if (loading) {
@@ -513,7 +764,7 @@ export default function Print() {
   const employeeOptions = useMemo(() => {
     const q = empQuery.trim().toLowerCase();
     const list = [...employees].sort((a, b) =>
-      (a.nama || "").localeCompare(b.nama || ""),
+      (a.nama || "").localeCompare(b.nama || "", "id"),
     );
     let filtered = q
       ? list.filter(
@@ -529,7 +780,17 @@ export default function Print() {
         filtered = [selected, ...filtered];
       }
     }
-    return filtered.slice(0, 80);
+    // Cap list but never drop the selected row
+    if (filtered.length <= 80) return filtered;
+    const head = filtered.slice(0, 80);
+    if (
+      cutiEmployeeId &&
+      !head.some((e) => e.id === cutiEmployeeId)
+    ) {
+      const selected = filtered.find((e) => e.id === cutiEmployeeId);
+      if (selected) return [selected, ...head.slice(0, 79)];
+    }
+    return head;
   }, [employees, empQuery, cutiEmployeeId]);
 
   const toProperCase = useCallback((str: string) => {
@@ -787,21 +1048,82 @@ export default function Print() {
   const fieldLabel =
     "block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5";
 
+  const selectedEmpName = cutiEmployeeId
+    ? employees.find((e) => e.id === cutiEmployeeId)?.nama || "Pegawai"
+    : null;
+
   const contextLine = [
     activeDoc?.label || "Dokumen",
     printCategory === "laporan"
       ? `${sortedEmployees.length} pegawai`
-      : cutiEmployeeId
-        ? employees.find((e) => e.id === cutiEmployeeId)?.nama || "Pegawai"
-        : "Belum pilih pegawai",
+      : selectedEmpName || "Belum pilih pegawai",
     printCategory === "laporan"
       ? sortOption === "abjad"
         ? "A–Z"
-        : "hierarki"
+        : printType === "duk"
+          ? "urut kepangkatan"
+          : "hierarki"
+      : null,
+    printType === "absen_bidang" && selectedBidang !== "Semua"
+      ? selectedBidang
       : null,
   ]
     .filter(Boolean)
     .join(" · ");
+
+  /** Operator-facing summary before print (options + preview chrome). */
+  const printSummaryLines = useMemo(() => {
+    const lines: string[] = [];
+    lines.push(activeDoc?.label || "Dokumen");
+    if (printCategory === "laporan") {
+      lines.push(`${sortedEmployees.length} pegawai`);
+      if (printType === "absen_bidang" && selectedBidang !== "Semua") {
+        lines.push(`Unit: ${selectedBidang}`);
+      } else if (printType === "absen_global") {
+        lines.push("Semua unit");
+      }
+      lines.push(
+        sortOption === "abjad"
+          ? "Urutan A–Z"
+          : printType === "duk"
+            ? "Urut gol → kelas → nama"
+            : "Urut status → kelas → nama",
+      );
+    } else {
+      lines.push(selectedEmpName || "Belum pilih pegawai");
+      if (printType === "surat_cuti") {
+        lines.push(cutiJenis.replace(/^\d+\.\s*/, ""));
+        if (cutiMulai && cutiAkhir) {
+          lines.push(`${cutiLamaHari} hari kerja`);
+        }
+        if (isCutiTahunan(cutiJenis)) {
+          lines.push(
+            canWrite
+              ? "Admin: potong sisa cuti saat konfirmasi"
+              : "Viewer: cetak saja (saldo tidak potong)",
+          );
+        }
+      }
+    }
+    if (!settings?.logoBase64) {
+      lines.push("Logo dinas belum diisi (Pengaturan)");
+    }
+    return lines;
+  }, [
+    activeDoc?.label,
+    printCategory,
+    sortedEmployees.length,
+    printType,
+    selectedBidang,
+    sortOption,
+    selectedEmpName,
+    cutiJenis,
+    cutiMulai,
+    cutiAkhir,
+    cutiLamaHari,
+    canWrite,
+    settings?.logoBase64,
+  ]);
 
   // Soft load: keep studio chrome visible while data streams (no full-page blank)
 
@@ -820,9 +1142,9 @@ export default function Print() {
           </p>
           <ul className="space-y-1">
             {DOCUMENTS.filter((d) => d.category === cat).map((doc) => {
-              const active = activeDocKey === doc.type;
+              const active = activeDocKey === doc.catalogKey;
               return (
-                <li key={doc.type}>
+                <li key={doc.catalogKey}>
                   <button
                     type="button"
                     onClick={() => selectDocument(doc)}
@@ -865,6 +1187,21 @@ export default function Print() {
         </p>
       </div>
 
+      {/* Ringkasan sebelum cetak */}
+      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+          Ringkasan cetak
+        </p>
+        <ul className="text-xs text-slate-700 space-y-0.5">
+          {printSummaryLines.map((line, i) => (
+            <li key={`${i}-${line}`} className="flex gap-1.5">
+              <span className="text-slate-400 shrink-0">·</span>
+              <span>{line}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+
       {(printType === "absen_global" || printType === "absen_bidang") && (
         <div>
           <label className={fieldLabel}>Unit kerja</label>
@@ -892,6 +1229,19 @@ export default function Print() {
               </option>
             ))}
           </select>
+          {selectedBidang !== "Semua" && (
+            <p className="text-[11px] text-slate-400 mt-1">
+              Unit terakhir diingat untuk kunjungan berikutnya.
+            </p>
+          )}
+        </div>
+      )}
+
+      {printType === "duk" && (
+        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-600 leading-snug">
+          <strong className="text-slate-800">DUK operasional</strong> — kolom
+          gol/pangkat, TMT gol, jabatan, kelas, unit, status. Diurutkan
+          kepangkatan (bukan lembar absensi TTD).
         </div>
       )}
 
@@ -906,7 +1256,7 @@ export default function Print() {
             >
               <option value="default_kelas">
                 {printType === "duk"
-                  ? "Urut kepangkatan (gol, status)"
+                  ? "Urut kepangkatan (gol → kelas → nama)"
                   : "Hierarki (status, kelas)"}
               </option>
               <option value="abjad">Alfabetis (A–Z)</option>
@@ -929,12 +1279,50 @@ export default function Print() {
               value={customSubtitle}
               onChange={(e) => setCustomSubtitle(e.target.value)}
             />
+            {(printType === "absen_global" ||
+              printType === "absen_bidang" ||
+              printType === "tanda_terima") && (
+              <div className="flex flex-wrap gap-1.5 mt-2" role="group" aria-label="Template kegiatan">
+                {KEGIATAN_TEMPLATES.map((t) => (
+                  <button
+                    key={t.label}
+                    type="button"
+                    className={cn(
+                      chip(customSubtitle === t.value),
+                      "px-2.5 py-1 text-[11px]",
+                    )}
+                    onClick={() => setCustomSubtitle(t.value)}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </>
       )}
 
       {printCategory === "layanan" && (
         <>
+          <div
+            className={cn(
+              "flex items-center gap-2 rounded-lg border px-3 py-2 text-[11px] font-semibold",
+              canWrite
+                ? "border-slate-200 bg-slate-50 text-slate-700"
+                : "border-sky-100 bg-sky-50 text-sky-900",
+            )}
+          >
+            {canWrite ? (
+              <Shield className="w-3.5 h-3.5 shrink-0" />
+            ) : (
+              <Eye className="w-3.5 h-3.5 shrink-0" />
+            )}
+            <span>
+              {canWrite
+                ? "Mode admin — cuti tahunan dapat memotong sisa cuti"
+                : "Mode baca (viewer) — cetak tidak mengubah sisa cuti"}
+            </span>
+          </div>
           <div>
             <label className={fieldLabel}>Pegawai</label>
             <div className="relative mb-2">
@@ -996,10 +1384,30 @@ export default function Print() {
           {printType === "surat_cuti" && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {isCutiTahunan(cutiJenis) && (
-                <div className="sm:col-span-2 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-[11px] text-amber-900 leading-snug">
-                  {canWrite
-                    ? "Cetak cuti tahunan akan memotong sisa cuti (N-2 → N-1 → N) setelah konfirmasi."
-                    : "Mode baca: cetak tidak memotong sisa cuti. Minta admin untuk potong saldo."}
+                <div className="sm:col-span-2 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-[11px] text-amber-900 leading-snug space-y-1">
+                  {canWrite ? (
+                    <>
+                      <p className="font-semibold">Cuti tahunan · potong saldo</p>
+                      <p>
+                        Saat Anda konfirmasi, sisa cuti dipotong dulu (N-2 →
+                        N-1 → N), lalu dialog cetak dibuka.{" "}
+                        <strong>
+                          Membatalkan dialog cetak browser tidak mengembalikan
+                          sisa cuti
+                        </strong>
+                        — perbaiki saldo di Pegawai bila perlu.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="font-semibold">Mode baca · tanpa potong</p>
+                      <p>
+                        Anda bisa mencetak formulir, tetapi sisa cuti tidak
+                        berubah. Minta admin untuk mencetak bila saldo harus
+                        dipotong.
+                      </p>
+                    </>
+                  )}
                 </div>
               )}
               {cutiEmployeeId && !empDetailLoading && !empDetailError && (
@@ -1253,6 +1661,9 @@ export default function Print() {
               </h2>
               <p className="text-[11px] text-slate-500 mt-0.5 truncate">
                 A4 · yang tampil = yang dicetak · {contextLine}
+              </p>
+              <p className="text-[10px] text-slate-400 mt-0.5 hidden sm:block truncate">
+                {printSummaryLines.join(" · ")}
               </p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
@@ -1538,6 +1949,9 @@ export default function Print() {
                     <th className="border border-black px-1 py-1 w-12 text-center font-bold">
                       KELAS
                     </th>
+                    <th className="border border-black px-1 py-1 w-16 text-center font-bold">
+                      MASA KERJA
+                    </th>
                     <th className="border border-black px-1 py-1 w-24 text-center font-bold">
                       UNIT KERJA
                     </th>
@@ -1574,6 +1988,9 @@ export default function Print() {
                       <td className="border border-black px-1 py-0.5 text-center align-top">
                         {emp.kelasJabatan || "-"}
                       </td>
+                      <td className="border border-black px-1 py-0.5 text-center align-top text-[8pt]">
+                        {emp.masaKerja || "-"}
+                      </td>
                       <td className="border border-black px-1 py-0.5 align-top">
                         {emp.bidang || "-"}
                       </td>
@@ -1585,7 +2002,7 @@ export default function Print() {
                   {sortedEmployees.length === 0 && (
                     <tr>
                       <td
-                        colSpan={9}
+                        colSpan={10}
                         className="border border-black px-4 py-6 text-center italic text-gray-500"
                       >
                         Tidak ada data pegawai untuk DUK.
@@ -2444,9 +2861,26 @@ export default function Print() {
         onClose={() => !cutiBusy && setCutiConfirmOpen(false)}
         loading={cutiBusy}
         variant="danger"
-        title="Potong sisa cuti & cetak?"
-        description={`Surat cuti tahunan akan memotong ${cutiLamaHari} hari kerja dari saldo cuti (N-2 → N-1 → N). Lanjutkan?`}
+        title="Potong sisa cuti lalu cetak?"
+        description={
+          <div className="space-y-2">
+            <p>
+              <strong>{selectedEmpName || "Pegawai"}</strong> ·{" "}
+              {cutiLamaHari} hari kerja akan dipotong dari sisa cuti (urutan N-2
+              → N-1 → N).
+            </p>
+            <p className="text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 text-xs">
+              Saldo dipotong <strong>saat Anda menekan konfirmasi</strong>,
+              sebelum dialog cetak browser muncul. Membatalkan cetak di browser
+              tidak mengembalikan sisa cuti.
+            </p>
+            <p className="text-xs text-slate-500">
+              Formulir menampilkan sisa cuti sebelum potong (sesuai format BKN).
+            </p>
+          </div>
+        }
         confirmLabel="Ya, potong & cetak"
+        cancelLabel="Batal (saldo aman)"
         onConfirm={() => void runCutiDeductionAndPrint()}
       />
 

@@ -1,3 +1,4 @@
+import type React from "react";
 import { Modal } from "./Modal";
 import { btnDanger, btnPrimary, btnSecondary } from "../lib/ui";
 import { Loader2 } from "lucide-react";
@@ -7,7 +8,7 @@ interface ConfirmDialogProps {
   onClose: () => void;
   onConfirm: () => void | Promise<void>;
   title: string;
-  description: string;
+  description: React.ReactNode;
   confirmLabel?: string;
   cancelLabel?: string;
   /** destructive = red confirm button */
@@ -28,7 +29,13 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
   return (
     <Modal isOpen={open} onClose={loading ? () => {} : onClose} title={title} size="md">
-      <p className="text-sm text-slate-600 leading-relaxed mb-6">{description}</p>
+      <div className="text-sm text-slate-600 leading-relaxed mb-6 space-y-2">
+        {typeof description === "string" ? (
+          <p className="whitespace-pre-line">{description}</p>
+        ) : (
+          description
+        )}
+      </div>
       <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end">
         <button
           type="button"

@@ -6,14 +6,18 @@
  * Invalidated on employee write paths.
  */
 import { prisma } from "./db.js";
+import { DEFAULT_KAMUS } from "../constants.js";
 import {
+  buildDataHealth,
   buildKgbList,
   buildKpList,
   buildPensiunList,
+  EMPTY_DATA_HEALTH,
   normalizeBidangLabel,
   type DashboardStats,
 } from "./dashboardStats.js";
 import { fetchAllTimelineRows } from "./statsTimeline.js";
+import { lookupKamus } from "./kamus.js";
 
 export type EmployeeStatsPayload = DashboardStats & { truncated?: boolean };
 
@@ -28,10 +32,17 @@ export function invalidateEmployeeStatsCache(): void {
 /**
  * SQL groupBy for counts + cursor scan for KP/KGB/pensiun timelines.
  * Callers apply auth / rate-limit / Cache-Control headers.
+ * @param force skip in-process TTL (e.g. Ringkasan “Muat ulang”)
  */
-export async function buildEmployeeStatsPayload(): Promise<EmployeeStatsPayload> {
+export async function buildEmployeeStatsPayload(opts?: {
+  force?: boolean;
+}): Promise<EmployeeStatsPayload> {
   const now = Date.now();
-  if (statsCache && now - statsCache.at < STATS_TTL_MS) {
+  if (
+    !opts?.force &&
+    statsCache &&
+    now - statsCache.at < STATS_TTL_MS
+  ) {
     return statsCache.data;
   }
 
@@ -98,6 +109,21 @@ async function computeEmployeeStats(): Promise<EmployeeStatsPayload> {
     .sort((a, b) => b.value - a.value);
 
   const rows = timeline.rows;
+  let health = EMPTY_DATA_HEALTH;
+  try {
+    // Avoid importing queries.ts (circular: queries → invalidate stats)
+    const settingsRow = await prisma.settings.findUnique({
+      where: { id: "app" },
+    });
+    const data = (settingsRow?.data ?? {}) as { jabatanKamusCsv?: string };
+    const kamusCsv = data.jabatanKamusCsv || DEFAULT_KAMUS;
+    health = buildDataHealth(rows, (jabatan) => {
+      const { kelas, beban } = lookupKamus(jabatan, kamusCsv);
+      return Boolean(kelas || beban);
+    });
+  } catch {
+    /* kamus optional for stats — keep zeros */
+  }
 
   return {
     totals,
@@ -105,6 +131,7 @@ async function computeEmployeeStats(): Promise<EmployeeStatsPayload> {
     kgb: buildKgbList(rows as never),
     kp: buildKpList(rows as never),
     pensiun: buildPensiunList(rows as never),
+    health,
     generatedAt: new Date().toISOString(),
     truncated: timeline.truncated,
   };

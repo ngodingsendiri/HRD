@@ -12,7 +12,11 @@ import {
   type FamilyMemberT,
 } from "./schemas.js";
 import { DEFAULT_KAMUS } from "../constants.js";
-import { calculateMasaKerja, checkKGBandKP } from "./employeeUtils.js";
+import {
+  calculateBUP,
+  calculateMasaKerja,
+  checkKGBandKP,
+} from "./employeeUtils.js";
 import { invalidateEmployeeStatsCache } from "./buildEmployeeStats.js";
 import { invalidateKamusLookupCache, lookupKamus } from "./kamus.js";
 import {
@@ -190,6 +194,13 @@ export function invalidateKamusCache(): void {
 
 // ============ Employees ============
 
+export type EmployeeAlertFilter =
+  | "kp"
+  | "kgb"
+  | "any"
+  | "pensiun"
+  | "nonip";
+
 export interface GetEmployeesOptions {
   q?: string;
   limit?: number;
@@ -200,8 +211,10 @@ export interface GetEmployeesOptions {
   kamusCsv?: string;
   /** Exact status match e.g. PNS */
   status?: string;
+  /** Unit kerja (bidang) exact match, case-insensitive via filter pass */
+  bidang?: string;
   /** Server-side alert filter (uses date columns). */
-  alert?: "kp" | "kgb" | "any";
+  alert?: EmployeeAlertFilter;
 }
 
 export interface EmployeesPage {
@@ -217,6 +230,7 @@ const MAX_LIST_LIMIT = 500;
 function buildEmployeeWhere(opts?: GetEmployeesOptions) {
   const q = opts?.q?.trim();
   const status = opts?.status?.trim();
+  const bidang = opts?.bidang?.trim();
   const and: object[] = [];
   if (q) {
     and.push({
@@ -232,22 +246,62 @@ function buildEmployeeWhere(opts?: GetEmployeesOptions) {
   if (status && status !== "all" && VALID_STATUS.has(status)) {
     and.push({ status });
   }
+  if (bidang && bidang !== "all") {
+    and.push({ bidang: { equals: bidang, mode: "insensitive" as const } });
+  }
   if (!and.length) return undefined;
   return and.length === 1 ? and[0] : { AND: and };
 }
 
-function matchesAlert(
-  emp: {
-    tmtGolonganRuang?: string | null;
-    tanggalBerkalaTerakhir?: string | null;
-    tmtKerja?: string | null;
-    status?: string | null;
-    gol?: string | null;
-    pangkatGolongan?: string | null;
-    tmtKp?: string | null;
-  },
-  alert: "kp" | "kgb" | "any",
-): boolean {
+function daysUntilIso(iso: string, today: Date): number | null {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  const t = new Date(today);
+  t.setHours(0, 0, 0, 0);
+  d.setHours(0, 0, 0, 0);
+  return Math.ceil((d.getTime() - t.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+type AlertCandidate = {
+  id: string;
+  tmtGolonganRuang?: string | null;
+  tanggalBerkalaTerakhir?: string | null;
+  tmtKerja?: string | null;
+  status?: string | null;
+  gol?: string | null;
+  pangkatGolongan?: string | null;
+  tmtKp?: string | null;
+  tanggalLahir?: string | null;
+  jabatan?: string | null;
+  bupTanggal?: string | null;
+  nip?: string | null;
+  nama?: string | null;
+};
+
+/** Pensiun window matches Dashboard mendesak (overdue or ≤365 hari). */
+function pensiunDaysLeft(emp: AlertCandidate): number | null {
+  const bup = calculateBUP(
+    emp.tanggalLahir || "",
+    emp.jabatan || "",
+    emp.bupTanggal,
+  );
+  if (!bup) return null;
+  return daysUntilIso(bup, new Date());
+}
+
+function isPensiunUrgent(emp: AlertCandidate): boolean {
+  const diff = pensiunDaysLeft(emp);
+  if (diff == null) return false;
+  return diff < 0 || diff <= 365;
+}
+
+function matchesAlert(emp: AlertCandidate, alert: EmployeeAlertFilter): boolean {
+  if (alert === "nonip") {
+    return !(emp.nip || "").replace(/\D/g, "");
+  }
+  if (alert === "pensiun") {
+    return isPensiunUrgent(emp);
+  }
   const { kp, kgb, clear } = checkKGBandKP(
     emp.tmtGolonganRuang,
     emp.tanggalBerkalaTerakhir,
@@ -259,10 +313,51 @@ function matchesAlert(
       tmtKp: emp.tmtKp,
     },
   );
-  if (alert === "any") return !clear;
+  // any = same universe as Dashboard "mendesak": KP/KGB H-90 + pensiun ≤365
+  if (alert === "any") return !clear || isPensiunUrgent(emp);
   if (alert === "kp") return kp.due || kp.overdue;
   if (alert === "kgb") return kgb.due || kgb.overdue;
   return true;
+}
+
+/** Lower score = more urgent (for alert list sort). */
+function alertUrgencyScore(emp: AlertCandidate, alert: EmployeeAlertFilter): number {
+  const FAR = 999_999;
+  if (alert === "nonip") return 0;
+  if (alert === "pensiun") {
+    return pensiunDaysLeft(emp) ?? FAR;
+  }
+  const { kp, kgb } = checkKGBandKP(
+    emp.tmtGolonganRuang,
+    emp.tanggalBerkalaTerakhir,
+    {
+      tmtKerja: emp.tmtKerja,
+      status: emp.status,
+      gol: emp.gol,
+      pangkatGolongan: emp.pangkatGolongan,
+      tmtKp: emp.tmtKp,
+    },
+  );
+  if (alert === "kp") return kp.daysLeft ?? FAR;
+  if (alert === "kgb") return kgb.daysLeft ?? FAR;
+  // any — earliest of KP / KGB / pensiun signals
+  const scores: number[] = [];
+  if (kp.due || kp.overdue) scores.push(kp.daysLeft ?? FAR);
+  if (kgb.due || kgb.overdue) scores.push(kgb.daysLeft ?? FAR);
+  if (isPensiunUrgent(emp)) scores.push(pensiunDaysLeft(emp) ?? FAR);
+  return scores.length ? Math.min(...scores) : FAR;
+}
+
+/** Distinct unit names for filter dropdown. */
+export async function getEmployeeBidangOptions(): Promise<string[]> {
+  const rows = await prisma.employee.findMany({
+    select: { bidang: true },
+    distinct: ["bidang"],
+    orderBy: { bidang: "asc" },
+  });
+  return rows
+    .map((r) => String(r.bidang || "").trim())
+    .filter(Boolean);
 }
 
 export async function getEmployeesPage(opts?: GetEmployeesOptions): Promise<EmployeesPage> {
@@ -279,6 +374,8 @@ export async function getEmployeesPage(opts?: GetEmployeesOptions): Promise<Empl
       where: where as never,
       select: {
         id: true,
+        nip: true,
+        nama: true,
         tmtGolonganRuang: true,
         tanggalBerkalaTerakhir: true,
         tmtKerja: true,
@@ -286,12 +383,22 @@ export async function getEmployeesPage(opts?: GetEmployeesOptions): Promise<Empl
         gol: true,
         pangkatGolongan: true,
         tmtKp: true,
+        tanggalLahir: true,
+        jabatan: true,
+        bupTanggal: true,
       },
       orderBy: { nama: "asc" },
       take: 5000,
     });
+    // Match then sort by urgency (most urgent first), nama as tiebreaker
     const matchedIds = candidates
       .filter((c) => matchesAlert(c, alert))
+      .sort((a, b) => {
+        const sa = alertUrgencyScore(a, alert);
+        const sb = alertUrgencyScore(b, alert);
+        if (sa !== sb) return sa - sb;
+        return String(a.nama || "").localeCompare(String(b.nama || ""), "id");
+      })
       .map((c) => c.id);
     const total = matchedIds.length;
     const pageIds = matchedIds.slice(offset, offset + limit);

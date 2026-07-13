@@ -21,6 +21,14 @@ export type TimelineItem = {
   tanggalLahir?: string;
 };
 
+/** Master-data quality counters for Ringkasan “kesehatan data”. */
+export type DataHealth = {
+  withoutNip: number;
+  withoutTmtGol: number;
+  jabatanOffKamus: number;
+  withoutHp: number;
+};
+
 export type DashboardStats = {
   totals: {
     total: number;
@@ -35,7 +43,15 @@ export type DashboardStats = {
   kgb: TimelineItem[];
   kp: TimelineItem[];
   pensiun: TimelineItem[];
+  health: DataHealth;
   generatedAt: string;
+};
+
+export const EMPTY_DATA_HEALTH: DataHealth = {
+  withoutNip: 0,
+  withoutTmtGol: 0,
+  jabatanOffKamus: 0,
+  withoutHp: 0,
 };
 
 function toIso(d: Date): string {
@@ -200,6 +216,41 @@ export function buildPensiunList(
   }
 
   return list.sort((a, b) => a.nextDate.localeCompare(b.nextDate));
+}
+
+/**
+ * Count incomplete / risky master-data rows for Ringkasan.
+ * kamusLookup: (jabatan) => true if found in kamus.
+ */
+export function buildDataHealth(
+  rows: {
+    nip?: string | null;
+    tmtGolonganRuang?: string | null;
+    jabatan?: string | null;
+    nomorHp?: string | null;
+    status?: string | null;
+  }[],
+  kamusLookup: (jabatan: string) => boolean,
+): DataHealth {
+  let withoutNip = 0;
+  let withoutTmtGol = 0;
+  let jabatanOffKamus = 0;
+  let withoutHp = 0;
+  for (const r of rows) {
+    if (!(r.nip || "").replace(/\D/g, "")) withoutNip++;
+    // TMT gol mainly for ASN with rank track
+    const st = (r.status || "").toUpperCase();
+    if (
+      (st === "PNS" || st === "CPNS" || st === "PPPK" || st === "PPPKPW") &&
+      !(r.tmtGolonganRuang || "").trim()
+    ) {
+      withoutTmtGol++;
+    }
+    const jab = (r.jabatan || "").trim();
+    if (jab && !kamusLookup(jab)) jabatanOffKamus++;
+    if (!(r.nomorHp || "").trim()) withoutHp++;
+  }
+  return { withoutNip, withoutTmtGol, jabatanOffKamus, withoutHp };
 }
 
 export function formatRelativeTime(diffDays: number): string {
