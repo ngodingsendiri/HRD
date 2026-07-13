@@ -3,10 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import Layout from "./components/Layout";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { useEffect, useState, lazy, Suspense } from "react";
+import { useEffect, useState, lazy, Suspense, type ReactNode } from "react";
 import { LogIn, Loader2 } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { motion } from "motion/react";
@@ -27,6 +27,55 @@ function RouteFallback() {
     </div>
   );
 }
+
+function LazyPage({ children }: { children: ReactNode }) {
+  return <Suspense fallback={<RouteFallback />}>{children}</Suspense>;
+}
+
+/**
+ * Data router required for useBlocker (Settings unsaved-changes guard).
+ * BrowserRouter does not support useBlocker — see React Router "picking a router".
+ */
+const appRouter = createBrowserRouter([
+  {
+    path: "/",
+    element: <Layout />,
+    children: [
+      {
+        index: true,
+        element: (
+          <LazyPage>
+            <Dashboard />
+          </LazyPage>
+        ),
+      },
+      {
+        path: "employees",
+        element: (
+          <LazyPage>
+            <Employees />
+          </LazyPage>
+        ),
+      },
+      {
+        path: "print",
+        element: (
+          <LazyPage>
+            <Print />
+          </LazyPage>
+        ),
+      },
+      {
+        path: "settings",
+        element: (
+          <LazyPage>
+            <Settings />
+          </LazyPage>
+        ),
+      },
+    ],
+  },
+]);
 
 export default function App() {
   const { user, loading, setUser } = useAuth();
@@ -209,44 +258,7 @@ export default function App() {
   return (
     <ErrorBoundary>
       <Toaster position="top-right" richColors closeButton />
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Layout />}>
-            <Route
-              index
-              element={
-                <Suspense fallback={<RouteFallback />}>
-                  <Dashboard />
-                </Suspense>
-              }
-            />
-            <Route
-              path="employees"
-              element={
-                <Suspense fallback={<RouteFallback />}>
-                  <Employees />
-                </Suspense>
-              }
-            />
-            <Route
-              path="print"
-              element={
-                <Suspense fallback={<RouteFallback />}>
-                  <Print />
-                </Suspense>
-              }
-            />
-            <Route
-              path="settings"
-              element={
-                <Suspense fallback={<RouteFallback />}>
-                  <Settings />
-                </Suspense>
-              }
-            />
-          </Route>
-        </Routes>
-      </BrowserRouter>
+      <RouterProvider router={appRouter} />
     </ErrorBoundary>
   );
 }
