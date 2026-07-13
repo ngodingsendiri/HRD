@@ -1,4 +1,10 @@
-import { differenceInMonths, differenceInYears, addMonths, addYears, startOfMonth } from "date-fns";
+import {
+  differenceInMonths,
+  differenceInYears,
+  addMonths,
+  addYears,
+  startOfMonth,
+} from "date-fns";
 
 export interface NIPExtractionResult {
   tanggalLahir: string | null;
@@ -6,14 +12,17 @@ export interface NIPExtractionResult {
   jk: "L" | "P" | null;
 }
 
-export function validateAndExtractNIP(nip: string, status: string): NIPExtractionResult {
+export function validateAndExtractNIP(
+  nip: string,
+  status: string,
+): NIPExtractionResult {
   const result: NIPExtractionResult = {
     tanggalLahir: null,
     tmtKerja: null,
     jk: null,
   };
 
-  const cleanNip = nip.replace(/\D/g, '');
+  const cleanNip = nip.replace(/\D/g, "");
   if (cleanNip.length !== 18) {
     return result;
   }
@@ -51,43 +60,49 @@ export function validateAndExtractNIP(nip: string, status: string): NIPExtractio
 
   // 3. Ekstrak JK (Digit 15)
   const jkCode = cleanNip.charAt(14);
-  if (jkCode === '1') {
+  if (jkCode === "1") {
     result.jk = "L";
-  } else if (jkCode === '2') {
+  } else if (jkCode === "2") {
     result.jk = "P";
   }
 
   return result;
 }
 
-export function calculateBUP(tanggalLahir: string, jabatan: string): string | null {
+/** BUP years from jabatan keywords (domain rule — change only with Umpeg + tests). */
+export function getBupYears(jabatan: string): number {
+  const jabatanLower = (jabatan || "").toLowerCase();
+  if (jabatanLower.includes("utama")) return 65;
+  if (
+    jabatanLower.includes("madya") ||
+    jabatanLower.includes("eselon ii") ||
+    jabatanLower.includes("kepala dinas") ||
+    jabatanLower.includes("kepala badan")
+  ) {
+    return 60;
+  }
+  return 58;
+}
+
+/**
+ * TMT pensiun: awal bulan setelah ulang tahun BUP (YYYY-MM-DD).
+ * Shared by form, export, and dashboard timeline.
+ */
+export function calculateBUP(
+  tanggalLahir: string,
+  jabatan: string,
+): string | null {
   if (!tanggalLahir) return null;
-  
+
   const birthDate = new Date(tanggalLahir);
   if (isNaN(birthDate.getTime())) return null;
 
-  const jabatanLower = (jabatan || "").toLowerCase();
-  
-  let bupYears = 58;
-
-  // Cek kata kunci untuk BUP 60 atau 65
-  if (
-    jabatanLower.includes("madya") || 
-    jabatanLower.includes("eselon ii") || 
-    jabatanLower.includes("kepala dinas") || 
-    jabatanLower.includes("kepala badan")
-  ) {
-    bupYears = 60;
-  } else if (jabatanLower.includes("utama")) {
-    bupYears = 65;
-  }
-  
-  // TMT Pensiun adalah awal bulan setelah ulang tahun BUP
+  const bupYears = getBupYears(jabatan);
   const pensiunDate = addYears(birthDate, bupYears);
   const tmtPensiun = addMonths(startOfMonth(pensiunDate), 1);
-  
-  const pad = (num: number) => num.toString().padStart(2, '0');
-  
+
+  const pad = (num: number) => num.toString().padStart(2, "0");
+
   return `${tmtPensiun.getFullYear()}-${pad(tmtPensiun.getMonth() + 1)}-${pad(tmtPensiun.getDate())}`;
 }
 
@@ -98,13 +113,13 @@ export function calculateMasaKerja(startDate: string): string | null {
   if (isNaN(start.getTime())) return null;
 
   const now = new Date();
-  
+
   if (start > now) return "0 Tahun 0 Bulan";
 
-  let years = differenceInYears(now, start);
+  const years = differenceInYears(now, start);
   const dateAfterYears = addYears(start, years);
-  let months = differenceInMonths(now, dateAfterYears);
-  
+  const months = differenceInMonths(now, dateAfterYears);
+
   return `${years} Tahun ${months} Bulan`;
 }
 
@@ -129,46 +144,133 @@ export interface KPStatusResult {
   clear: boolean;
 }
 
+export type KgbKpContext = {
+  tmtKerja?: string | null;
+  status?: string | null;
+  gol?: string | null;
+  pangkatGolongan?: string | null;
+};
+
 const WARNING_DAYS = 90; // H-90 dianggap "mendekati"
 
-function buildStatus(
-  baseDate: string | null | undefined,
-  cycleYears: number,
-): KPStatus {
-  const empty: KPStatus = {
-    overdue: false,
-    due: false,
-    daysLeft: null,
-    targetDate: null,
-  };
-  if (!baseDate) return empty;
+const EMPTY_STATUS: KPStatus = {
+  overdue: false,
+  due: false,
+  daysLeft: null,
+  targetDate: null,
+};
 
-  const start = new Date(baseDate);
-  if (isNaN(start.getTime())) return empty;
-
-  const target = addYears(start, cycleYears);
-  const now = new Date();
-  const diffDays = Math.floor(
-    (target.getTime() - now.getTime()) / (1000 * 3600 * 24),
-  );
-
+function toIsoDate(d: Date): string {
   const pad = (num: number) => num.toString().padStart(2, "0");
-  const targetStr = `${target.getFullYear()}-${pad(target.getMonth() + 1)}-${pad(target.getDate())}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function buildStatusFromTarget(target: Date, today: Date = new Date()): KPStatus {
+  const startOfToday = new Date(today);
+  startOfToday.setHours(0, 0, 0, 0);
+  const targetDay = new Date(target);
+  targetDay.setHours(0, 0, 0, 0);
+
+  const diffDays = Math.floor(
+    (targetDay.getTime() - startOfToday.getTime()) / (1000 * 3600 * 24),
+  );
 
   return {
     overdue: diffDays < 0,
     due: diffDays >= 0 && diffDays <= WARNING_DAYS,
     daysLeft: diffDays,
-    targetDate: targetStr,
+    targetDate: toIsoDate(targetDay),
   };
 }
 
+function buildStatus(
+  baseDate: string | null | undefined,
+  cycleYears: number,
+): KPStatus {
+  if (!baseDate) return { ...EMPTY_STATUS };
+
+  const start = new Date(baseDate);
+  if (isNaN(start.getTime())) return { ...EMPTY_STATUS };
+
+  const target = addYears(start, cycleYears);
+  return buildStatusFromTarget(target);
+}
+
+/**
+ * Resolve KGB baseline + cycle years.
+ * Same rules as dashboard: berkala last → +2y; else first cycle from TMT
+ * (PNS II/A or PPPK V first cycle +1y, else +2y).
+ */
+export function resolveKgbCycle(input: {
+  tanggalBerkalaTerakhir?: string | null;
+  tmtKerja?: string | null;
+  tmtGolonganRuang?: string | null;
+  status?: string | null;
+  gol?: string | null;
+  pangkatGolongan?: string | null;
+}): { baseDate: string | null; cycleYears: number; isFirst: boolean } {
+  if (input.tanggalBerkalaTerakhir) {
+    const d = new Date(input.tanggalBerkalaTerakhir);
+    if (!isNaN(d.getTime())) {
+      return {
+        baseDate: input.tanggalBerkalaTerakhir,
+        cycleYears: 2,
+        isFirst: false,
+      };
+    }
+  }
+
+  const raw = input.tmtKerja || input.tmtGolonganRuang || null;
+  if (!raw) return { baseDate: null, cycleYears: 2, isFirst: true };
+
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return { baseDate: null, cycleYears: 2, isFirst: true };
+
+  const status = input.status || "";
+  const golToken = normalizeGolToken(input.gol || input.pangkatGolongan || "");
+
+  // Exact grade only — never use includes("II/A") (matches "III/A" wrongly)
+  const isPnsIIa =
+    status === "PNS" && (golToken === "II/A" || golToken === "IIA");
+  const isPppk5 =
+    status === "PPPK" &&
+    (golToken === "V" || golToken === "5");
+
+  return {
+    baseDate: raw,
+    cycleYears: isPnsIIa || isPppk5 ? 1 : 2,
+    isFirst: true,
+  };
+}
+
+/** Normalize golongan for exact compare (II.A / II-A / II/A → II/A). */
+function normalizeGolToken(raw: string): string {
+  return raw
+    .toUpperCase()
+    .replace(/\s/g, "")
+    .replace(/[.\-]/g, "/");
+}
+
+/**
+ * KP/KGB warnings for list badges, filters, and export.
+ * Optional context aligns KGB with dashboard (fallback TMT + first-cycle rules).
+ */
 export function checkKGBandKP(
   tmtGolonganRuang: string | null | undefined,
   tanggalBerkalaTerakhir: string | null | undefined,
+  ctx?: KgbKpContext,
 ): KPStatusResult {
   const kp = buildStatus(tmtGolonganRuang, 4);
-  const kgb = buildStatus(tanggalBerkalaTerakhir, 2);
+
+  const { baseDate, cycleYears } = resolveKgbCycle({
+    tanggalBerkalaTerakhir,
+    tmtKerja: ctx?.tmtKerja,
+    tmtGolonganRuang,
+    status: ctx?.status,
+    gol: ctx?.gol,
+    pangkatGolongan: ctx?.pangkatGolongan,
+  });
+  const kgb = buildStatus(baseDate, cycleYears);
 
   const warningKP = kp.due || kp.overdue;
   const warningKGB = kgb.due || kgb.overdue;

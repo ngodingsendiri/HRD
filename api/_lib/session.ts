@@ -31,7 +31,9 @@ export {
  *   - requireAdmin: write access (ADMIN role or ADMIN_EMAILS)
  */
 
-const COOKIE_NAME = "hrcube_session";
+const COOKIE_NAME = "hrdasn_session";
+/** Legacy brand cookie — clear on logout so rebrand does not leave orphan sessions. */
+const LEGACY_COOKIE_NAMES = ["hrcube_session"] as const;
 const SESSION_MAX_AGE_DAYS = 7;
 const SESSION_MAX_AGE_MS = SESSION_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
 
@@ -94,15 +96,11 @@ function setSessionCookie(res: VercelResponse, cookieValue: string): void {
 }
 
 function clearSessionCookie(res: VercelResponse): void {
-  const parts = [
-    `${COOKIE_NAME}=`,
-    "Path=/",
-    "Max-Age=0",
-    "HttpOnly",
-    "SameSite=Lax",
-  ];
-  if (isSecureContext()) parts.push("Secure");
-  res.setHeader("Set-Cookie", parts.join("; "));
+  const secure = isSecureContext() ? "; Secure" : "";
+  const clearOne = (name: string) =>
+    `${name}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secure}`;
+  const cookies = [COOKIE_NAME, ...LEGACY_COOKIE_NAMES].map(clearOne);
+  res.setHeader("Set-Cookie", cookies);
 }
 
 // ─── Public session API ──────────────────────────────────────────────────────

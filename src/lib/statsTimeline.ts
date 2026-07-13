@@ -12,6 +12,7 @@ export const TIMELINE_SELECT = {
   status: true,
   gol: true,
   pangkatGolongan: true,
+  jabatan: true,
   tanggalBerkalaTerakhir: true,
   tmtKerja: true,
   tmtGolonganRuang: true,
@@ -26,6 +27,7 @@ export type TimelineRow = {
   status: string;
   gol: string;
   pangkatGolongan: string;
+  jabatan: string;
   tanggalBerkalaTerakhir: string;
   tmtKerja: string;
   tmtGolonganRuang: string;

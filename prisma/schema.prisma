@@ -1,4 +1,4 @@
-// Prisma schema for dataHRD (Neon Postgres)
+// Prisma schema for HRD ASN (Neon Postgres)
 // Run: prisma migrate dev --name init
 // Connection string is read from DATABASE_URL env var.
 

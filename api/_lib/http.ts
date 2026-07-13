@@ -6,6 +6,14 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
  * - in-memory rate limiting (best-effort on serverless)
  */
 
+/** True on Vercel production / NODE_ENV production — hide diagnostic detail in responses. */
+export function isProductionRuntime(): boolean {
+  return (
+    process.env.VERCEL_ENV === "production" ||
+    process.env.NODE_ENV === "production"
+  );
+}
+
 export function clientIp(req: VercelRequest): string {
   const xf = req.headers["x-forwarded-for"];
   if (typeof xf === "string" && xf.length > 0) {

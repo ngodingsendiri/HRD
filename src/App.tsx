@@ -196,10 +196,10 @@ export default function App() {
             <LogIn className="w-5 h-5" />
           </div>
           <h1 className="text-xl font-bold tracking-tight text-slate-900 mb-1 text-center">
-            HRCube
+            HRD ASN
           </h1>
           <p className="text-slate-500 mb-6 text-sm text-center">
-            Masuk dengan akun Anda untuk mengakses data kepegawaian.
+            Masuk untuk mengelola data kepegawaian dinas Anda.
           </p>
 
           <form onSubmit={handleLogin} className="flex flex-col gap-4">

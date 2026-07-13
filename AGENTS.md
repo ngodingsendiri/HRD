@@ -1,6 +1,6 @@
-# HRCube — Agent & Contributor Guide
+# HRD ASN — Agent & Contributor Guide
 
-Internal HR app: **React (Vite PWA) + Vercel Serverless API + Prisma/Neon**.
+Internal kepegawaian (satu dinas): **React (Vite PWA) + Vercel Serverless API + Prisma/Neon**.
 
 ---
 
@@ -34,7 +34,7 @@ Vite+Vercel: `/api/(.*)` → `/api?path=$1` (`vercel.json`).
 | `VIEWER` | ✅ | ❌ 403 |
 | `ADMIN_EMAILS` env | always treated as **ADMIN** (bootstrap) |
 
-- Cookie: HttpOnly `hrcube_session`, SameSite=Lax, Secure in production.
+- Cookie: HttpOnly `hrdasn_session`, SameSite=Lax, Secure in production.
 - Guards: `requireStaff` (read), `requireAdmin` (write).
 - Logout: `POST /api/auth/logout` body `{ allDevices?: true }` revokes all sessions.
 - `AUTH_SECRET` **required** in production (fail hard).

@@ -1,9 +1,11 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { pingDatabase } from "../../lib/db.js";
+import { isProductionRuntime } from "../../../api/_lib/http.js";
 
 /**
  * GET /api/health
  * JSON only — used to verify API routing + DB + AUTH_SECRET (no secrets leaked).
+ * Production omits raw dbError text (may contain hostnames).
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "GET" && req.method !== "HEAD") {
@@ -16,6 +18,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     process.env.AUTH_SECRET && process.env.AUTH_SECRET.length >= 16,
   );
   const databaseUrlSet = Boolean(process.env.DATABASE_URL?.trim());
+  const prod = isProductionRuntime();
 
   const body = {
     status: db.ok && authSecretSet && databaseUrlSet ? "ok" : "degraded",
@@ -25,7 +28,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     authSecret: authSecretSet ? "set" : "missing",
     api: "index",
     time: new Date().toISOString(),
-    ...(db.error ? { dbError: db.error } : {}),
+    ...(!prod && db.error ? { dbError: db.error } : {}),
     hints: [
       !databaseUrlSet
         ? "Set DATABASE_URL (Neon pooler) in Vercel Production env"

@@ -12,9 +12,9 @@ export default defineConfig({
       registerType: "autoUpdate",
       includeAssets: ["pwa-192x192.svg", "pwa-512x512.svg"],
       manifest: {
-        name: "HRCube",
-        short_name: "HRCube",
-        description: "Aplikasi Manajemen Data Pegawai",
+        name: "HRD ASN",
+        short_name: "HRD ASN",
+        description: "Manajemen kepegawaian ASN — satu dinas",
         theme_color: "#f8fafc",
         background_color: "#f8fafc",
         icons: [

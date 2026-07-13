@@ -219,12 +219,19 @@ export default async function handler(
       });
       return;
     }
+    // Production: generic message only (constitution P4 / T7). Dev: short detail for debug.
+    const isProd =
+      process.env.VERCEL_ENV === "production" ||
+      process.env.NODE_ENV === "production";
     res.status(500).json({
       error: "Terjadi kesalahan internal",
       code: "API_UNCAUGHT",
-      // short safe detail to diagnose production without stack traces
-      detail: msg.replace(/[A-Za-z0-9+/]{20,}/g, "[redacted]").slice(0, 160),
-      route: pathname,
+      ...(!isProd
+        ? {
+            route: pathname,
+            detail: msg.replace(/[A-Za-z0-9+/]{20,}/g, "[redacted]").slice(0, 160),
+          }
+        : {}),
     });
   }
 }

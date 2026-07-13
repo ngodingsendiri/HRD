@@ -1,8 +1,11 @@
 /**
  * Server-safe dashboard aggregations (also usable on the client if needed).
  * Dates are ISO strings for JSON transport.
+ *
+ * KP/KGB/BUP rules live in employeeUtils — keep this file as presentation + aggregation.
  */
 import type { EmployeeT } from "./schemas.js";
+import { calculateBUP, resolveKgbCycle } from "./employeeUtils.js";
 
 export type TimelineItem = {
   id: string;
@@ -78,43 +81,28 @@ export function buildKgbList(
   const list: TimelineItem[] = [];
 
   for (const emp of employees) {
-    let baselineDate: Date | null = null;
-    let isFirst = false;
+    const { baseDate, cycleYears, isFirst } = resolveKgbCycle({
+      tanggalBerkalaTerakhir: emp.tanggalBerkalaTerakhir,
+      tmtKerja: emp.tmtKerja,
+      tmtGolonganRuang: emp.tmtGolonganRuang,
+      status: emp.status,
+      gol: emp.gol,
+      pangkatGolongan: emp.pangkatGolongan,
+    });
+    if (!baseDate) continue;
 
-    if (emp.tanggalBerkalaTerakhir) {
-      baselineDate = new Date(emp.tanggalBerkalaTerakhir);
-    } else {
-      const rawDate = emp.tmtKerja || emp.tmtGolonganRuang;
-      if (rawDate) {
-        baselineDate = new Date(rawDate);
-        isFirst = true;
-      }
-    }
-    if (!baselineDate || isNaN(baselineDate.getTime())) continue;
+    const baselineDate = new Date(baseDate);
+    if (isNaN(baselineDate.getTime())) continue;
 
     const nextDate = new Date(baselineDate);
-    const status = emp.status || "";
-    const golRaw = (emp.gol || emp.pangkatGolongan || "").toUpperCase().replace(/\s/g, "");
-
-    const isPnsIIa =
-      status === "PNS" &&
-      (golRaw.includes("II/A") || golRaw.includes("II.A") || golRaw === "IIA");
-    const isPppk5 =
-      status === "PPPK" &&
-      (golRaw === "V" || golRaw === "5" || golRaw.includes("/V") || golRaw.includes(".V"));
-
-    if (isFirst && (isPnsIIa || isPppk5)) {
-      nextDate.setFullYear(nextDate.getFullYear() + 1);
-    } else {
-      nextDate.setFullYear(nextDate.getFullYear() + 2);
-    }
+    nextDate.setFullYear(nextDate.getFullYear() + cycleYears);
 
     const diffDays = daysUntil(nextDate, today);
     list.push({
       id: emp.id || emp.nik || emp.nip,
       nama: emp.nama,
       nip: emp.nip,
-      status,
+      status: emp.status || "",
       golongan: emp.pangkatGolongan || emp.gol || "-",
       nextDate: toIso(nextDate),
       diffDays,
@@ -130,7 +118,14 @@ export function buildKgbList(
 export function buildKpList(
   employees: Pick<
     EmployeeT,
-    "id" | "nik" | "nama" | "nip" | "status" | "gol" | "pangkatGolongan" | "tmtGolonganRuang"
+    | "id"
+    | "nik"
+    | "nama"
+    | "nip"
+    | "status"
+    | "gol"
+    | "pangkatGolongan"
+    | "tmtGolonganRuang"
   >[],
 ): TimelineItem[] {
   const today = new Date();
@@ -163,7 +158,15 @@ export function buildKpList(
 export function buildPensiunList(
   employees: Pick<
     EmployeeT,
-    "id" | "nik" | "nama" | "nip" | "status" | "gol" | "pangkatGolongan" | "tanggalLahir"
+    | "id"
+    | "nik"
+    | "nama"
+    | "nip"
+    | "status"
+    | "gol"
+    | "pangkatGolongan"
+    | "tanggalLahir"
+    | "jabatan"
   >[],
 ): TimelineItem[] {
   const today = new Date();
@@ -172,10 +175,11 @@ export function buildPensiunList(
 
   for (const emp of employees) {
     if (!emp.tanggalLahir) continue;
-    const baselineDate = new Date(emp.tanggalLahir);
-    if (isNaN(baselineDate.getTime())) continue;
-    const nextDate = new Date(baselineDate);
-    nextDate.setFullYear(nextDate.getFullYear() + 58);
+    const nextStr = calculateBUP(emp.tanggalLahir, emp.jabatan || "");
+    if (!nextStr) continue;
+    const nextDate = new Date(nextStr);
+    if (isNaN(nextDate.getTime())) continue;
+
     const diffDays = daysUntil(nextDate, today);
     list.push({
       id: emp.id || emp.nik || emp.nip,
@@ -183,7 +187,7 @@ export function buildPensiunList(
       nip: emp.nip,
       status: emp.status || "",
       golongan: emp.pangkatGolongan || emp.gol || "-",
-      nextDate: toIso(nextDate),
+      nextDate: nextStr,
       diffDays,
       isOverdue: diffDays < 0,
       tanggalLahir: emp.tanggalLahir,
@@ -205,6 +209,7 @@ export function buildDashboardStats(
     | "gol"
     | "pangkatGolongan"
     | "bidang"
+    | "jabatan"
     | "tanggalBerkalaTerakhir"
     | "tmtKerja"
     | "tmtGolonganRuang"

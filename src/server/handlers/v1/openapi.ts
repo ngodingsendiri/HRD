@@ -24,10 +24,10 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
   const doc = {
     openapi: "3.0.3",
     info: {
-      title: "HRCube External API",
+      title: "HRD ASN External API",
       version: "1.0.0",
       description:
-        "Read-only API for integrating HRD data into other apps. Authenticate with an API key created in Pengaturan → API.",
+        "Read-only API for integrating HRD ASN employee data into other apps. Authenticate with an API key created in Pengaturan → API.",
     },
     servers: [{ url: base }],
     components: {

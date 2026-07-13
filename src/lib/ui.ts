@@ -1,5 +1,5 @@
 /**
- * Design system tokens for HRCube (see AGENTS.md).
+ * Design system tokens for HRD ASN (see AGENTS.md).
  * Prefer these helpers over one-off class strings so pages stay consistent.
  */
 import { cn } from "./utils.js";

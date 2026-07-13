@@ -8,7 +8,7 @@
 | **Audience doc** | Product owner, kontributor, coding agent |
 | **Related** | [constitution.md](./constitution.md) (prinsip tertinggi) · [AGENTS.md](./AGENTS.md) · [SETUP.md](./SETUP.md) · [README.md](./README.md) |
 
-> **Catatan rebrand:** UI/PWA/docs lama masih banyak memakai nama **HRCube**. Target brand resmi produk = **HRD ASN**. Migrasi penamaan (title, sidebar, manifest, copy login) adalah backlog polish — lihat §10.
+> Brand resmi: **HRD ASN**. Cookie session: `hrdasn_session`. Prefix API key teknis tetap `hrc_…` (kompatibel; bukan label UI).
 
 ---
 
@@ -75,7 +75,7 @@ Tujuan utama: memberi **Kasubbag Umum & Kepegawaian (Umpeg) / staf HRD** satu te
 | Buat/cabut API key | ✅ | ❌ | ❌ |
 | Bootstrap write via `ADMIN_EMAILS` | ✅ (env) | — | — |
 
-Auth: session cookie HttpOnly (`hrcube_session` — nama cookie bisa diselaraskan saat rebrand), rate limit login, `AUTH_SECRET` wajib di production.
+Auth: session cookie HttpOnly (`hrdasn_session`), rate limit login, `AUTH_SECRET` wajib di production.
 
 ---
 
@@ -271,7 +271,7 @@ Fokus product owner: **menyempurnakan area yang sudah ada**, bukan fitur besar b
 
 ### 10.1 P0 — Stabilitas & brand
 
-- [ ] Rebrand **HRCube → HRD ASN** (title, login, sidebar, PWA manifest, docs user-facing)  
+- [x] Rebrand **HRCube → HRD ASN** (title, login, sidebar, PWA manifest, docs user-facing)  
 - [ ] Pastikan Settings / router / guard dirty form stabil di production  
 - [ ] Checklist go-live berulang: env, migrate, admin, `/api/health`  
 - [ ] Samakan copy error login & empty state ke bahasa operator

@@ -709,6 +709,12 @@ export function buildDerivedReportRows(employees: Employee[]): Record<string, st
     const { kp, kgb } = checkKGBandKP(
       emp.tmtGolonganRuang,
       emp.tanggalBerkalaTerakhir,
+      {
+        tmtKerja: emp.tmtKerja,
+        status: emp.status,
+        gol: emp.gol,
+        pangkatGolongan: emp.pangkatGolongan,
+      },
     );
     return {
       Nama: emp.nama || "",

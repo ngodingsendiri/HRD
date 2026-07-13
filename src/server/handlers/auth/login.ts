@@ -6,6 +6,7 @@ import { writeAuditLog } from "../../../lib/audit.js";
 import {
   clientIp,
   ensureRequestId,
+  isProductionRuntime,
   rateLimit,
   sendError,
   withErrorBoundary,
@@ -83,10 +84,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return sendError(
         res,
         503,
-        "Database tidak tersedia dari server Vercel. Cek DATABASE_URL di Vercel (bukan hanya .env laptop) lalu Redeploy.",
+        "Database tidak tersedia. Periksa konfigurasi server atau coba lagi sebentar.",
         {
           code: "LOGIN_DB",
-          detail: detail.replace(/:[^:@/]+@/g, ":***@"),
+          ...(!isProductionRuntime()
+            ? { detail: detail.replace(/:[^:@/]+@/g, ":***@") }
+            : {}),
         },
       );
     }
@@ -126,7 +129,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       return sendError(res, 500, "Gagal membuat sesi login.", {
         code: "LOGIN_SESSION",
-        detail: msg.slice(0, 120),
+        ...(!isProductionRuntime()
+          ? { detail: msg.slice(0, 120) }
+          : {}),
       });
     }
 

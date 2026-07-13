@@ -226,12 +226,25 @@ function buildEmployeeWhere(opts?: GetEmployeesOptions) {
 }
 
 function matchesAlert(
-  emp: { tmtGolonganRuang?: string | null; tanggalBerkalaTerakhir?: string | null },
+  emp: {
+    tmtGolonganRuang?: string | null;
+    tanggalBerkalaTerakhir?: string | null;
+    tmtKerja?: string | null;
+    status?: string | null;
+    gol?: string | null;
+    pangkatGolongan?: string | null;
+  },
   alert: "kp" | "kgb" | "any",
 ): boolean {
   const { kp, kgb, clear } = checkKGBandKP(
     emp.tmtGolonganRuang,
     emp.tanggalBerkalaTerakhir,
+    {
+      tmtKerja: emp.tmtKerja,
+      status: emp.status,
+      gol: emp.gol,
+      pangkatGolongan: emp.pangkatGolongan,
+    },
   );
   if (alert === "any") return !clear;
   if (alert === "kp") return kp.due || kp.overdue;
@@ -255,6 +268,10 @@ export async function getEmployeesPage(opts?: GetEmployeesOptions): Promise<Empl
         id: true,
         tmtGolonganRuang: true,
         tanggalBerkalaTerakhir: true,
+        tmtKerja: true,
+        status: true,
+        gol: true,
+        pangkatGolongan: true,
       },
       orderBy: { nama: "asc" },
       take: 5000,

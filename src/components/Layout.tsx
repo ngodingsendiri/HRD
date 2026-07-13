@@ -49,7 +49,7 @@ export default function Layout() {
               <Users className="w-4 h-4 text-white" />
             </div>
             <span className="text-base font-bold tracking-tight text-slate-900">
-              HRCube
+              HRD ASN
             </span>
           </div>
         </div>
@@ -162,7 +162,7 @@ export default function Layout() {
               <Users className="w-3.5 h-3.5 text-white" />
             </div>
             <span className="font-bold text-slate-900 text-sm tracking-tight">
-              HRCube
+              HRD ASN
             </span>
           </div>
           <button

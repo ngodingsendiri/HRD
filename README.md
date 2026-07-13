@@ -1,6 +1,6 @@
-# HRCube
+# HRD ASN
 
-Aplikasi manajemen data pegawai (HR) untuk internal: direktori, dasbor KP/KGB/pensiun, cetak, impor/ekspor Excel, pengaturan kop & kamus jabatan.
+Aplikasi manajemen kepegawaian internal **satu dinas**: direktori pegawai, dasbor KP/KGB/pensiun, cetak, impor/ekspor Excel, pengaturan kop & kamus jabatan, API baca untuk app lain.
 
 ## Stack
 

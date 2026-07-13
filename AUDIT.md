@@ -1,4 +1,4 @@
-# Audit HRCube — Laporan & Status Perbaikan
+# Audit HRD ASN — Laporan & Status Perbaikan
 
 > **Tanggal audit ulang:** 10 Juli 2026  
 > **Branch:** `main`  
@@ -9,7 +9,7 @@
 
 ## Ringkasan eksekutif
 
-HRCube adalah SPA internal (Vite/React) + API serverless Vercel + Neon/Prisma.
+HRD ASN adalah SPA internal (Vite/React) + API serverless Vercel + Neon/Prisma.
 Arsitektur dasar sudah tepat (client tidak menyentuh Prisma; auth session custom
 cocok untuk Vercel Node). Audit awal menemukan celah kritis (kredensial di git,
 fallback `AUTH_SECRET`, tanpa rate limit, validasi longgar, tanpa migrasi).
@@ -89,7 +89,7 @@ GET /api/auth/me
   → requireAdmin (session + allowlist)
 ```
 
-Cookie: `hrcube_session` = `selector.hmac(verifier).verifier`  
+Cookie: `hrdasn_session` = `selector.hmac(verifier).verifier`  
 DB menyimpan hash verifier, bukan token mentah.
 
 ---

@@ -75,6 +75,12 @@ function KPKGBBadges({ emp }: { emp: Employee }) {
   const { kp, kgb, clear } = checkKGBandKP(
     emp.tmtGolonganRuang,
     emp.tanggalBerkalaTerakhir,
+    {
+      tmtKerja: emp.tmtKerja,
+      status: emp.status,
+      gol: emp.gol,
+      pangkatGolongan: emp.pangkatGolongan,
+    },
   );
   if (clear) return null;
   return (
@@ -93,7 +99,10 @@ export default function Employees() {
   const [searchTerm, setSearchTerm] = useState(searchParams.get("q") || "");
   const [statusFilter, setStatusFilter] = useState("all");
   const [alertFilter, setAlertFilter] = useState<"all" | "any" | "kp" | "kgb">(
-    "all",
+    () => {
+      const a = searchParams.get("alert");
+      return a === "kp" || a === "kgb" || a === "any" ? a : "all";
+    },
   );
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
@@ -189,6 +198,10 @@ export default function Employees() {
   useEffect(() => {
     const q = searchParams.get("q");
     if (q) setSearchTerm(q);
+    const alert = searchParams.get("alert");
+    if (alert === "kp" || alert === "kgb" || alert === "any") {
+      setAlertFilter(alert);
+    }
   }, [searchParams]);
 
   useEffect(() => {
@@ -314,7 +327,7 @@ export default function Employees() {
         XLSX.utils.json_to_sheet(buildDerivedReportRows(all)),
         "Dihitung_Sistem",
       );
-      XLSX.writeFile(wb, "Data_Pegawai_HRCube.xlsx");
+      XLSX.writeFile(wb, "Data_Pegawai_HRD_ASN.xlsx");
       notify.success("Ekspor selesai", `${all.length} baris`);
     } catch {
       notify.error("Ekspor gagal");
@@ -446,7 +459,7 @@ export default function Employees() {
       XLSX.utils.aoa_to_sheet(buildImportGuideAoa()),
       "Petunjuk",
     );
-    XLSX.writeFile(wb, "Template_Import_Pegawai_HRCube.xlsx");
+    XLSX.writeFile(wb, "Template_Import_Pegawai_HRD_ASN.xlsx");
     notify.success("Template diunduh");
     setMoreOpen(false);
   };

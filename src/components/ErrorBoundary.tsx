@@ -1,6 +1,6 @@
 import { Component, ErrorInfo, ReactNode } from "react";
 import { AlertCircle } from "lucide-react";
-import { btnPrimary, card } from "../lib/ui";
+import { btnPrimary, btnSecondary, card } from "../lib/ui";
 
 interface Props {
   children?: ReactNode;
@@ -28,8 +28,15 @@ export class ErrorBoundary extends Component<Props, State> {
   public render() {
     const { hasError, error } = this.state;
     if (hasError) {
-      const errorMessage =
-        error?.message || "Terjadi kesalahan yang tidak terduga.";
+      // Operator-facing copy — never surface raw framework stack messages
+      const technical = error?.message || "";
+      const isRouter =
+        /useBlocker|data router|RouterProvider|createBrowserRouter/i.test(
+          technical,
+        );
+      const errorMessage = isRouter
+        ? "Navigasi halaman bermasalah. Muat ulang, atau hubungi admin jika berulang."
+        : "Terjadi kesalahan saat menampilkan halaman. Data Anda aman — coba muat ulang.";
 
       return (
         <div className="min-h-[400px] flex items-center justify-center p-6">
@@ -45,13 +52,22 @@ export class ErrorBoundary extends Component<Props, State> {
             <p className="text-sm text-slate-500 mb-6 leading-relaxed">
               {errorMessage}
             </p>
-            <button
-              type="button"
-              onClick={() => window.location.reload()}
-              className={btnPrimary}
-            >
-              Muat Ulang Halaman
-            </button>
+            <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+              <button
+                type="button"
+                onClick={() => this.setState({ hasError: false, error: null })}
+                className={btnPrimary}
+              >
+                Coba Lagi
+              </button>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className={btnSecondary}
+              >
+                Muat Ulang
+              </button>
+            </div>
           </div>
         </div>
       );
