@@ -12,13 +12,20 @@ import { Toaster, toast } from "sonner";
 import { motion } from "motion/react";
 import { useAuth } from "./lib/auth";
 import { btnPrimary, easeOut, input, label } from "./lib/ui";
+import { routeLoaders } from "./lib/routePrefetch";
+import {
+  bootstrapApp,
+  isAppBootstrapped,
+  type BootstrapProgress,
+} from "./lib/bootstrap";
 
-/** Route-level code split — keep initial JS small. */
-const Dashboard = lazy(() => import("./pages/Dashboard"));
-const Employees = lazy(() => import("./pages/Employees"));
-const EmployeeFormPage = lazy(() => import("./pages/EmployeeFormPage"));
-const Print = lazy(() => import("./pages/Print"));
-const Settings = lazy(() => import("./pages/Settings"));
+/** Route-level code split — keep initial JS small. Prefetch via routePrefetch. */
+
+const Dashboard = lazy(routeLoaders.dashboard);
+const Employees = lazy(routeLoaders.employees);
+const EmployeeFormPage = lazy(routeLoaders.employeeForm);
+const Print = lazy(routeLoaders.print);
+const Settings = lazy(routeLoaders.settings);
 
 function RouteFallback() {
   return (
@@ -101,6 +108,11 @@ export default function App() {
   const [showPassword, setShowPassword] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  /** After login: one warm-up so menus are instant click-click. */
+  const [appReady, setAppReady] = useState(() => isAppBootstrapped());
+  const [bootProgress, setBootProgress] = useState<BootstrapProgress | null>(
+    null,
+  );
 
   useEffect(() => {
     const handleOnline = () =>
@@ -134,6 +146,39 @@ export default function App() {
       window.removeEventListener("pwa-update", handlePwaUpdate);
     };
   }, []);
+
+  // Once authenticated: finish ALL loads before opening the shell
+  useEffect(() => {
+    if (!user) {
+      setAppReady(false);
+      setBootProgress(null);
+      return;
+    }
+    if (isAppBootstrapped()) {
+      setAppReady(true);
+      return;
+    }
+    let cancelled = false;
+    setAppReady(false);
+    bootstrapApp((p) => {
+      if (!cancelled) setBootProgress(p);
+    })
+      .then(() => {
+        if (!cancelled) setAppReady(true);
+      })
+      .catch((err) => {
+        console.error("Bootstrap failed:", err);
+        if (!cancelled) {
+          toast.error("Sebagian data gagal dimuat", {
+            description: "Aplikasi tetap dibuka; beberapa menu mungkin loading.",
+          });
+          setAppReady(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -193,6 +238,47 @@ export default function App() {
         >
           <Loader2 className="w-4 h-4 animate-spin" />
           Memuat...
+        </motion.div>
+      </div>
+    );
+  }
+
+  if (user && !appReady) {
+    const step = bootProgress?.step ?? 0;
+    const total = bootProgress?.total ?? 5;
+    const pct = Math.round((Math.max(step, 0) / total) * 100);
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4 bg-slate-50">
+        <Toaster position="top-right" richColors closeButton />
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={easeOut}
+          className="w-full max-w-sm bg-white border border-slate-200 rounded-xl p-6 text-center"
+        >
+          <div className="w-12 h-12 bg-slate-900 text-white rounded-xl flex items-center justify-center mx-auto mb-4 text-xs font-bold tracking-tight">
+            HA
+          </div>
+          <h1 className="text-base font-bold text-slate-900 mb-1">
+            Menyiapkan HRD ASN
+          </h1>
+          <p className="text-sm text-slate-500 mb-4 leading-snug">
+            Sekali di awal: unduh halaman & data. Setelah ini klik menu tanpa
+            loading.
+          </p>
+          <div className="h-2 rounded-full bg-slate-100 overflow-hidden mb-2">
+            <div
+              className="h-full bg-slate-900 transition-all duration-300 ease-out"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          <p className="text-[11px] text-slate-500 font-medium flex items-center justify-center gap-1.5">
+            <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+            {bootProgress?.label || "Memulai…"}
+            <span className="text-slate-400">
+              ({step}/{total})
+            </span>
+          </p>
         </motion.div>
       </div>
     );

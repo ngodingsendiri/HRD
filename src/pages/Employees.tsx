@@ -105,7 +105,7 @@ export default function Employees() {
       return a === "kp" || a === "kgb" || a === "any" ? a : "all";
     },
   );
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true); // flipped false when list cache is warm
   const [listError, setListError] = useState<string | null>(null);
   const [rowsPerPage, setRowsPerPage] = useState(50);
   const [page, setPage] = useState(0);
@@ -217,18 +217,26 @@ export default function Employees() {
 
   useEffect(() => {
     let cancelled = false;
+    const listParams = {
+      q: debouncedQ || undefined,
+      status: statusFilter,
+      alert: alertFilter === "all" ? undefined : alertFilter,
+      limit: rowsPerPage,
+      offset: page * rowsPerPage,
+      lean: true as const,
+    };
     (async () => {
       try {
         setListError(null);
-        if (page === 0) setLoading(true);
-        const res = await api.getEmployeesPage({
-          q: debouncedQ || undefined,
-          status: statusFilter,
-          alert: alertFilter === "all" ? undefined : alertFilter,
-          limit: rowsPerPage,
-          offset: page * rowsPerPage,
-          lean: true,
-        });
+        const warm = api.peekEmployeesPage(listParams);
+        if (warm) {
+          setRawEmployees(warm.data);
+          setTotal(warm.total);
+          setLoading(false);
+        } else if (page === 0) {
+          setLoading(true);
+        }
+        const res = await api.getEmployeesPage(listParams);
         if (cancelled) return;
         setRawEmployees(res.data);
         setTotal(res.total);

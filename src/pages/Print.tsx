@@ -32,6 +32,7 @@ import {
   select,
 } from "../lib/ui";
 import { useDocumentTitle } from "../lib/useDocumentTitle";
+import { peekAllEmployeesLean } from "../lib/bootstrap";
 
 type PrintType =
   | "absen_global"
@@ -44,6 +45,11 @@ type SortAction = "default_kelas" | "abjad";
 type MobileStep = 1 | 2 | 3;
 /** Snapshot sisa cuti for print (pre-deduction values on BKN form). */
 type CutiSisaSnapshot = { n: string; n1: string; n2: string };
+
+/** True only for "1. Cuti Tahunan" (not "10…"). */
+function isCutiTahunan(jenis: string): boolean {
+  return jenis.startsWith("1.");
+}
 
 type PrintDoc = {
   category: "laporan" | "layanan";
@@ -98,9 +104,15 @@ const DOCUMENTS: PrintDoc[] = [
 export default function Print() {
   useDocumentTitle("Cetak");
   const { canWrite } = useAuth();
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [settings, setSettings] = useState<AppSettings | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [employees, setEmployees] = useState<Employee[]>(
+    () => peekAllEmployeesLean() ?? [],
+  );
+  const [settings, setSettings] = useState<AppSettings | null>(
+    () => api.peekSettings(["core", "logo", "kamus"]) ?? null,
+  );
+  const [loading, setLoading] = useState(
+    () => !peekAllEmployeesLean() || !api.peekSettings(["core", "logo", "kamus"]),
+  );
   const [cutiConfirmOpen, setCutiConfirmOpen] = useState(false);
   const [cutiBusy, setCutiBusy] = useState(false);
 
@@ -140,6 +152,13 @@ export default function Print() {
   const [cutiSisaPrint, setCutiSisaPrint] = useState<CutiSisaSnapshot | null>(
     null,
   );
+  /** Bump to re-fetch full employee after a failed hydrate. */
+  const [empDetailRetry, setEmpDetailRetry] = useState(0);
+  const printTimersRef = useRef<{
+    printDelay?: ReturnType<typeof setTimeout>;
+    fallback?: ReturnType<typeof setTimeout>;
+    clearSnapshot?: () => void;
+  }>({});
 
   useEffect(() => {
     if (cutiMulai && cutiAkhir) {
@@ -150,25 +169,54 @@ export default function Print() {
   }, [cutiMulai, cutiAkhir]);
 
   useEffect(() => {
-    if (cutiJenis.startsWith("3")) {
+    if (cutiJenis.startsWith("3.")) {
       setCutiAlasan("Sakit");
-    } else if (cutiJenis.startsWith("4")) {
+    } else if (cutiJenis.startsWith("4.")) {
       setCutiAlasan("Melahirkan");
     }
   }, [cutiJenis]);
+
+  // Cleanup print listeners/timers if user leaves the page mid-print flow
+  useEffect(() => {
+    return () => {
+      const t = printTimersRef.current;
+      if (t.printDelay) clearTimeout(t.printDelay);
+      if (t.fallback) clearTimeout(t.fallback);
+      t.clearSnapshot?.();
+      printTimersRef.current = {};
+    };
+  }, []);
 
   const printRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     async function fetchData() {
       try {
+        // Warm path: bootstrap already filled cache — usually instant
+        const warmList = peekAllEmployeesLean();
+        const warmSettings = api.peekSettings(["core", "logo", "kamus"]);
+        if (warmList && warmSettings) {
+          const kamus = warmSettings.jabatanKamusCsv;
+          setSettings(warmSettings);
+          setEmployees(
+            warmList.map((emp) => {
+              if (!emp.jabatan || !kamus) return emp;
+              const { kelas, beban } = lookupKamus(emp.jabatan, kamus);
+              return kelas || beban
+                ? { ...emp, kelasJabatan: kelas, bebanKerja: beban }
+                : emp;
+            }),
+          );
+          setLoading(false);
+          return;
+        }
+
         const currentSettings = await api.getSettings(["core", "logo", "kamus"]);
         setSettings(currentSettings);
 
         const all: Employee[] = [];
         let offset = 0;
         const pageSize = 500;
-        // Guard: max 50 pages (25k rows) — prevents runaway if total is wrong
         for (let page = 0; page < 50; page++) {
           const res = await api.getEmployeesPage({
             limit: pageSize,
@@ -261,9 +309,9 @@ export default function Print() {
     return () => {
       cancelled = true;
     };
-    // employees intentionally omitted: re-run only on selection change
+    // employees intentionally omitted: re-run only on selection / retry
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cutiEmployeeId]);
+  }, [cutiEmployeeId, empDetailRetry]);
 
   /** Golongan weight for hierarchy sort — exact token only (avoid III/A matching II/A). */
   const getGolonganWeight = useCallback((emp: Employee) => {
@@ -438,7 +486,7 @@ export default function Print() {
           reason: "Tidak ada hari kerja di rentang tanggal (cek weekend/libur)",
         };
       }
-      if (cutiJenis.startsWith("1") && !cutiAlasan.trim()) {
+      if (isCutiTahunan(cutiJenis) && !cutiAlasan.trim()) {
         return { ready: false, reason: "Isi alasan cuti" };
       }
     }
@@ -665,19 +713,24 @@ export default function Print() {
       setCutiSisaPrint(prePrint);
       setCutiConfirmOpen(false);
       notify.success("Sisa cuti diperbarui");
-      let fallbackTimer: ReturnType<typeof setTimeout> | undefined;
       let cleared = false;
       const clearSnapshot = () => {
         if (cleared) return;
         cleared = true;
         setCutiSisaPrint(null);
         window.removeEventListener("afterprint", clearSnapshot);
-        if (fallbackTimer !== undefined) clearTimeout(fallbackTimer);
+        const t = printTimersRef.current;
+        if (t.fallback) clearTimeout(t.fallback);
+        if (t.printDelay) clearTimeout(t.printDelay);
+        t.fallback = undefined;
+        t.printDelay = undefined;
+        t.clearSnapshot = undefined;
       };
+      printTimersRef.current.clearSnapshot = clearSnapshot;
       window.addEventListener("afterprint", clearSnapshot);
-      setTimeout(() => {
+      printTimersRef.current.printDelay = setTimeout(() => {
         // Register fallback BEFORE print — afterprint can fire sync during print()
-        fallbackTimer = setTimeout(clearSnapshot, 60_000);
+        printTimersRef.current.fallback = setTimeout(clearSnapshot, 60_000);
         try {
           window.print();
         } catch {
@@ -706,7 +759,7 @@ export default function Print() {
       setMobileStep(2);
       return;
     }
-    if (printType === "surat_cuti" && cutiJenis.startsWith("1")) {
+    if (printType === "surat_cuti" && isCutiTahunan(cutiJenis)) {
       if (!canWrite) {
         try {
           window.print();
@@ -750,14 +803,7 @@ export default function Print() {
     .filter(Boolean)
     .join(" · ");
 
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center h-64 gap-2 font-medium text-slate-500 text-sm">
-        <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
-        Memuat data cetak…
-      </div>
-    );
-  }
+  // Soft load: keep studio chrome visible while data streams (no full-page blank)
 
   const documentList = (
     <div className="space-y-3">
@@ -937,15 +983,26 @@ export default function Print() {
                 Memuat detail pegawai…
               </p>
             )}
+            {empDetailError && cutiEmployeeId && !empDetailLoading && (
+              <button
+                type="button"
+                className={`${btnSecondary} mt-2 w-full text-xs`}
+                onClick={() => setEmpDetailRetry((n) => n + 1)}
+              >
+                Coba muat ulang detail
+              </button>
+            )}
           </div>
           {printType === "surat_cuti" && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="sm:col-span-2 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-[11px] text-amber-900 leading-snug">
-                {canWrite
-                  ? "Cetak cuti tahunan akan memotong sisa cuti (N-2 → N-1 → N) setelah konfirmasi."
-                  : "Mode baca: cetak tidak memotong sisa cuti. Minta admin untuk potong saldo."}
-              </div>
-              {cutiEmployeeId && !empDetailLoading && (
+              {isCutiTahunan(cutiJenis) && (
+                <div className="sm:col-span-2 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-[11px] text-amber-900 leading-snug">
+                  {canWrite
+                    ? "Cetak cuti tahunan akan memotong sisa cuti (N-2 → N-1 → N) setelah konfirmasi."
+                    : "Mode baca: cetak tidak memotong sisa cuti. Minta admin untuk potong saldo."}
+                </div>
+              )}
+              {cutiEmployeeId && !empDetailLoading && !empDetailError && (
                 <div className="sm:col-span-2 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-[11px] text-slate-700">
                   Sisa cuti: N=
                   {employees.find((e) => e.id === cutiEmployeeId)?.sisaCutiN ||
@@ -1247,8 +1304,8 @@ export default function Print() {
               <div className="print-hidden mb-3 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-800 flex items-start gap-2">
                 <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                 <span>
-                  Detail pegawai gagal dimuat. Pilih ulang pegawai atau muat
-                  ulang halaman.
+                  Detail pegawai gagal dimuat. Pakai tombol “Coba muat ulang
+                  detail” di panel opsi, atau pilih pegawai lain.
                 </span>
               </div>
             )}
@@ -1666,13 +1723,13 @@ export default function Print() {
                           {listJenis[0]}
                         </td>
                         <td className="border border-black px-1.5 py-0.5 w-[10%] text-center">
-                          {cutiJenis.startsWith("1") ? "✓" : ""}
+                          {cutiJenis.startsWith("1.") ? "✓" : ""}
                         </td>
                         <td className="border border-black px-1.5 py-0.5 w-[40%]">
                           {listJenis[1]}
                         </td>
                         <td className="border border-black px-1.5 py-0.5 w-[10%] text-center">
-                          {cutiJenis.startsWith("4") ? "✓" : ""}
+                          {cutiJenis.startsWith("4.") ? "✓" : ""}
                         </td>
                       </tr>
                       <tr>
@@ -1680,13 +1737,13 @@ export default function Print() {
                           {listJenis[2]}
                         </td>
                         <td className="border border-black px-1.5 py-0.5 w-[10%] text-center">
-                          {cutiJenis.startsWith("2") ? "✓" : ""}
+                          {cutiJenis.startsWith("2.") ? "✓" : ""}
                         </td>
                         <td className="border border-black px-1.5 py-0.5 w-[40%]">
                           {listJenis[3]}
                         </td>
                         <td className="border border-black px-1.5 py-0.5 w-[10%] text-center">
-                          {cutiJenis.startsWith("5") ? "✓" : ""}
+                          {cutiJenis.startsWith("5.") ? "✓" : ""}
                         </td>
                       </tr>
                       <tr>
@@ -1694,13 +1751,13 @@ export default function Print() {
                           {listJenis[4]}
                         </td>
                         <td className="border border-black px-1.5 py-0.5 w-[10%] text-center">
-                          {cutiJenis.startsWith("3") ? "✓" : ""}
+                          {cutiJenis.startsWith("3.") ? "✓" : ""}
                         </td>
                         <td className="border border-black px-1.5 py-0.5 w-[40%]">
                           {listJenis[5]}
                         </td>
                         <td className="border border-black px-1.5 py-0.5 w-[10%] text-center">
-                          {cutiJenis.startsWith("6") ? "✓" : ""}
+                          {cutiJenis.startsWith("6.") ? "✓" : ""}
                         </td>
                       </tr>
                     </tbody>

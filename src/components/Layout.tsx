@@ -14,9 +14,10 @@ import { useEffect, useRef, useState } from "react";
 import { cn } from "../lib/utils";
 import { useAuth } from "../lib/auth";
 import { AnimatePresence, motion } from "motion/react";
-import { easeOut, routeFade } from "../lib/ui";
+import { easeOut } from "../lib/ui";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { useDocumentTitle } from "../lib/useDocumentTitle";
+import { prefetchAllRoutes, prefetchRoute } from "../lib/routePrefetch";
 
 const TITLE_BY_PATH: Record<string, string> = {
   "/": "Ringkasan",
@@ -54,6 +55,17 @@ export default function Layout() {
     return () => document.removeEventListener("mousedown", onDoc);
   }, []);
 
+  // Warm JS chunks in the background so menu switches skip "Memuat halaman…"
+  useEffect(() => {
+    const run = () => prefetchAllRoutes();
+    if (typeof requestIdleCallback !== "undefined") {
+      const id = requestIdleCallback(run, { timeout: 2500 });
+      return () => cancelIdleCallback(id);
+    }
+    const t = window.setTimeout(run, 800);
+    return () => clearTimeout(t);
+  }, []);
+
   const isNavActive = (href: string) => {
     if (href === "/") return location.pathname === "/";
     return location.pathname === href || location.pathname.startsWith(`${href}/`);
@@ -82,6 +94,8 @@ export default function Layout() {
                   key={item.name}
                   to={item.href}
                   aria-current={isActive ? "page" : undefined}
+                  onMouseEnter={() => prefetchRoute(item.href)}
+                  onFocus={() => prefetchRoute(item.href)}
                   className={cn(
                     "relative flex items-center rounded-lg transition-colors px-3 py-2 text-[13px] font-medium active:scale-[0.98]",
                     isActive
@@ -201,15 +215,10 @@ export default function Layout() {
         </header>
 
         <main className="flex-1 overflow-y-auto pb-24 lg:pb-8 p-0 sm:p-4 md:p-8 lg:p-10 print:block print:overflow-visible print:p-0">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={location.pathname}
-              {...routeFade}
-              className="h-full min-h-0"
-            >
-              <Outlet />
-            </motion.div>
-          </AnimatePresence>
+          {/* No exit-wait animation: mode="wait" made every menu switch feel like a reload */}
+          <div className="h-full min-h-0">
+            <Outlet />
+          </div>
         </main>
 
         <nav
@@ -224,6 +233,9 @@ export default function Layout() {
                 to={item.href}
                 aria-label={item.name}
                 aria-current={isActive ? "page" : undefined}
+                onMouseEnter={() => prefetchRoute(item.href)}
+                onFocus={() => prefetchRoute(item.href)}
+                onTouchStart={() => prefetchRoute(item.href)}
                 className={cn(
                   "flex flex-col items-center justify-center gap-0.5 min-h-[48px] py-1.5 rounded-lg transition-all active:scale-95",
                   isActive

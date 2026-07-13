@@ -4,6 +4,13 @@
  */
 import type { Employee, AppSettings } from "../types.js";
 import type { DashboardStats } from "./dashboardStats.js";
+import {
+  ALL_EMPLOYEES_LEAN_KEY,
+  cacheGet,
+  cacheGetOrFetch,
+  cacheInvalidate,
+  DEFAULT_TTL_MS,
+} from "./queryCache.js";
 
 /** Typed API failure — preserves HTTP status for callers. */
 export class ApiError extends Error {
@@ -90,37 +97,71 @@ function employeesQuery(params?: EmployeeListParams): string {
   return qs ? `/api/employees?${qs}` : "/api/employees";
 }
 
+function invalidateEmployeeReads() {
+  cacheInvalidate("employees:");
+  cacheInvalidate("employee:");
+  cacheInvalidate("stats");
+  cacheInvalidate(ALL_EMPLOYEES_LEAN_KEY);
+  // Re-warm in background so menus stay instant after edits
+  void import("./bootstrap.js").then((m) => m.rebootstrapInBackground());
+}
+
 export const api = {
+  /** Sync peek — for skipping full-page skeleton when cache is warm. */
+  peekEmployeesPage(params?: EmployeeListParams): EmployeesPage | undefined {
+    return cacheGet<EmployeesPage>(`employees:${employeesQuery(params)}`);
+  },
+  peekSettings(
+    include: SettingsInclude[] | string = "all",
+  ): AppSettings | undefined {
+    const q = Array.isArray(include) ? include.join(",") : include;
+    return cacheGet<AppSettings>(`settings:${q}`);
+  },
+  peekDashboardStats(): DashboardStats | undefined {
+    return cacheGet<DashboardStats>("stats");
+  },
+
   async getEmployeesPage(params?: EmployeeListParams): Promise<EmployeesPage> {
-    return request<EmployeesPage>(employeesQuery(params));
+    const key = `employees:${employeesQuery(params)}`;
+    return cacheGetOrFetch(key, () => request<EmployeesPage>(employeesQuery(params)));
   },
 
   async getEmployee(id: string): Promise<Employee | null> {
-    try {
-      return await request<Employee>(`/api/employees/${encodeURIComponent(id)}`);
-    } catch (e) {
-      // Contract: missing row → null (not throw), so UI can show "tidak ditemukan"
-      if (e instanceof ApiError && e.status === 404) return null;
-      throw e;
-    }
+    const key = `employee:${id}`;
+    return cacheGetOrFetch(key, async () => {
+      try {
+        return await request<Employee>(
+          `/api/employees/${encodeURIComponent(id)}`,
+        );
+      } catch (e) {
+        // Contract: missing row → null (not throw), so UI can show "tidak ditemukan"
+        if (e instanceof ApiError && e.status === 404) return null;
+        throw e;
+      }
+    });
   },
 
   async createEmployee(emp: Employee): Promise<Employee> {
-    return request<Employee>("/api/employees", {
+    const created = await request<Employee>("/api/employees", {
       method: "POST",
       body: JSON.stringify(emp),
     });
+    invalidateEmployeeReads();
+    return created;
   },
 
   async updateEmployee(id: string, emp: Partial<Employee>): Promise<Employee> {
-    return request<Employee>(`/api/employees/${id}`, {
+    const updated = await request<Employee>(`/api/employees/${id}`, {
       method: "PUT",
       body: JSON.stringify(emp),
     });
+    invalidateEmployeeReads();
+    return updated;
   },
 
   async deleteEmployee(id: string): Promise<void> {
     await request<void>(`/api/employees/${id}`, { method: "DELETE" });
+    invalidateEmployeeReads();
   },
 
   async deleteEmployees(ids: string[]): Promise<void> {
@@ -128,31 +169,50 @@ export const api = {
       method: "DELETE",
       body: JSON.stringify({ ids }),
     });
+    invalidateEmployeeReads();
   },
 
   async bulkUpsert(employees: Record<string, unknown>[]): Promise<BulkUpsertResult> {
-    return request<BulkUpsertResult>("/api/employees", {
+    const result = await request<BulkUpsertResult>("/api/employees", {
       method: "PUT",
       body: JSON.stringify({ action: "bulk-upsert", employees }),
     });
+    invalidateEmployeeReads();
+    return result;
   },
 
   async getSettings(
     include: SettingsInclude[] | string = "all",
   ): Promise<AppSettings> {
     const q = Array.isArray(include) ? include.join(",") : include;
-    return request<AppSettings>(`/api/settings?include=${encodeURIComponent(q)}`);
+    const key = `settings:${q}`;
+    return cacheGetOrFetch(
+      key,
+      () =>
+        request<AppSettings>(
+          `/api/settings?include=${encodeURIComponent(q)}`,
+        ),
+      // Settings rarely change during a session
+      DEFAULT_TTL_MS * 2,
+    );
   },
 
   async upsertSettings(settings: AppSettings): Promise<AppSettings> {
-    return request<AppSettings>("/api/settings", {
+    const saved = await request<AppSettings>("/api/settings", {
       method: "PUT",
       body: JSON.stringify(settings),
     });
+    cacheInvalidate("settings:");
+    void import("./bootstrap.js").then((m) => m.rebootstrapInBackground());
+    return saved;
   },
 
   async getDashboardStats(): Promise<DashboardStats> {
-    return request<DashboardStats>("/api/stats");
+    return cacheGetOrFetch(
+      "stats",
+      () => request<DashboardStats>("/api/stats"),
+      DEFAULT_TTL_MS,
+    );
   },
 
   // ── External API keys (session admin only) ───────────────────────────────

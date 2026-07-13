@@ -97,7 +97,8 @@ export default function Dashboard() {
   const [kpList, setKpList] = useState<TimelineItem[]>([]);
   const [pensiunList, setPensiunList] = useState<TimelineItem[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Skip full skeleton when stats are still warm in session cache
+  const [loading, setLoading] = useState(() => !api.peekDashboardStats());
   const [refreshing, setRefreshing] = useState(false);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
 
@@ -128,6 +129,13 @@ export default function Dashboard() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      const warm = api.peekDashboardStats();
+      if (warm) {
+        applyDash(warm);
+        setLoading(false);
+      } else {
+        setLoading(true);
+      }
       try {
         const dash = await api.getDashboardStats();
         if (!cancelled) applyDash(dash);

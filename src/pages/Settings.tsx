@@ -75,7 +75,7 @@ export default function Settings() {
   useDocumentTitle("Pengaturan");
   const { canWrite } = useAuth();
   const [settings, setSettings] = useState<AppSettings>(EMPTY_SETTINGS);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !api.peekSettings("all"));
   const [saving, setSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [activeTab, setActiveTab] = useState<
@@ -90,6 +90,16 @@ export default function Settings() {
   useEffect(() => {
     let cancelled = false;
     async function fetchSettingsData() {
+      const warm = api.peekSettings("all");
+      if (warm) {
+        setSettings({
+          ...EMPTY_SETTINGS,
+          ...warm,
+          jabatanKamusCsv: warm.jabatanKamusCsv ?? "",
+          petaJabatanCsv: warm.petaJabatanCsv ?? "",
+        });
+        setLoading(false);
+      }
       try {
         const data = await api.getSettings("all");
         if (cancelled) return;
