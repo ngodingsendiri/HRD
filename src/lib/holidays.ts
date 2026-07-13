@@ -25,18 +25,36 @@ export const PUBLIC_HOLIDAYS: string[] = [
   "2026-06-16", "2026-08-17", "2026-12-25",
 ];
 
+/** Parse YYYY-MM-DD as local calendar date (avoids UTC day-shift). */
+function parseLocalDate(iso: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso.trim());
+  if (!m) {
+    const d = new Date(iso);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+
+function toLocalYmd(d: Date): string {
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${mo}-${day}`;
+}
+
 /** Count working days between two dates (inclusive), excluding weekends + holidays. */
 export function countWorkingDays(start: string, end: string): number {
-  const startD = new Date(start);
-  const endD = new Date(end);
-  if (isNaN(startD.getTime()) || isNaN(endD.getTime()) || startD > endD) return 0;
+  const startD = parseLocalDate(start);
+  const endD = parseLocalDate(end);
+  if (!startD || !endD || startD > endD) return 0;
 
   const holidaySet = new Set(PUBLIC_HOLIDAYS);
   let count = 0;
-  const cur = new Date(startD);
-  while (cur <= endD) {
+  const cur = new Date(startD.getFullYear(), startD.getMonth(), startD.getDate());
+  const endTime = endD.getTime();
+  while (cur.getTime() <= endTime) {
     const day = cur.getDay();
-    const ds = cur.toISOString().split("T")[0];
+    const ds = toLocalYmd(cur);
     if (day !== 0 && day !== 6 && !holidaySet.has(ds)) {
       count++;
     }

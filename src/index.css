@@ -71,4 +71,10 @@ body {
     background-color: white !important;
     background-image: none !important;
   }
+
+  /* Hide UI chrome that must never appear on paper */
+  [data-sonner-toaster],
+  [data-sonner-toast] {
+    display: none !important;
+  }
 }
