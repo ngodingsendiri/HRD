@@ -39,6 +39,7 @@ import { useDocumentTitle } from "../lib/useDocumentTitle";
 import { peekAllEmployeesLean } from "../lib/bootstrap";
 import {
   isCutiTahunanJenis,
+  matchesCutiJenisNumber,
   parseDocParam,
   resolveBidangLabel,
 } from "../lib/printParams";
@@ -2140,13 +2141,13 @@ export default function Print() {
                           {listJenis[0]}
                         </td>
                         <td className="border border-black px-1.5 py-0.5 w-[10%] text-center">
-                          {cutiJenis.startsWith("1.") ? "✓" : ""}
+                          {matchesCutiJenisNumber(cutiJenis, 1) ? "✓" : ""}
                         </td>
                         <td className="border border-black px-1.5 py-0.5 w-[40%]">
                           {listJenis[1]}
                         </td>
                         <td className="border border-black px-1.5 py-0.5 w-[10%] text-center">
-                          {cutiJenis.startsWith("4.") ? "✓" : ""}
+                          {matchesCutiJenisNumber(cutiJenis, 4) ? "✓" : ""}
                         </td>
                       </tr>
                       <tr>
@@ -2154,13 +2155,13 @@ export default function Print() {
                           {listJenis[2]}
                         </td>
                         <td className="border border-black px-1.5 py-0.5 w-[10%] text-center">
-                          {cutiJenis.startsWith("2.") ? "✓" : ""}
+                          {matchesCutiJenisNumber(cutiJenis, 2) ? "✓" : ""}
                         </td>
                         <td className="border border-black px-1.5 py-0.5 w-[40%]">
                           {listJenis[3]}
                         </td>
                         <td className="border border-black px-1.5 py-0.5 w-[10%] text-center">
-                          {cutiJenis.startsWith("5.") ? "✓" : ""}
+                          {matchesCutiJenisNumber(cutiJenis, 5) ? "✓" : ""}
                         </td>
                       </tr>
                       <tr>
@@ -2168,13 +2169,13 @@ export default function Print() {
                           {listJenis[4]}
                         </td>
                         <td className="border border-black px-1.5 py-0.5 w-[10%] text-center">
-                          {cutiJenis.startsWith("3.") ? "✓" : ""}
+                          {matchesCutiJenisNumber(cutiJenis, 3) ? "✓" : ""}
                         </td>
                         <td className="border border-black px-1.5 py-0.5 w-[40%]">
                           {listJenis[5]}
                         </td>
                         <td className="border border-black px-1.5 py-0.5 w-[10%] text-center">
-                          {cutiJenis.startsWith("6.") ? "✓" : ""}
+                          {matchesCutiJenisNumber(cutiJenis, 6) ? "✓" : ""}
                         </td>
                       </tr>
                     </tbody>

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isCutiTahunanJenis,
+  matchesCutiJenisNumber,
   parseDocParam,
   resolveBidangLabel,
 } from "./printParams";
@@ -29,13 +30,19 @@ describe("parseDocParam", () => {
   });
 });
 
-describe("isCutiTahunanJenis", () => {
+describe("isCutiTahunanJenis / matchesCutiJenisNumber", () => {
   it("matches only leading 1. cuti tahunan", () => {
     expect(isCutiTahunanJenis("1. Cuti Tahunan")).toBe(true);
     expect(isCutiTahunanJenis("1 Cuti Tahunan")).toBe(true);
     expect(isCutiTahunanJenis("10. something")).toBe(false);
     expect(isCutiTahunanJenis("11. foo")).toBe(false);
     expect(isCutiTahunanJenis("2. Cuti Besar")).toBe(false);
+  });
+
+  it("matches other jenis numbers safely", () => {
+    expect(matchesCutiJenisNumber("3. Cuti Sakit", 3)).toBe(true);
+    expect(matchesCutiJenisNumber("4. Cuti Melahirkan", 4)).toBe(true);
+    expect(matchesCutiJenisNumber("30. x", 3)).toBe(false);
   });
 });
 

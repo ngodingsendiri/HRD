@@ -24,11 +24,19 @@ export function parseDocParam(raw: string | null): PrintDocKind | null {
 }
 
 /**
- * True only for cuti tahunan (label "1. …").
- * Uses digit-boundary so "10. …" is not treated as tahunan.
+ * Match BKN cuti jenis by leading number (1–6).
+ * Digit-boundary so "10. …" is not treated as type 1.
  */
+export function matchesCutiJenisNumber(jenis: string, n: number): boolean {
+  if (!Number.isInteger(n) || n < 1 || n > 99) return false;
+  const re = new RegExp(`^\\s*${n}[.\\s]`);
+  const reDigit = new RegExp(`^\\s*${n}\\d`);
+  return re.test(jenis) && !reDigit.test(jenis);
+}
+
+/** True only for cuti tahunan (label "1. …"). */
 export function isCutiTahunanJenis(jenis: string): boolean {
-  return /^\s*1[.\s]/.test(jenis) && !/^\s*1\d/.test(jenis);
+  return matchesCutiJenisNumber(jenis, 1);
 }
 
 /** Match unit label case-insensitively; returns canonical list value if found. */
