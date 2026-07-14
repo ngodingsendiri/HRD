@@ -7,9 +7,6 @@ import {
   Clock,
   AlertCircle,
   Award,
-  RefreshCw,
-  Loader2,
-  ArrowRight,
   UserPlus,
   FileWarning,
 } from "lucide-react";
@@ -20,8 +17,6 @@ import { PageSkeleton } from "../components/Skeleton";
 import { motion } from "motion/react";
 import { PageHeader } from "../components/PageHeader";
 import {
-  btnGhost,
-  btnPrimary,
   btnSecondary,
   card,
   cardHeader,
@@ -40,31 +35,29 @@ import { useDocumentTitle } from "../lib/useDocumentTitle";
 import { useAuth } from "../lib/auth";
 
 type TimelineTab = "kgb" | "kp" | "pensiun";
-/** near = tab-specific mendesak window; d30 = ≤30 days */
-type TimeFilter = "all" | "overdue" | "near" | "d30";
 
-/** Unified urgency windows (hero + default filter + badge color). */
+/** Jendela mendesak (daftar ringkas) dan warna badge di tabel proyeksi. */
 const TAB_URGENCY: Record<
   TimelineTab,
   { label: string; nearDays: number; badgeDays: number; acuan: string }
 > = {
   kgb: {
-    label: "KGB",
+    label: "Kenaikan gaji berkala",
     nearDays: 90,
     badgeDays: 30,
-    acuan: "TMT / berkala",
+    acuan: "Dasar perhitungan",
   },
   kp: {
-    label: "KP",
+    label: "Kenaikan pangkat",
     nearDays: 90,
     badgeDays: 90,
-    acuan: "TMT pangkat",
+    acuan: "Terhitung mulai tanggal pangkat",
   },
   pensiun: {
     label: "Pensiun",
     nearDays: 365,
     badgeDays: 90,
-    acuan: "Tgl lahir",
+    acuan: "Tanggal lahir",
   },
 };
 
@@ -93,24 +86,12 @@ function urgencyClass(item: TimelineItem, nearDays: number) {
   return "bg-emerald-50 text-emerald-700 border border-emerald-100";
 }
 
-function filterTimeline(
-  list: TimelineItem[],
-  f: TimeFilter,
-  nearDays: number,
-): TimelineItem[] {
-  if (f === "all") return list;
-  if (f === "overdue") return list.filter((x) => x.isOverdue);
-  if (f === "d30") return list.filter((x) => x.isOverdue || x.diffDays <= 30);
-  // near = mendesak window for this tab
-  return list.filter((x) => x.isOverdue || x.diffDays <= nearDays);
-}
-
 function isUrgentItem(item: TimelineItem, kind: TimelineTab): boolean {
   const near = TAB_URGENCY[kind].nearDays;
   return item.isOverdue || item.diffDays <= near;
 }
 
-/** Open employee directory focused on one person (no alert filters on Pegawai). */
+/** Buka direktori pegawai terfokus ke satu orang. */
 function employeeLink(item: { nip?: string; nama?: string }) {
   const sp = new URLSearchParams();
   const q = (item.nip || item.nama || "").trim();
@@ -149,13 +130,9 @@ export default function Dashboard() {
   const [health, setHealth] = useState<DataHealth>(EMPTY_DATA_HEALTH);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(() => !api.peekDashboardStats());
-  const [refreshing, setRefreshing] = useState(false);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
 
   const [timelineTab, setTimelineTab] = useState<TimelineTab>("kgb");
-  /** Default: mendesak (bukan semua jadwal) */
-  const [timeFilter, setTimeFilter] = useState<TimeFilter>("near");
-
   const [truncated, setTruncated] = useState(false);
 
   const applyDash = useCallback(
@@ -215,20 +192,7 @@ export default function Dashboard() {
     };
   }, [applyDash]);
 
-  const refresh = async () => {
-    setRefreshing(true);
-    try {
-      // Bypass client + server stats TTL so button always reflects DB
-      const dash = await api.getDashboardStats({ force: true });
-      applyDash(dash);
-    } catch (e) {
-      setError(handleApiError(e, OperationType.GET, "/api/stats").message);
-    } finally {
-      setRefreshing(false);
-    }
-  };
-
-  /** Single source of “mendesak” for hero + list (no double story). */
+  /** Ringkasan item mendesak (hero). */
   const urgentAlerts = useMemo(() => {
     const items = [
       ...kgbList
@@ -247,8 +211,7 @@ export default function Dashboard() {
   const urgentTotal = urgentAlerts.length;
   const urgentPreview = urgentAlerts.slice(0, 12);
 
-  const nearDays = TAB_URGENCY[timelineTab].nearDays;
-
+  /** Proyeksi: seluruh jadwal tab aktif, diurut dari paling mendesak. */
   const activeList = useMemo(() => {
     const raw =
       timelineTab === "kgb"
@@ -256,14 +219,14 @@ export default function Dashboard() {
         : timelineTab === "kp"
           ? kpList
           : pensiunList;
-    return filterTimeline(raw, timeFilter, nearDays);
-  }, [timelineTab, kgbList, kpList, pensiunList, timeFilter, nearDays]);
+    return [...raw].sort((a, b) => a.diffDays - b.diffDays);
+  }, [timelineTab, kgbList, kpList, pensiunList]);
 
-  const urgentCounts = useMemo(
+  const tabCounts = useMemo(
     () => ({
-      kgb: kgbList.filter((x) => isUrgentItem(x, "kgb")).length,
-      kp: kpList.filter((x) => isUrgentItem(x, "kp")).length,
-      pensiun: pensiunList.filter((x) => isUrgentItem(x, "pensiun")).length,
+      kgb: kgbList.length,
+      kp: kpList.length,
+      pensiun: pensiunList.length,
     }),
     [kgbList, kpList, pensiunList],
   );
@@ -325,7 +288,6 @@ export default function Dashboard() {
     { name: "Lainnya", value: stats.lainnya, to: "/employees?status=Lainnya" },
   ].filter((x) => x.value > 0);
 
-  // Empty org
   if (!error && total === 0) {
     return (
       <motion.div
@@ -337,7 +299,7 @@ export default function Dashboard() {
         <motion.div variants={pageItemVariants}>
           <PageHeader
             title="Dashboard"
-            description="Belum ada data pegawai."
+            description="Ringkasan data kepegawaian dan prediksi jadwal kepegawaian."
           />
         </motion.div>
         <motion.div
@@ -346,25 +308,32 @@ export default function Dashboard() {
         >
           <Users className="w-10 h-10 text-slate-300 mx-auto" />
           <p className="text-sm text-slate-600 max-w-md mx-auto">
-            Mulai dengan mengimpor template atau menambah pegawai manual.
-            Proyeksi KP/KGB/pensiun akan muncul di sini setelah data terisi.
+            Belum ada data pegawai. Impor dari templat atau tambah pegawai
+            secara manual. Prediksi kenaikan gaji berkala, pangkat, dan pensiun
+            akan tampil di sini setelah data terisi.
           </p>
-          <div className="flex flex-wrap justify-center gap-2">
-            <Link to="/employees" className={btnPrimary}>
-              Buka pegawai
-              <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
-            {canWrite && (
+          {canWrite && (
+            <div className="flex flex-wrap justify-center gap-2">
               <Link to="/employees/new" className={btnSecondary}>
                 <UserPlus className="w-3.5 h-3.5" />
                 Tambah pegawai
               </Link>
-            )}
-          </div>
+            </div>
+          )}
         </motion.div>
       </motion.div>
     );
   }
+
+  const headerDescription = updatedAt
+    ? `Data per ${new Date(updatedAt).toLocaleString("id-ID", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      })}`
+    : "Ringkasan data kepegawaian dan prediksi jadwal kepegawaian.";
 
   return (
     <motion.div
@@ -374,29 +343,7 @@ export default function Dashboard() {
       className={pageShell}
     >
       <motion.div variants={pageItemVariants}>
-        <PageHeader
-          title="Dashboard"
-          description={
-            updatedAt
-              ? `Meja kerja Umpeg · prediksi indikatif* · ${new Date(updatedAt).toLocaleString("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`
-              : "Angka SDM & item yang perlu diurus (prediksi indikatif*)."
-          }
-          actions={
-            <button
-              type="button"
-              onClick={() => void refresh()}
-              disabled={refreshing}
-              className={btnSecondary}
-            >
-              {refreshing ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <RefreshCw className="w-3.5 h-3.5" />
-              )}
-              Muat ulang
-            </button>
-          }
-        />
+        <PageHeader title="Dashboard" description={headerDescription} />
       </motion.div>
 
       {error && (
@@ -415,17 +362,15 @@ export default function Dashboard() {
           className="p-3 rounded-xl border border-amber-100 bg-amber-50 text-amber-900 text-xs flex items-center gap-2"
         >
           <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-          Data proyeksi terpotong (batas scan). Angka mendesak mungkin tidak
-          lengkap — hubungi admin jika organisasi sangat besar.
+          Data proyeksi terpotong karena batas pemindaian. Angka mendesak
+          mungkin tidak lengkap untuk organisasi berukuran sangat besar.
         </motion.div>
       )}
 
-      {/* Zone: daftar mendesak + komposisi (tanpa CTA ekstra) */}
       <motion.div
         variants={pageItemVariants}
         className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6"
       >
-        {/* Daftar mendesak */}
         <div
           id="mendesak"
           className={`${card} overflow-hidden flex flex-col min-h-[280px] scroll-mt-20`}
@@ -435,25 +380,22 @@ export default function Dashboard() {
           >
             <div className="min-w-0">
               <h2 className="text-sm font-semibold text-slate-800">
-                Daftar mendesak
+                Perlu penanganan
               </h2>
               <p className="text-[10px] text-slate-400 mt-0.5">
-                KGB/KP ≤90h · pensiun ≤365h · indikatif*
-                {urgentTotal > 12
-                  ? ` · 12 dari ${urgentTotal}`
-                  : ""}
+                Kenaikan gaji berkala dan pangkat dalam 90 hari; pensiun dalam
+                365 hari
+                {urgentTotal > 12 ? ` · menampilkan 12 dari ${urgentTotal}` : ""}
               </p>
             </div>
             <span className="text-[10px] font-semibold text-slate-500 border border-slate-200 bg-white px-2 py-0.5 rounded-lg tabular-nums shrink-0">
               {urgentPreview.length}
-              {urgentTotal > urgentPreview.length
-                ? `/${urgentTotal}`
-                : ""}
+              {urgentTotal > urgentPreview.length ? `/${urgentTotal}` : ""}
             </span>
           </div>
           {urgentPreview.length === 0 ? (
             <p className="p-5 text-sm text-slate-500 flex-1 flex items-center">
-              Tidak ada KGB/KP/pensiun dalam jendela mendesak.
+              Tidak ada jadwal dalam jendela penanganan mendesak.
             </p>
           ) : (
             <ul className="divide-y divide-slate-100 flex-1 overflow-y-auto max-h-[360px]">
@@ -496,7 +438,6 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* KPI + unit stacked */}
         <div className="space-y-4 flex flex-col min-h-0">
           <div className="grid grid-cols-2 gap-3">
             {kpi.map((item) => (
@@ -542,7 +483,9 @@ export default function Dashboard() {
             <div
               className={`${cardHeader} flex items-center justify-between gap-2`}
             >
-              <h2 className="text-sm font-semibold text-slate-800">Per unit</h2>
+              <h2 className="text-sm font-semibold text-slate-800">
+                Per unit kerja
+              </h2>
               <span className="text-[10px] font-semibold text-slate-500 border border-slate-200 bg-white px-2 py-0.5 rounded-lg tabular-nums">
                 {total} pegawai
               </span>
@@ -588,7 +531,6 @@ export default function Dashboard() {
         </div>
       </motion.div>
 
-      {/* Kesehatan data */}
       <motion.div variants={pageItemVariants} className={`${card} overflow-hidden`}>
         <div
           className={`${cardHeader} flex flex-col sm:flex-row sm:items-center justify-between gap-2`}
@@ -596,13 +538,13 @@ export default function Dashboard() {
           <div className="flex items-center gap-2">
             <FileWarning className="w-4 h-4 text-slate-500" />
             <h2 className="text-sm font-semibold text-slate-800">
-              Kesehatan data
+              Kelengkapan data
             </h2>
           </div>
           <p className="text-[11px] text-slate-500">
             {healthTotal === 0
-              ? "Master data terlihat lengkap."
-              : `${healthTotal} flag kelengkapan (satu orang bisa punya beberapa flag).`}
+              ? "Data master terlihat lengkap."
+              : `${healthTotal} catatan kelengkapan (satu pegawai dapat memiliki beberapa catatan).`}
           </p>
         </div>
         <div className="p-4 grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -611,25 +553,25 @@ export default function Dashboard() {
               {
                 label: "Tanpa NIP",
                 value: health.withoutNip,
-                hint: "Match impor & cetak",
+                hint: "Mempengaruhi impor dan cetak",
                 to: health.withoutNip > 0 ? "/employees" : null,
               },
               {
-                label: "ASN tanpa TMT gol",
+                label: "ASN tanpa TMT golongan",
                 value: health.withoutTmtGol,
-                hint: "Prediksi KP lemah",
+                hint: "Prediksi pangkat kurang akurat",
                 to: null as string | null,
               },
               {
                 label: "Jabatan di luar kamus",
                 value: health.jabatanOffKamus,
-                hint: "Kelas/beban kosong",
+                hint: "Kelas dan beban kerja kosong",
                 to: null as string | null,
               },
               {
-                label: "Tanpa nomor HP",
+                label: "Tanpa nomor telepon",
                 value: health.withoutHp,
-                hint: "Kontak cuti/admin",
+                hint: "Untuk keperluan administrasi",
                 to: null as string | null,
               },
             ] as const
@@ -668,19 +610,8 @@ export default function Dashboard() {
             );
           })}
         </div>
-        {healthTotal > 0 && (
-          <div className="px-4 pb-3">
-            <Link to="/employees" className={`${btnGhost} text-[11px]`}>
-              {health.withoutNip > 0
-                ? "Lengkapi data di Pegawai / impor"
-                : "Buka menu Pegawai"}
-              <ArrowRight className="w-3 h-3" />
-            </Link>
-          </div>
-        )}
       </motion.div>
 
-      {/* Proyeksi — pusat filter KP/KGB/pensiun (bukan di Pegawai) */}
       <motion.div
         id="proyeksi"
         variants={pageItemVariants}
@@ -689,79 +620,43 @@ export default function Dashboard() {
         <div>
           <h2 className={sectionTitle}>
             <Clock className="w-4 h-4 text-slate-500" />
-            Proyeksi
+            Proyeksi jadwal
           </h2>
           <p className="text-xs text-slate-500 mt-1.5 pl-3">
-            Jadwal prediksi* (bukan SK). Default: jendela mendesak per tab.
+            Prediksi diurutkan dari yang paling mendesak. Bukan penetapan resmi.
           </p>
         </div>
 
         <div className={`${card} overflow-hidden`}>
-          <div className="px-4 sm:px-5 pt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
-            <div className="flex flex-wrap gap-1.5">
-              {(Object.keys(TAB_URGENCY) as TimelineTab[]).map((key) => {
-                const meta = TAB_URGENCY[key];
-                const active = timelineTab === key;
-                const fullCount =
-                  key === "kgb"
-                    ? kgbList.length
-                    : key === "kp"
-                      ? kpList.length
-                      : pensiunList.length;
-                const uCount = urgentCounts[key];
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => {
-                      setTimelineTab(key);
-                      setTimeFilter("near");
-                    }}
-                    className={cn(
-                      "px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors active:scale-[0.98]",
-                      active
-                        ? "bg-slate-900 text-white border-slate-900"
-                        : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50",
-                    )}
-                  >
-                    {meta.label}
-                    <span
-                      className={cn(
-                        "ml-1.5 tabular-nums",
-                        active ? "text-slate-300" : "text-slate-400",
-                      )}
-                    >
-                      {uCount}
-                      <span className="opacity-70">/{fullCount}</span>
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {(
-                [
-                  ["near", "Mendesak"],
-                  ["overdue", "Lewat"],
-                  ["d30", "≤30h"],
-                  ["all", "Semua"],
-                ] as const
-              ).map(([k, label]) => (
+          <div className="px-4 sm:px-5 pt-4 flex flex-wrap gap-1.5 border-b border-slate-100 pb-3">
+            {(Object.keys(TAB_URGENCY) as TimelineTab[]).map((key) => {
+              const meta = TAB_URGENCY[key];
+              const active = timelineTab === key;
+              const count = tabCounts[key];
+              return (
                 <button
-                  key={k}
+                  key={key}
                   type="button"
-                  onClick={() => setTimeFilter(k)}
+                  onClick={() => setTimelineTab(key)}
                   className={cn(
-                    "px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-colors",
-                    timeFilter === k
-                      ? "bg-slate-50 text-slate-900 border-slate-300"
-                      : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50",
+                    "px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors active:scale-[0.98]",
+                    active
+                      ? "bg-slate-900 text-white border-slate-900"
+                      : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50",
                   )}
                 >
-                  {label}
+                  {meta.label}
+                  <span
+                    className={cn(
+                      "ml-1.5 tabular-nums",
+                      active ? "text-slate-300" : "text-slate-400",
+                    )}
+                  >
+                    {count}
+                  </span>
                 </button>
-              ))}
-            </div>
+              );
+            })}
           </div>
 
           <div className="overflow-x-auto">
@@ -776,7 +671,7 @@ export default function Dashboard() {
                     {TAB_URGENCY[timelineTab].acuan}
                   </th>
                   <th className="px-4 py-3 font-bold text-center">
-                    Jadwal*
+                    Jadwal prediksi
                   </th>
                   <th className="px-4 py-3 font-bold text-right">Sisa waktu</th>
                 </tr>
@@ -824,7 +719,9 @@ export default function Dashboard() {
                         </span>
                         {timelineTab === "kgb" && row.isFirst != null && (
                           <div className="text-[10px] text-slate-400 mt-0.5">
-                            {row.isFirst ? "TMT kerja" : "SK terakhir"}
+                            {row.isFirst
+                              ? "Terhitung mulai tanggal kerja"
+                              : "Surat keputusan terakhir"}
                           </div>
                         )}
                       </td>
@@ -863,16 +760,7 @@ export default function Dashboard() {
                       colSpan={5}
                       className="px-4 py-10 text-center text-sm text-slate-400"
                     >
-                      Tidak ada data untuk filter ini.
-                      {timeFilter !== "all" && (
-                        <button
-                          type="button"
-                          className="ml-2 text-slate-700 font-semibold underline-offset-2 hover:underline"
-                          onClick={() => setTimeFilter("all")}
-                        >
-                          Tampilkan semua
-                        </button>
-                      )}
+                      Belum ada data proyeksi untuk jenis ini.
                     </td>
                   </tr>
                 )}
@@ -881,24 +769,16 @@ export default function Dashboard() {
           </div>
 
           {activeList.length > 0 && (
-            <div className="px-4 py-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="px-4 py-3 border-t border-slate-100">
               <p className="text-[11px] text-slate-400 tabular-nums">
-                {activeList.length} baris
-                {timeFilter !== "all" ? " (terfilter)" : ""}
-                {timeFilter === "near"
-                  ? ` · mendesak ≤${nearDays}h`
-                  : ""}
+                {activeList.length} baris · diurutkan dari paling mendesak
               </p>
-              <Link to="/employees" className={`${btnGhost} text-[11px]`}>
-                <Users className="w-3.5 h-3.5" />
-                Buka direktori pegawai
-              </Link>
             </div>
           )}
         </div>
         <p className="text-[11px] text-slate-400 pl-1">
-          * Jadwal KP/KGB/pensiun bersifat prediksi indikatif (bukan penetapan
-          legal), kecuali tanggal manual diisi di biodata.
+          * Jadwal bersifat prediksi (bukan penetapan resmi), kecuali tanggal
+          manual diisi pada biodata pegawai.
         </p>
       </motion.div>
     </motion.div>

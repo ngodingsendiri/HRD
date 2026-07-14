@@ -52,7 +52,10 @@ import {
   type CutiSisaSnapshot,
 } from "./print/PrintCutiDocument";
 import { PrintModelDkDocument } from "./print/PrintModelDkDocument";
-import { PRINT_PAGE_CSS } from "./print/printPageCss";
+import {
+  PRINT_PAGE_CSS,
+  densityFromRowCount,
+} from "./print/printPageCss";
 import { downloadElementAsA4Pdf } from "../lib/downloadA4Pdf";
 
 type PrintType =
@@ -105,9 +108,9 @@ const DOCUMENTS: PrintDoc[] = [
     category: "laporan",
     type: "absen_global",
     catalogKey: "absen_global",
-    label: "Absensi",
+    label: "Daftar hadir",
     title: "DAFTAR HADIR / ABSENSI PEGAWAI",
-    desc: "Daftar hadir global atau per unit",
+    desc: "Daftar hadir seluruh pegawai atau per unit kerja",
   },
   {
     category: "laporan",
@@ -115,15 +118,15 @@ const DOCUMENTS: PrintDoc[] = [
     catalogKey: "tanda_terima",
     label: "Tanda terima",
     title: "DAFTAR TANDA TERIMA ......................",
-    desc: "Lembar tanda terima / serah terima",
+    desc: "Lembar tanda terima atau serah terima",
   },
   {
     category: "laporan",
     type: "duk",
     catalogKey: "duk",
-    label: "DUK (kepangkatan)",
+    label: "Daftar urut kepangkatan",
     title: "DAFTAR URUT KEPANGKATAN (DUK)",
-    desc: "Urut gol/pangkat, jabatan, unit — bukan lembar TTD absensi",
+    desc: "Diurutkan menurut golongan, jabatan, dan unit kerja",
   },
   {
     category: "layanan",
@@ -131,17 +134,17 @@ const DOCUMENTS: PrintDoc[] = [
     catalogKey: "surat_cuti",
     label: "Surat cuti",
     title: "SURAT IZIN CUTI PEGAWAI",
-    desc: "Form izin cuti per pegawai",
+    desc: "Formulir izin cuti per pegawai",
     needsEmployee: true,
   },
   {
     category: "layanan",
     type: "model_dk",
     catalogKey: "model_dk",
-    label: "Model DK",
+    label: "Surat tunjangan keluarga",
     title:
       "SURAT KETERANGAN UNTUK MENDAPATKAN PEMBAYARAN TUNJANGAN KELUARGA",
-    desc: "Surat keterangan tunjangan keluarga",
+    desc: "Surat keterangan untuk pembayaran tunjangan keluarga",
     needsEmployee: true,
   },
 ];
@@ -1007,6 +1010,9 @@ export default function Print() {
     selectedBidang,
   ]);
 
+  const isLandscapeDoc = printType === "duk";
+  const printDensity = densityFromRowCount(sortedEmployees.length);
+
   const generatePdfDownload = async () => {
     const el = printRef.current;
     if (!el) {
@@ -1015,8 +1021,13 @@ export default function Print() {
     }
     setPdfBusy(true);
     try {
-      notify.info("Menyiapkan PDF A4…");
-      await downloadElementAsA4Pdf(el, pdfFilename);
+      const orientLabel = isLandscapeDoc ? "A4 mendatar" : "A4 tegak";
+      notify.info(`Menyiapkan PDF ${orientLabel}…`);
+      await downloadElementAsA4Pdf(el, pdfFilename, {
+        orientation: isLandscapeDoc ? "landscape" : "portrait",
+        // Large sheets: slightly lower scale keeps memory sane
+        scale: sortedEmployees.length > 60 ? 1.5 : 2,
+      });
       notify.success("PDF diunduh", pdfFilename);
     } catch (err) {
       console.error(err);
@@ -1522,7 +1533,7 @@ export default function Print() {
         <motion.div variants={pageItemVariants}>
           <PageHeader
             title="Cetak"
-            description={contextLine}
+            description="Penyusunan dan unduh dokumen kepegawaian dalam format PDF ukuran A4."
             actions={
               <div
                 className={cn(
@@ -1537,7 +1548,7 @@ export default function Print() {
                 ) : (
                   <AlertCircle className="w-3.5 h-3.5" />
                 )}
-                {readiness.ready ? "Siap dicetak" : "Lengkapi dulu"}
+                {readiness.ready ? "Siap diunduh" : "Belum lengkap"}
               </div>
             }
           />
@@ -1654,7 +1665,8 @@ export default function Print() {
                 3 · Pratinjau
               </h2>
               <p className="text-[11px] text-slate-500 mt-0.5 truncate">
-                A4 · unduh PDF dari pratinjau · {contextLine}
+                Unduh PDF A4 {isLandscapeDoc ? "mendatar" : "tegak"} ·{" "}
+                {contextLine}
               </p>
               <p className="text-[10px] text-slate-400 mt-0.5 hidden sm:block truncate">
                 {printSummaryLines.join(" · ")}
@@ -1716,10 +1728,16 @@ export default function Print() {
             )}
             <div
               ref={printRef}
-              className="bg-white border border-slate-200 print-container text-[12pt] w-[210mm] max-w-none shrink-0 p-[15mm] print:max-w-full print:w-full print:p-0 mx-auto print:border-none shadow-sm print:shadow-none"
+              className={
+                isLandscapeDoc
+                  ? "bg-white border border-slate-200 print-container print-landscape print-sheet text-[11pt] w-[297mm] max-w-none shrink-0 p-[10mm] print:max-w-full print:w-full print:p-0 mx-auto print:border-none shadow-sm print:shadow-none"
+                  : "bg-white border border-slate-200 print-container print-sheet text-[12pt] w-[210mm] max-w-none shrink-0 p-[15mm] print:max-w-full print:w-full print:p-0 mx-auto print:border-none shadow-sm print:shadow-none"
+              }
               style={{
-                minHeight: "297mm",
+                minHeight: isLandscapeDoc ? "210mm" : "297mm",
                 fontFamily: "Arial, Helvetica, sans-serif",
+                color: "#000000",
+                backgroundColor: "#ffffff",
               }}
             >
           {/* MAIN DOCUMENT BODY — templates in src/pages/print/ */}
@@ -1736,6 +1754,7 @@ export default function Print() {
               ttdName={ttdName}
               ttdPangkat={ttdPangkat}
               ttdNip={ttdNip}
+              density={printDensity}
             />
           ) : printType === "duk" ? (
             <PrintDukDocument
@@ -1748,6 +1767,7 @@ export default function Print() {
               ttdName={ttdName}
               ttdPangkat={ttdPangkat}
               ttdNip={ttdNip}
+              density={printDensity}
             />
           ) : printType === "surat_cuti" ? (
             <PrintCutiDocument

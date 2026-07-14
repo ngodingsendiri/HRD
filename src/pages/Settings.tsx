@@ -212,7 +212,7 @@ export default function Settings() {
       <motion.div variants={pageItemVariants}>
         <PageHeader
           title="Pengaturan"
-          description="Identitas instansi, data master, dan API."
+          description="Identitas instansi, data master, dan integrasi aplikasi."
           actions={
             isApiTab ? (
               <span className="text-xs font-medium text-slate-500 border border-slate-200 rounded-lg px-3 py-2">
@@ -295,7 +295,7 @@ export default function Settings() {
                   activeTab === "kamus" ? "text-slate-900" : "text-slate-400",
                 )}
               />
-              Kamus
+              Kamus jabatan
             </button>
             <button
               type="button"
@@ -324,7 +324,7 @@ export default function Settings() {
                   activeTab === "api" ? "text-slate-900" : "text-slate-400",
                 )}
               />
-              API
+              Kunci API
             </button>
           </nav>
         </div>
@@ -369,7 +369,7 @@ export default function Settings() {
                     Penandatangan
                   </h2>
                   <p className="text-sm text-slate-500 mt-1">
-                    Nama pejabat untuk dokumen resmi (kop / TTD).
+                    Nama pejabat untuk dokumen resmi (kop dan tanda tangan).
                   </p>
                 </div>
 

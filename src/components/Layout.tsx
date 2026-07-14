@@ -31,7 +31,7 @@ export default function Layout() {
     { name: "Dashboard", href: "/", icon: LayoutDashboard, short: "Beranda" },
     { name: "Pegawai", href: "/employees", icon: Users, short: "Pegawai" },
     { name: "Cetak", href: "/print", icon: Printer, short: "Cetak" },
-    { name: "Pengaturan", href: "/settings", icon: Settings, short: "Setelan" },
+    { name: "Pengaturan", href: "/settings", icon: Settings, short: "Atur" },
   ];
 
   // Warm JS chunks in the background so menu switches skip "Memuat halaman…"

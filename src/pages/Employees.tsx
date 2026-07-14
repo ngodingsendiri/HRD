@@ -774,7 +774,7 @@ export default function Employees() {
       <motion.div variants={pageItemVariants}>
         <PageHeader
           title="Pegawai"
-          description="Direktori pegawai — cari, impor, ekspor. Peringatan KP/KGB/pensiun ada di Dashboard."
+          description="Pencarian, impor, dan ekspor data pegawai."
           actions={
             <>
               <div className="relative" ref={moreRef}>
@@ -879,7 +879,7 @@ export default function Employees() {
                             void handleExport("filtered");
                           }}
                         >
-                          Ekspor hasil filter
+                          Ekspor hasil saringan
                         </button>
                       )}
                       <button
@@ -1027,7 +1027,7 @@ export default function Employees() {
                 className="ml-2 text-slate-700 font-semibold underline-offset-2 hover:underline"
                 onClick={resetFilters}
               >
-                Reset filter
+                Bersihkan saringan
               </button>
             )}
           </p>
@@ -1058,7 +1058,7 @@ export default function Employees() {
           <div className={`${card} py-6`}>
             <EmptyState
               title="Belum ada data pegawai"
-              description="Mulai dengan mengunduh template, mengisi data, lalu impor — atau tambah manual."
+              description="Unduh templat, isi data, lalu impor — atau tambah pegawai secara manual."
             />
             {canWrite && (
               <div className="flex flex-wrap justify-center gap-2 pb-6">
@@ -1246,7 +1246,7 @@ export default function Employees() {
                       <td colSpan={9} className="py-8">
                         <EmptyState
                           title="Tidak ada yang cocok"
-                          description="Ubah kata kunci atau filter status/bidang."
+                          description="Ubah kata kunci atau saring berdasarkan status dan unit kerja."
                         />
                       </td>
                     </tr>
@@ -1259,7 +1259,7 @@ export default function Employees() {
             <div className="md:hidden flex-1 overflow-y-auto p-3 space-y-3 bg-slate-50/50">
               {displayedEmployees.length > 0 && (
                 <p className="text-[11px] text-slate-400 px-0.5">
-                  Centang = pilih di halaman ini saja (bukan seluruh filter).
+                  Centang = pilih di halaman ini saja (bukan seluruh hasil saringan).
                 </p>
               )}
               {displayedEmployees.map((emp) => (
@@ -1364,7 +1364,7 @@ export default function Employees() {
               {displayedEmployees.length === 0 && (
                 <EmptyState
                   title="Tidak ada yang cocok"
-                  description="Ubah kata kunci atau filter."
+                  description="Ubah kata kunci atau saringan pencarian."
                 />
               )}
             </div>
@@ -1494,9 +1494,9 @@ export default function Employees() {
                     ["Berkala terakhir", detailEmp.tanggalBerkalaTerakhir],
                     ["TMT KP manual", detailEmp.tmtKp],
                     ["BUP manual", detailEmp.bupTanggal],
-                    ["Pensiun (indikatif)*", bup],
-                    ["Prediksi KP (indikatif)*", kp.targetDate || ""],
-                    ["Prediksi KGB (indikatif)*", kgb.targetDate || ""],
+                    ["Pensiun (prediksi)*", bup],
+                    ["Prediksi kenaikan pangkat*", kp.targetDate || ""],
+                    ["Prediksi kenaikan gaji berkala*", kgb.targetDate || ""],
                     ["No. HP", detailEmp.nomorHp],
                     ["Masa kerja", detailEmp.masaKerja],
                     ["Kelas jabatan", detailEmp.kelasJabatan],
@@ -1517,7 +1517,7 @@ export default function Employees() {
               })()}
             </dl>
             <p className="text-[11px] text-slate-400">
-              * Prediksi indikatif (bukan penetapan legal), kecuali tanggal
+              * Prediksi (bukan penetapan resmi), kecuali tanggal
               manual diisi.
             </p>
             <div className="flex flex-wrap justify-end gap-2 pt-2">

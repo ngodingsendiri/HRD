@@ -122,7 +122,7 @@ export default function EmployeeFormPage() {
     <div className={pageShell}>
       <PageHeader
         title={isEdit ? "Ubah pegawai" : "Tambah pegawai"}
-        description="Isi per langkah atau simpan kapan saja. Navigasi keluar dilindungi jika ada perubahan."
+        description="Lengkapi data secara bertahap. Perubahan yang belum disimpan dilindungi saat meninggalkan halaman."
         actions={
           <button
             type="button"
