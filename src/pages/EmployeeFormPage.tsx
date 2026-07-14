@@ -132,7 +132,7 @@ export default function EmployeeFormPage() {
         <div className={`${card} p-6 text-sm text-slate-600`}>
           Mode baca saja. Hubungi admin untuk mengubah data.
           <div className="mt-4">
-            <Link to="/employees" className={btnSecondary}>
+            <Link to={listReturnPath} className={btnSecondary}>
               Kembali ke daftar
             </Link>
           </div>

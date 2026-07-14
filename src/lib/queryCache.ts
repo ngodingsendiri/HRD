@@ -55,7 +55,9 @@ export async function cacheGetOrFetch<T>(
     .then((data) => {
       // Mutation happened while we were in flight — do not re-seed stale data
       if (genAtStart !== generation) {
-        store.delete(key);
+        const e = store.get(key);
+        // Only clear OUR placeholder — never wipe a newer inflight/fresh entry
+        if (e?.inflight === inflight) store.delete(key);
         return data;
       }
       cacheSet(key, data);
@@ -64,11 +66,8 @@ export async function cacheGetOrFetch<T>(
       return data;
     })
     .catch((err) => {
-      // Only clear if this inflight is still the one registered
-      if (genAtStart === generation) {
-        const e = store.get(key);
-        if (e?.inflight === inflight) store.delete(key);
-      }
+      const e = store.get(key);
+      if (e?.inflight === inflight) store.delete(key);
       throw err;
     });
 
@@ -76,7 +75,7 @@ export async function cacheGetOrFetch<T>(
   return inflight;
 }
 
-/** Drop cache entries. No prefix → clear all. Always bumps generation. */
+/** Drop cache entries. No prefix → clear all. Always bumps generation once. */
 export function cacheInvalidate(prefix?: string): void {
   generation += 1;
   if (!prefix) {
@@ -85,6 +84,16 @@ export function cacheInvalidate(prefix?: string): void {
   }
   for (const k of store.keys()) {
     if (k.startsWith(prefix)) store.delete(k);
+  }
+}
+
+/** Invalidate several prefixes with a single generation bump. */
+export function cacheInvalidateMany(prefixes: string[]): void {
+  generation += 1;
+  for (const prefix of prefixes) {
+    for (const k of store.keys()) {
+      if (k.startsWith(prefix)) store.delete(k);
+    }
   }
 }
 

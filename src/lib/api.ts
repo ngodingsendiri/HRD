@@ -9,6 +9,8 @@ import {
   cacheGet,
   cacheGetOrFetch,
   cacheInvalidate,
+  cacheInvalidateMany,
+  cacheSet,
   DEFAULT_TTL_MS,
 } from "./queryCache.js";
 
@@ -123,10 +125,13 @@ function employeesQuery(params?: EmployeeListParams): string {
 }
 
 function invalidateEmployeeReads() {
-  cacheInvalidate("employees:");
-  cacheInvalidate("employee:");
-  cacheInvalidate("stats");
-  cacheInvalidate(ALL_EMPLOYEES_LEAN_KEY);
+  // One generation bump for all related keys (avoids race amplification)
+  cacheInvalidateMany([
+    "employees:",
+    "employee:",
+    "stats",
+    ALL_EMPLOYEES_LEAN_KEY,
+  ]);
   // Re-warm in background so menus stay instant after edits
   void import("./bootstrap.js").then((m) => m.rebootstrapInBackground());
 }
@@ -160,9 +165,12 @@ export const api = {
     });
   },
 
-  async getEmployee(id: string): Promise<Employee | null> {
-    const key = `employee:${id}`;
-    return cacheGetOrFetch(key, async () => {
+  async getEmployee(
+    id: string,
+    opts?: { force?: boolean },
+  ): Promise<Employee | null> {
+    const key = `employee:${encodeURIComponent(id)}`;
+    const fetchOne = async () => {
       try {
         return await request<Employee>(
           `/api/employees/${encodeURIComponent(id)}`,
@@ -172,7 +180,15 @@ export const api = {
         if (e instanceof ApiError && e.status === 404) return null;
         throw e;
       }
-    });
+    };
+    if (opts?.force) {
+      // One generation bump; drop both key variants (legacy unencoded + encoded)
+      cacheInvalidateMany([key, `employee:${id}`]);
+      const data = await fetchOne();
+      if (data) cacheSet(key, data);
+      return data;
+    }
+    return cacheGetOrFetch(key, fetchOne);
   },
 
   async createEmployee(emp: Employee): Promise<Employee> {

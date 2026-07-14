@@ -930,16 +930,48 @@ export default function Print() {
         );
         return;
       }
-      // Form BKN menampilkan saldo SEBELUM potong
+      // Form BKN menampilkan saldo SEBELUM potong (snapshot at confirm time)
       const prePrint: CutiSisaSnapshot = {
         n: String(sisaN),
         n1: String(sisaN1),
         n2: String(sisaN2),
       };
+
+      // 1) Paint form with pre-deduction saldo, download first
+      setCutiSisaPrint(prePrint);
+      setCutiConfirmOpen(false);
+      await new Promise((r) => setTimeout(r, 120));
+      const downloaded = await runDownload(pendingDownloadFormat.current);
+      if (!downloaded) {
+        setCutiSisaPrint(null);
+        return;
+      }
+
+      // 2) Network re-read balance after slow download (bypass cache — TOCTOU)
+      const fresh = await api.getEmployee(cutiEmployeeId, { force: true });
+      if (!fresh) {
+        notify.error(
+          "Berkas sudah diunduh, tetapi data pegawai tidak ditemukan",
+          "Periksa sisa cuti di biodata.",
+        );
+        setCutiSisaPrint(null);
+        return;
+      }
+      const fN = parseInt(String(fresh.sisaCutiN ?? "0"), 10) || 0;
+      const fN1 = parseInt(String(fresh.sisaCutiN1 ?? "0"), 10) || 0;
+      const fN2 = parseInt(String(fresh.sisaCutiN2 ?? "0"), 10) || 0;
+      if (fN + fN1 + fN2 < cutiLamaHari) {
+        notify.error(
+          "Berkas sudah diunduh, tetapi sisa cuti tidak lagi mencukupi",
+          "Saldo mungkin sudah dipotong di sesi lain. Periksa biodata.",
+        );
+        setCutiSisaPrint(null);
+        return;
+      }
       let toDeduct = cutiLamaHari;
-      let newN = sisaN;
-      let newN1 = sisaN1;
-      let newN2 = sisaN2;
+      let newN = fN;
+      let newN1 = fN1;
+      let newN2 = fN2;
       if (toDeduct <= newN2) {
         newN2 -= toDeduct;
       } else {
@@ -954,22 +986,15 @@ export default function Print() {
         }
       }
 
-      // 1) Paint form with pre-deduction saldo, download first
-      // 2) Only after successful download, persist potong (avoids orphan deductions)
-      setCutiSisaPrint(prePrint);
-      setCutiConfirmOpen(false);
-      await new Promise((r) => setTimeout(r, 120));
-      await runDownload(pendingDownloadFormat.current);
-
       try {
-        await api.updateEmployee(emp.id!, {
+        await api.updateEmployee(fresh.id!, {
           sisaCutiN: String(newN),
           sisaCutiN1: String(newN1),
           sisaCutiN2: String(newN2),
         });
         setEmployees((prev) =>
           prev.map((e) =>
-            e.id === emp.id
+            e.id === fresh.id
               ? {
                   ...e,
                   sisaCutiN: String(newN),
@@ -991,15 +1016,10 @@ export default function Print() {
     } catch (err) {
       console.error(err);
       setCutiSisaPrint(null);
-      // Download failed — do not potong; toast may already be shown by runDownload
-      if (!(err instanceof Error && /PDF|Word|Pratinjau/i.test(err.message))) {
-        notify.error(
-          "Gagal unduh cuti",
-          err instanceof Error
-            ? err.message
-            : "Saldo cuti tidak diubah.",
-        );
-      }
+      notify.error(
+        "Gagal proses cuti",
+        err instanceof Error ? err.message : "Saldo cuti tidak diubah.",
+      );
     } finally {
       setCutiBusy(false);
     }
@@ -1037,12 +1057,12 @@ export default function Print() {
   const printDensity = densityFromRowCount(sortedEmployees.length);
   const downloadBusy = pdfBusy || docBusy || cutiBusy;
 
-  /** @returns true if file saved; throws on failure (for cuti: no potong if false). */
+  /** @returns true if file saved; false if failed (toast already shown). */
   const generatePdfDownload = async (): Promise<boolean> => {
     const el = printRef.current;
     if (!el) {
       notify.error("Pratinjau belum siap");
-      throw new Error("Pratinjau belum siap");
+      return false;
     }
     setPdfBusy(true);
     try {
@@ -1061,7 +1081,7 @@ export default function Print() {
         "Gagal membuat PDF",
         err instanceof Error ? err.message : undefined,
       );
-      throw err;
+      return false;
     } finally {
       setPdfBusy(false);
     }
@@ -1071,7 +1091,7 @@ export default function Print() {
     const el = printRef.current;
     if (!el) {
       notify.error("Pratinjau belum siap");
-      throw new Error("Pratinjau belum siap");
+      return false;
     }
     setDocBusy(true);
     try {
@@ -1088,15 +1108,15 @@ export default function Print() {
         "Gagal membuat Word",
         err instanceof Error ? err.message : undefined,
       );
-      throw err;
+      return false;
     } finally {
       setDocBusy(false);
     }
   };
 
-  const runDownload = async (format: DownloadFormat) => {
-    if (format === "doc") await generateDocDownload();
-    else await generatePdfDownload();
+  const runDownload = async (format: DownloadFormat): Promise<boolean> => {
+    if (format === "doc") return generateDocDownload();
+    return generatePdfDownload();
   };
 
   const handleDownloadClick = async (format: DownloadFormat) => {
@@ -1107,22 +1127,14 @@ export default function Print() {
     }
     if (printType === "surat_cuti" && isCutiTahunan(cutiJenis)) {
       if (!canWrite) {
-        try {
-          await runDownload(format);
-        } catch {
-          /* toast already shown */
-        }
+        await runDownload(format);
         return;
       }
       pendingDownloadFormat.current = format;
       setCutiConfirmOpen(true);
       return;
     }
-    try {
-      await runDownload(format);
-    } catch {
-      /* toast already shown */
-    }
+    await runDownload(format);
   };
 
   const contextLine = [
@@ -1462,13 +1474,9 @@ export default function Print() {
                     <>
                       <p className="font-semibold">Cuti tahunan · potong saldo</p>
                       <p>
-                        Saat Anda konfirmasi, sisa cuti dipotong dulu (N-2 →
-                        N-1 → N), lalu dialog cetak dibuka.{" "}
-                        <strong>
-                          Membatalkan dialog cetak browser tidak mengembalikan
-                          sisa cuti
-                        </strong>
-                        — perbaiki saldo di Pegawai bila perlu.
+                        Saat konfirmasi, berkas diunduh dulu, lalu sisa cuti
+                        dipotong (urutan N-2 → N-1 → N). Jika unduhan gagal,
+                        saldo tidak diubah.
                       </p>
                     </>
                   ) : (
@@ -1908,8 +1916,8 @@ export default function Print() {
         variant="danger"
         title={
           pendingDownloadFormat.current === "doc"
-            ? "Potong sisa cuti lalu unduh Word?"
-            : "Potong sisa cuti lalu unduh PDF?"
+            ? "Unduh Word lalu potong sisa cuti?"
+            : "Unduh PDF lalu potong sisa cuti?"
         }
         description={
           <div className="space-y-2">

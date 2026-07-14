@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
+import { cacheInvalidate } from "./queryCache";
 
 export type UserRole = "ADMIN" | "VIEWER";
 
@@ -54,10 +55,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     fetchSession();
   }, []);
 
-  // API 401 (session expired / revoked) → clear ghost auth shell
+  // API 401 (session expired / revoked) → clear ghost auth shell + memory cache
   useEffect(() => {
     let lastToast = 0;
     const onExpired = () => {
+      cacheInvalidate();
       setUser(null);
       const now = Date.now();
       if (now - lastToast > 4000) {
@@ -79,6 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ allDevices: Boolean(opts?.allDevices) }),
       });
+      cacheInvalidate();
       setUser(null);
       window.location.href = "/";
     } catch {

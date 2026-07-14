@@ -99,8 +99,9 @@ export function downloadElementAsWordDoc(
       : DEFAULT_MARGIN.portrait);
 
   const clone = el.cloneNode(true) as HTMLElement;
-  clone.querySelectorAll(".print-hidden").forEach((n) => n.remove());
+  // Inline while trees still match, then strip UI-only chrome
   inlineComputedStyles(el, clone);
+  clone.querySelectorAll(".print-hidden").forEach((n) => n.remove());
 
   clone.style.boxShadow = "none";
   clone.style.border = "none";

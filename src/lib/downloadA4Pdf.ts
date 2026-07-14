@@ -55,13 +55,31 @@ export async function downloadElementAsA4Pdf(
   }
 
   // Temporarily unclip overflow ancestors so tall sheets capture fully
-  const restoreOverflow: Array<{ el: HTMLElement; value: string }> = [];
+  const restoreOverflow: Array<{
+    el: HTMLElement;
+    overflow: string;
+    overflowX: string;
+    overflowY: string;
+  }> = [];
+  const isClipped = (v: string) =>
+    v === "auto" || v === "scroll" || v === "hidden";
   let walk: HTMLElement | null = el.parentElement;
   while (walk && walk !== document.body) {
-    const ov = window.getComputedStyle(walk).overflow;
-    if (ov === "auto" || ov === "scroll" || ov === "hidden") {
-      restoreOverflow.push({ el: walk, value: walk.style.overflow });
+    const cs = window.getComputedStyle(walk);
+    if (
+      isClipped(cs.overflowX) ||
+      isClipped(cs.overflowY) ||
+      isClipped(cs.overflow)
+    ) {
+      restoreOverflow.push({
+        el: walk,
+        overflow: walk.style.overflow,
+        overflowX: walk.style.overflowX,
+        overflowY: walk.style.overflowY,
+      });
       walk.style.overflow = "visible";
+      walk.style.overflowX = "visible";
+      walk.style.overflowY = "visible";
     }
     walk = walk.parentElement;
   }
@@ -93,8 +111,10 @@ export async function downloadElementAsA4Pdf(
       },
     });
   } finally {
-    for (const { el: node, value } of restoreOverflow) {
-      node.style.overflow = value;
+    for (const { el: node, overflow, overflowX, overflowY } of restoreOverflow) {
+      node.style.overflow = overflow;
+      node.style.overflowX = overflowX;
+      node.style.overflowY = overflowY;
     }
   }
 
