@@ -1,7 +1,7 @@
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Employee, AppSettings } from "../types";
-import { Plus, Trash2 } from "lucide-react";
+import { Loader2, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
   validateAndExtractNIP,
@@ -16,10 +16,12 @@ import { btnPrimary, btnSecondary, input, label } from "../lib/ui";
 interface EmployeeFormProps {
   initialData?: Employee;
   settings?: AppSettings | null;
-  onSubmit: (data: Employee) => void;
+  onSubmit: (data: Employee) => void | Promise<void>;
   onCancel: () => void;
   /** Parent can block Modal close when form is dirty */
   onDirtyChange?: (dirty: boolean) => void;
+  /** External save-in-progress (disables Simpan / Batal). */
+  submitting?: boolean;
 }
 
 export function EmployeeForm({
@@ -28,9 +30,12 @@ export function EmployeeForm({
   onSubmit,
   onCancel,
   onDirtyChange,
+  submitting = false,
 }: EmployeeFormProps) {
   const [activeTab, setActiveTab] = useState(1);
   const [discardOpen, setDiscardOpen] = useState(false);
+  const [localBusy, setLocalBusy] = useState(false);
+  const busy = submitting || localBusy;
   const {
     register,
     control,
@@ -288,26 +293,36 @@ export function EmployeeForm({
   ];
 
   return (
-    <form onSubmit={handleSubmit((data) => {
-      const gol = formatGolonganDisplay(data.gol || "");
-      data.gol = gol;
-      let combined = `${data.pangkat || ""} / ${gol}`.trim();
-      if (combined === "/" || combined === "/ ") combined = "";
-      // Avoid " / III/c" when pangkat empty
-      if (!(data.pangkat || "").trim() && gol) combined = gol;
-      else if ((data.pangkat || "").trim() && !gol) combined = (data.pangkat || "").trim();
-      else if ((data.pangkat || "").trim() && gol)
-        combined = `${(data.pangkat || "").trim()} / ${gol}`;
-      data.pangkatGolongan = combined;
-      // Derived display-only — never persist
-      delete (data as { pensiun?: string }).pensiun;
-      delete (data as { masaKerja?: string }).masaKerja;
-      delete (data as { kelasJabatan?: string }).kelasJabatan;
-      delete (data as { bebanKerja?: string }).bebanKerja;
-      data.bupTanggal = data.bupTanggal || "";
-      data.tmtKp = data.tmtKp || "";
-      onSubmit(data);
-    })} className="space-y-6">
+    <form
+      onSubmit={handleSubmit(async (data) => {
+        if (busy) return;
+        const gol = formatGolonganDisplay(data.gol || "");
+        data.gol = gol;
+        let combined = `${data.pangkat || ""} / ${gol}`.trim();
+        if (combined === "/" || combined === "/ ") combined = "";
+        // Avoid " / III/c" when pangkat empty
+        if (!(data.pangkat || "").trim() && gol) combined = gol;
+        else if ((data.pangkat || "").trim() && !gol)
+          combined = (data.pangkat || "").trim();
+        else if ((data.pangkat || "").trim() && gol)
+          combined = `${(data.pangkat || "").trim()} / ${gol}`;
+        data.pangkatGolongan = combined;
+        // Derived display-only — never persist
+        delete (data as { pensiun?: string }).pensiun;
+        delete (data as { masaKerja?: string }).masaKerja;
+        delete (data as { kelasJabatan?: string }).kelasJabatan;
+        delete (data as { bebanKerja?: string }).bebanKerja;
+        data.bupTanggal = data.bupTanggal || "";
+        data.tmtKp = data.tmtKp || "";
+        setLocalBusy(true);
+        try {
+          await onSubmit(data);
+        } finally {
+          setLocalBusy(false);
+        }
+      })}
+      className="space-y-6"
+    >
       
       {/* Stepper tabs + error badges */}
       <div className="flex space-x-1 border-b border-slate-200 overflow-x-auto whitespace-nowrap scrollbar-hide pb-px">
@@ -868,6 +883,7 @@ export function EmployeeForm({
             <button
               type="button"
               onClick={() => setActiveTab(activeTab - 1)}
+              disabled={busy}
               className={`${btnSecondary} px-5 py-2.5 text-sm`}
             >
               Kembali
@@ -876,6 +892,7 @@ export function EmployeeForm({
           <button
             type="button"
             onClick={requestCancel}
+            disabled={busy}
             className={`${btnSecondary} px-5 py-2.5 text-sm`}
           >
             Batal
@@ -886,14 +903,26 @@ export function EmployeeForm({
             <button
               type="button"
               onClick={() => setActiveTab(activeTab + 1)}
+              disabled={busy}
               className={`${btnSecondary} px-5 py-2.5 text-sm`}
             >
               Selanjutnya
             </button>
           )}
           {/* Simpan always available — operator need not reach step 4 to save */}
-          <button type="submit" className={`${btnPrimary} px-5 py-2.5 text-sm`}>
-            Simpan
+          <button
+            type="submit"
+            disabled={busy}
+            className={`${btnPrimary} px-5 py-2.5 text-sm min-w-[7.5rem]`}
+          >
+            {busy ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                Menyimpan…
+              </>
+            ) : (
+              "Simpan"
+            )}
           </button>
         </div>
       </div>

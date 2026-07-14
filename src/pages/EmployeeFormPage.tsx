@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useBlocker, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { EmployeeForm } from "../components/EmployeeForm";
@@ -25,28 +25,42 @@ export default function EmployeeFormPage() {
 
   // Always wait for settings (kamus) — even create — so jabatan autocomplete works
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [employee, setEmployee] = useState<Employee | undefined>();
   const dirtyRef = useRef(false);
+  /** After successful save (or intentional leave), never re-block navigation. */
+  const allowLeaveRef = useRef(false);
   const [, setDirtyTick] = useState(0);
 
-  const setDirty = (v: boolean) => {
+  const setDirty = useCallback((v: boolean) => {
+    // Ignore late dirty=true after we already decided to leave
+    if (allowLeaveRef.current && v) return;
     dirtyRef.current = v;
     setDirtyTick((t) => t + 1);
-  };
+  }, []);
 
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
-      dirtyRef.current && currentLocation.pathname !== nextLocation.pathname,
+      !allowLeaveRef.current &&
+      dirtyRef.current &&
+      currentLocation.pathname !== nextLocation.pathname,
   );
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     dirtyRef.current = false;
+    allowLeaveRef.current = false;
     setEmployee(undefined);
     (async () => {
       try {
+        // Prefer warm cache so form opens without cold settings round-trip
+        const warm =
+          api.peekSettings(["kamus", "peta"]) ?? api.peekSettings("all");
+        if (warm && !cancelled) {
+          setSettings(warm);
+        }
         const s = await api.getSettings(["kamus", "peta"]);
         if (cancelled) return;
         setSettings(s);
@@ -55,6 +69,7 @@ export default function EmployeeFormPage() {
           if (cancelled) return;
           if (!full) {
             notify.error("Pegawai tidak ditemukan");
+            allowLeaveRef.current = true;
             dirtyRef.current = false;
             navigate("/employees", { replace: true });
             return;
@@ -67,6 +82,7 @@ export default function EmployeeFormPage() {
           "Gagal memuat formulir",
           handleApiError(e, OperationType.GET, "/api/employees").message,
         );
+        allowLeaveRef.current = true;
         dirtyRef.current = false;
         navigate("/employees", { replace: true });
       } finally {
@@ -81,7 +97,7 @@ export default function EmployeeFormPage() {
   // Browser refresh / tab close while dirty
   useEffect(() => {
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (!dirtyRef.current) return;
+      if (allowLeaveRef.current || !dirtyRef.current) return;
       e.preventDefault();
       e.returnValue = "";
     };
@@ -89,10 +105,11 @@ export default function EmployeeFormPage() {
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, []);
 
-  const leaveToList = () => {
+  const leaveToList = useCallback(() => {
+    allowLeaveRef.current = true;
     dirtyRef.current = false;
     navigate("/employees");
-  };
+  }, [navigate]);
 
   if (!canWrite) {
     return (
@@ -127,7 +144,15 @@ export default function EmployeeFormPage() {
           <button
             type="button"
             className={btnSecondary}
-            onClick={() => navigate("/employees")}
+            disabled={saving}
+            onClick={() => {
+              if (dirtyRef.current && !allowLeaveRef.current) {
+                // Let useBlocker show discard dialog
+                navigate("/employees");
+                return;
+              }
+              leaveToList();
+            }}
           >
             <ArrowLeft className="w-3.5 h-3.5" />
             Daftar
@@ -139,10 +164,15 @@ export default function EmployeeFormPage() {
           key={employee?.id || "new"}
           initialData={employee}
           settings={settings}
+          submitting={saving}
           onDirtyChange={setDirty}
           onCancel={leaveToList}
           onSubmit={async (data) => {
+            setSaving(true);
             try {
+              // Clear dirty BEFORE network so navigation cannot re-block mid-save
+              allowLeaveRef.current = true;
+              dirtyRef.current = false;
               if (isEdit && id) {
                 await api.updateEmployee(id, data);
                 notify.success("Perubahan disimpan");
@@ -150,12 +180,18 @@ export default function EmployeeFormPage() {
                 await api.createEmployee(data);
                 notify.success("Pegawai ditambahkan");
               }
-              leaveToList();
+              navigate("/employees");
             } catch (e) {
+              // Stay on form; re-enable dirty guard
+              allowLeaveRef.current = false;
+              dirtyRef.current = true;
+              setDirtyTick((t) => t + 1);
               notify.error(
                 "Gagal menyimpan",
                 handleApiError(e, OperationType.WRITE, "/api/employees").message,
               );
+            } finally {
+              setSaving(false);
             }
           }}
         />
@@ -170,6 +206,7 @@ export default function EmployeeFormPage() {
         cancelLabel="Tetap mengisi"
         variant="danger"
         onConfirm={() => {
+          allowLeaveRef.current = true;
           dirtyRef.current = false;
           blocker.proceed?.();
         }}
