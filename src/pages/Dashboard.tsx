@@ -10,7 +10,6 @@ import {
   RefreshCw,
   Loader2,
   ArrowRight,
-  Printer,
   UserPlus,
   FileWarning,
 } from "lucide-react";
@@ -421,79 +420,31 @@ export default function Dashboard() {
         </motion.div>
       )}
 
-      {/* Pintasan */}
-      <motion.div
-        variants={pageItemVariants}
-        className="flex flex-wrap gap-2"
-      >
-        <a
-          href="#mendesak"
-          className={`${urgentTotal > 0 ? btnPrimary : btnSecondary} text-xs`}
-        >
-          <AlertCircle className="w-3.5 h-3.5" />
-          Perlu diurus
-        </a>
-        <Link to="/print" className={`${btnSecondary} text-xs`}>
-          <Printer className="w-3.5 h-3.5" />
-          Cetak
-        </Link>
-        {canWrite && (
-          <Link to="/employees/new" className={`${btnSecondary} text-xs`}>
-            <UserPlus className="w-3.5 h-3.5" />
-            Tambah pegawai
-          </Link>
-        )}
-      </motion.div>
-
-      {/* Hero: satu sumber angka mendesak (peringatan hanya di Dashboard) */}
-      <motion.div
-        id="mendesak"
-        variants={pageItemVariants}
-        className={`${card} p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-l-4 scroll-mt-20 ${
-          urgentTotal > 0 ? "border-l-amber-500" : "border-l-emerald-500"
-        }`}
-      >
-        <div className="min-w-0">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-            Perlu diurus
-          </p>
-          <p className="text-lg font-bold text-slate-900 tabular-nums mt-0.5">
-            {urgentTotal > 0
-              ? `${urgentTotal} item mendesak`
-              : "Tidak ada item mendesak"}
-          </p>
-          <p className="text-xs text-slate-500 mt-1">
-            KGB/KP ≤90 hari · pensiun ≤365 hari · prediksi indikatif* · cek di
-            dashboard ini (bukan di menu Pegawai)
-            {urgentTotal > 12
-              ? ` · menampilkan 12 dari ${urgentTotal} di daftar bawah`
-              : ""}
-            .
-          </p>
-        </div>
-        <a
-          href="#proyeksi"
-          className={`${urgentTotal > 0 ? btnPrimary : btnSecondary} shrink-0`}
-        >
-          Lihat proyeksi
-          <ArrowRight className="w-3.5 h-3.5" />
-        </a>
-      </motion.div>
-
-      {/* Zone: daftar mendesak + komposisi */}
+      {/* Zone: daftar mendesak + komposisi (tanpa CTA ekstra) */}
       <motion.div
         variants={pageItemVariants}
         className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6"
       >
-        {/* Daftar mendesak — same source as hero */}
-        <div className={`${card} overflow-hidden flex flex-col min-h-[280px]`}>
+        {/* Daftar mendesak */}
+        <div
+          id="mendesak"
+          className={`${card} overflow-hidden flex flex-col min-h-[280px] scroll-mt-20`}
+        >
           <div
             className={`${cardHeader} flex items-center justify-between gap-2`}
           >
-            <h2 className="text-sm font-semibold text-slate-800">
-              Daftar mendesak
-            </h2>
-            <span className="text-[10px] font-semibold text-slate-500 border border-slate-200 bg-white px-2 py-0.5 rounded-lg tabular-nums">
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold text-slate-800">
+                Daftar mendesak
+              </h2>
+              <p className="text-[10px] text-slate-400 mt-0.5">
+                KGB/KP ≤90h · pensiun ≤365h · indikatif*
+                {urgentTotal > 12
+                  ? ` · 12 dari ${urgentTotal}`
+                  : ""}
+              </p>
+            </div>
+            <span className="text-[10px] font-semibold text-slate-500 border border-slate-200 bg-white px-2 py-0.5 rounded-lg tabular-nums shrink-0">
               {urgentPreview.length}
               {urgentTotal > urgentPreview.length
                 ? `/${urgentTotal}`
@@ -542,17 +493,6 @@ export default function Dashboard() {
                 </li>
               ))}
             </ul>
-          )}
-          {urgentTotal > 0 && (
-            <div className="px-4 py-2.5 border-t border-slate-100">
-              <a
-                href="#proyeksi"
-                className={`${btnGhost} text-[11px] w-full justify-center`}
-              >
-                Buka tab proyeksi
-                <ArrowRight className="w-3 h-3" />
-              </a>
-            </div>
           )}
         </div>
 

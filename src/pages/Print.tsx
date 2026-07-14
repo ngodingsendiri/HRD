@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import { useSearchParams } from "react-router-dom";
 import { Employee, AppSettings } from "../types";
 import {
-  Printer,
+  Download,
   Loader2,
   ClipboardList,
   FileSignature,
@@ -53,6 +53,7 @@ import {
 } from "./print/PrintCutiDocument";
 import { PrintModelDkDocument } from "./print/PrintModelDkDocument";
 import { PRINT_PAGE_CSS } from "./print/printPageCss";
+import { downloadElementAsA4Pdf } from "../lib/downloadA4Pdf";
 
 type PrintType =
   | "absen_global"
@@ -186,6 +187,7 @@ export default function Print() {
   );
   const [cutiConfirmOpen, setCutiConfirmOpen] = useState(false);
   const [cutiBusy, setCutiBusy] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
 
   // Print Configuration States — restore last unit/sort for absensi habit
   const savedUnit = readLs(LS_LAST_UNIT);
@@ -236,8 +238,6 @@ export default function Print() {
   /** Bump to re-fetch full employee after a failed hydrate. */
   const [empDetailRetry, setEmpDetailRetry] = useState(0);
   const printTimersRef = useRef<{
-    printDelay?: ReturnType<typeof setTimeout>;
-    fallback?: ReturnType<typeof setTimeout>;
     clearSnapshot?: () => void;
   }>({});
 
@@ -281,13 +281,10 @@ export default function Print() {
     prevCutiEmpRef.current = cutiEmployeeId;
   }, [cutiEmployeeId, cutiJenis]);
 
-  // Cleanup print listeners/timers if user leaves the page mid-print flow
+  // Cleanup cuti snapshot if user leaves mid-flow
   useEffect(() => {
     return () => {
-      const t = printTimersRef.current;
-      if (t.printDelay) clearTimeout(t.printDelay);
-      if (t.fallback) clearTimeout(t.fallback);
-      t.clearSnapshot?.();
+      printTimersRef.current.clearSnapshot?.();
       printTimersRef.current = {};
     };
   }, []);
@@ -966,34 +963,10 @@ export default function Print() {
       setCutiSisaPrint(prePrint);
       setCutiConfirmOpen(false);
       notify.success("Sisa cuti diperbarui");
-      let cleared = false;
-      const clearSnapshot = () => {
-        if (cleared) return;
-        cleared = true;
-        setCutiSisaPrint(null);
-        window.removeEventListener("afterprint", clearSnapshot);
-        const t = printTimersRef.current;
-        if (t.fallback) clearTimeout(t.fallback);
-        if (t.printDelay) clearTimeout(t.printDelay);
-        t.fallback = undefined;
-        t.printDelay = undefined;
-        t.clearSnapshot = undefined;
-      };
-      printTimersRef.current.clearSnapshot = clearSnapshot;
-      window.addEventListener("afterprint", clearSnapshot);
-      printTimersRef.current.printDelay = setTimeout(() => {
-        // Register fallback BEFORE print — afterprint can fire sync during print()
-        printTimersRef.current.fallback = setTimeout(clearSnapshot, 60_000);
-        try {
-          window.print();
-        } catch {
-          clearSnapshot();
-          notify.warning(
-            "Cetak diblokir browser",
-            "Gunakan Ctrl+P (Windows) atau Cmd+P (Mac).",
-          );
-        }
-      }, 300);
+      // Let React paint pre-deduction saldo on the form, then PDF
+      await new Promise((r) => setTimeout(r, 120));
+      await generatePdfDownload();
+      setCutiSisaPrint(null);
     } catch (err) {
       console.error(err);
       setCutiSisaPrint(null);
@@ -1006,43 +979,72 @@ export default function Print() {
     }
   };
 
-  const handlePrintClick = async () => {
-    if (!readiness.ready) {
-      notify.error("Belum siap dicetak", readiness.reason || undefined);
-      setMobileStep(2);
-      return;
-    }
-    if (printType === "surat_cuti" && isCutiTahunan(cutiJenis)) {
-      if (!canWrite) {
-        try {
-          window.print();
-        } catch {
-          notify.warning(
-            "Cetak diblokir browser",
-            "Gunakan Ctrl+P (Windows) atau Cmd+P (Mac).",
-          );
-        }
-        return;
-      }
-      setCutiConfirmOpen(true);
-      return;
-    }
-    try {
-      window.print();
-    } catch {
-      notify.warning(
-        "Cetak diblokir browser",
-        "Gunakan Ctrl+P (Windows) atau Cmd+P (Mac).",
-      );
-    }
-  };
-
   const fieldLabel =
     "block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5";
 
   const selectedEmpName = cutiEmployeeId
     ? employees.find((e) => e.id === cutiEmployeeId)?.nama || "Pegawai"
     : null;
+
+  const pdfFilename = useMemo(() => {
+    const label = (activeDoc?.label || printType || "dokumen").replace(
+      /\s+/g,
+      "_",
+    );
+    const who =
+      printCategory === "layanan" && selectedEmpName
+        ? selectedEmpName.replace(/\s+/g, "_")
+        : printType === "absen_bidang" && selectedBidang !== "Semua"
+          ? selectedBidang.replace(/\s+/g, "_")
+          : "HRD";
+    const day = new Date().toISOString().slice(0, 10);
+    return `${label}_${who}_${day}.pdf`;
+  }, [
+    activeDoc?.label,
+    printType,
+    printCategory,
+    selectedEmpName,
+    selectedBidang,
+  ]);
+
+  const generatePdfDownload = async () => {
+    const el = printRef.current;
+    if (!el) {
+      notify.error("Pratinjau belum siap");
+      return;
+    }
+    setPdfBusy(true);
+    try {
+      notify.info("Menyiapkan PDF A4…");
+      await downloadElementAsA4Pdf(el, pdfFilename);
+      notify.success("PDF diunduh", pdfFilename);
+    } catch (err) {
+      console.error(err);
+      notify.error(
+        "Gagal membuat PDF",
+        err instanceof Error ? err.message : undefined,
+      );
+    } finally {
+      setPdfBusy(false);
+    }
+  };
+
+  const handlePrintClick = async () => {
+    if (!readiness.ready) {
+      notify.error("Belum siap diunduh", readiness.reason || undefined);
+      setMobileStep(2);
+      return;
+    }
+    if (printType === "surat_cuti" && isCutiTahunan(cutiJenis)) {
+      if (!canWrite) {
+        await generatePdfDownload();
+        return;
+      }
+      setCutiConfirmOpen(true);
+      return;
+    }
+    await generatePdfDownload();
+  };
 
   const contextLine = [
     activeDoc?.label || "Dokumen",
@@ -1652,7 +1654,7 @@ export default function Print() {
                 3 · Pratinjau
               </h2>
               <p className="text-[11px] text-slate-500 mt-0.5 truncate">
-                A4 · yang tampil = yang dicetak · {contextLine}
+                A4 · unduh PDF dari pratinjau · {contextLine}
               </p>
               <p className="text-[10px] text-slate-400 mt-0.5 hidden sm:block truncate">
                 {printSummaryLines.join(" · ")}
@@ -1670,16 +1672,16 @@ export default function Print() {
               <button
                 type="button"
                 onClick={() => void handlePrintClick()}
-                disabled={!readiness.ready || loading}
+                disabled={!readiness.ready || loading || pdfBusy || cutiBusy}
                 className={btnPrimary}
-                title={readiness.reason || "Cetak"}
+                title={readiness.reason || "Unduh PDF A4"}
               >
-                {loading ? (
+                {loading || pdfBusy || cutiBusy ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 ) : (
-                  <Printer className="w-3.5 h-3.5" />
+                  <Download className="w-3.5 h-3.5" />
                 )}
-                Cetak
+                Unduh PDF
               </button>
             </div>
           </div>
@@ -1799,7 +1801,7 @@ export default function Print() {
         onClose={() => !cutiBusy && setCutiConfirmOpen(false)}
         loading={cutiBusy}
         variant="danger"
-        title="Potong sisa cuti lalu cetak?"
+        title="Potong sisa cuti lalu unduh PDF?"
         description={
           <div className="space-y-2">
             <p>
@@ -1809,15 +1811,15 @@ export default function Print() {
             </p>
             <p className="text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 text-xs">
               Saldo dipotong <strong>saat Anda menekan konfirmasi</strong>,
-              sebelum dialog cetak browser muncul. Membatalkan cetak di browser
-              tidak mengembalikan sisa cuti.
+              lalu file PDF A4 diunduh. Membatalkan unduhan tidak mengembalikan
+              sisa cuti.
             </p>
             <p className="text-xs text-slate-500">
               Formulir menampilkan sisa cuti sebelum potong (sesuai format BKN).
             </p>
           </div>
         }
-        confirmLabel="Ya, potong & cetak"
+        confirmLabel="Ya, potong & unduh PDF"
         cancelLabel="Batal (saldo aman)"
         onConfirm={() => void runCutiDeductionAndPrint()}
       />
