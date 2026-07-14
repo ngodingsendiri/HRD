@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 import type { Employee, AppSettings } from "../../types";
 import { PrintKop } from "./PrintKop";
 import {
+  cellPadForDensity,
   densityFromRowCount,
   tableDensityStyle,
   type PrintDensity,
@@ -21,22 +22,25 @@ export type PrintDukDocumentProps = {
   density?: PrintDensity;
 };
 
-const th: CSSProperties = {
-  border: "1px solid #000",
-  padding: "var(--print-cell-pad, 2px 4px)",
-  textAlign: "center",
-  fontWeight: 700,
-  backgroundColor: "#f3f4f6",
-  color: "#000",
-  verticalAlign: "middle",
-};
-
-const tdBase: CSSProperties = {
-  border: "1px solid #000",
-  padding: "var(--print-cell-pad, 2px 4px)",
-  color: "#000",
-  verticalAlign: "top",
-};
+function cellStyles(pad: string): { th: CSSProperties; tdBase: CSSProperties } {
+  return {
+    th: {
+      border: "1px solid #000",
+      padding: pad,
+      textAlign: "center",
+      fontWeight: 700,
+      backgroundColor: "#f3f4f6",
+      color: "#000",
+      verticalAlign: "middle",
+    },
+    tdBase: {
+      border: "1px solid #000",
+      padding: pad,
+      color: "#000",
+      verticalAlign: "top",
+    },
+  };
+}
 
 /** Daftar Urut Kepangkatan — landscape-oriented wide table. */
 export function PrintDukDocument({
@@ -53,6 +57,7 @@ export function PrintDukDocument({
 }: PrintDukDocumentProps) {
   const density = densityProp ?? densityFromRowCount(sortedEmployees.length);
   const tableStyle = tableDensityStyle(density, true);
+  const { th, tdBase } = cellStyles(cellPadForDensity(density));
 
   return (
     <div className="print-sheet" style={{ color: "#000", backgroundColor: "#fff" }}>

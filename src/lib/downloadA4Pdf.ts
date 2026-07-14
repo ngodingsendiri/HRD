@@ -1,16 +1,20 @@
 /**
- * Client-side HTML element → A4 PDF download.
- * Strategy: clone off-DOM at fixed A4 width, bake page margins into the
- * capture, multi-page vertical slice with jsPDF. Avoids live-DOM overflow
- * clipping and double-margin bugs.
+ * Client-side HTML → A4 PDF (html2canvas-pro + jsPDF).
+ *
+ * - Clones the sheet off-DOM at fixed A4 pixel width (no live overflow clip)
+ * - Bakes L/R/T/B margin into the capture
+ * - Multi-page via per-page canvas crops (no bleed / ghosting between pages)
  */
 import html2canvas from "html2canvas-pro";
 import { jsPDF } from "jspdf";
 
 export type PdfOrientation = "portrait" | "landscape";
 
-const A4_PORTRAIT = { w: 210, h: 297 } as const;
-const A4_LANDSCAPE = { w: 297, h: 210 } as const;
+/** CSS mm → px at 96dpi (browser standard). */
+const MM_TO_PX = 96 / 25.4;
+
+const A4_PORTRAIT_MM = { w: 210, h: 297 } as const;
+const A4_LANDSCAPE_MM = { w: 297, h: 210 } as const;
 
 export const PDF_MARGIN_MM = {
   portrait: 15,
@@ -19,6 +23,7 @@ export const PDF_MARGIN_MM = {
 
 export type DownloadA4PdfOptions = {
   orientation?: PdfOrientation;
+  /** Canvas scale (2 = sharp). */
   scale?: number;
   marginMm?: number;
 };
@@ -29,7 +34,7 @@ export async function downloadElementAsA4Pdf(
   options: DownloadA4PdfOptions = {},
 ): Promise<void> {
   const orientation: PdfOrientation = options.orientation ?? "portrait";
-  const page = orientation === "landscape" ? A4_LANDSCAPE : A4_PORTRAIT;
+  const pageMm = orientation === "landscape" ? A4_LANDSCAPE_MM : A4_PORTRAIT_MM;
   const marginMm =
     options.marginMm ??
     (orientation === "landscape"
@@ -37,18 +42,20 @@ export async function downloadElementAsA4Pdf(
       : PDF_MARGIN_MM.portrait);
   const scale = options.scale ?? 2;
 
-  if (el.getBoundingClientRect().width < 8) {
+  if (el.getBoundingClientRect().width < 4) {
     throw new Error("Pratinjau dokumen kosong atau belum siap.");
   }
 
-  // --- Off-DOM capture host at true A4 width (mm) ---
+  const pageWpx = Math.round(pageMm.w * MM_TO_PX);
+
+  // Off-DOM host — fixed pixel width so layout matches A4
   const host = document.createElement("div");
   host.setAttribute("data-pdf-capture-host", "1");
   host.style.cssText = [
     "position:fixed",
-    "left:-12000px",
+    "left:-14000px",
     "top:0",
-    `width:${page.w}mm`,
+    `width:${pageWpx}px`,
     "background:#ffffff",
     "color:#000000",
     "z-index:-1",
@@ -58,8 +65,10 @@ export async function downloadElementAsA4Pdf(
 
   const clone = el.cloneNode(true) as HTMLElement;
   clone.querySelectorAll(".print-hidden").forEach((n) => n.remove());
+  expandCssVars(clone);
+  ensureTableBorders(clone);
 
-  // Margins baked into the sheet so L/R white space is correct on every page
+  // Full sheet padding = page margin (single source of white edge)
   clone.style.cssText = [
     "display:block",
     "width:100%",
@@ -78,25 +87,21 @@ export async function downloadElementAsA4Pdf(
     "font-family:Arial,Helvetica,sans-serif",
   ].join(";");
 
-  // Soft-fix modern colors that break older canvas parsers
-  forcePrintSafeColors(clone);
-
   host.appendChild(clone);
   document.body.appendChild(host);
 
-  let canvas: HTMLCanvasElement;
+  let fullCanvas: HTMLCanvasElement;
   try {
     await waitForImages(clone);
-    // Give layout a tick after off-DOM attach
-    await new Promise((r) => requestAnimationFrame(() => r(undefined)));
+    await nextFrame();
+    await nextFrame();
 
-    const w = Math.max(clone.scrollWidth, clone.offsetWidth, 1);
+    const w = Math.max(clone.scrollWidth, clone.offsetWidth, pageWpx);
     const h = Math.max(clone.scrollHeight, clone.offsetHeight, 1);
 
-    canvas = await html2canvas(clone, {
+    fullCanvas = await html2canvas(clone, {
       scale,
       useCORS: true,
-      // do not allowTaint — would block canvas.toDataURL for mixed-origin images
       logging: false,
       backgroundColor: "#ffffff",
       width: w,
@@ -105,16 +110,19 @@ export async function downloadElementAsA4Pdf(
       windowHeight: h,
       scrollX: 0,
       scrollY: 0,
+      onclone: (_doc, cloned) => {
+        expandCssVars(cloned);
+        ensureTableBorders(cloned);
+      },
     });
   } finally {
     host.remove();
   }
 
-  if (canvas.width < 8 || canvas.height < 8) {
+  if (fullCanvas.width < 8 || fullCanvas.height < 8) {
     throw new Error("Gagal merender pratinjau ke gambar.");
   }
 
-  const imgData = canvas.toDataURL("image/jpeg", 0.92);
   const pdf = new jsPDF({
     orientation,
     unit: "mm",
@@ -122,22 +130,42 @@ export async function downloadElementAsA4Pdf(
     compress: true,
   });
 
-  // Full page width — margins already inside the image
-  const imgW = page.w;
-  const imgH = (canvas.height * imgW) / canvas.width;
-  const pageH = page.h;
+  // Map full canvas → page height in source pixels
+  const pxPerMm = fullCanvas.width / pageMm.w;
+  const pageHpx = Math.max(1, Math.round(pageMm.h * pxPerMm));
+  const totalH = fullCanvas.height;
+  const pageCount = Math.max(1, Math.ceil(totalH / pageHpx));
 
-  // Vertical multi-page slice of one tall image
-  let yOffset = 0;
-  let pageIndex = 0;
-  while (yOffset < imgH - 0.5) {
-    if (pageIndex > 0) pdf.addPage();
-    // Negative y shifts the tall image so the next band fills the page
-    pdf.addImage(imgData, "JPEG", 0, -yOffset, imgW, imgH, undefined, "FAST");
-    yOffset += pageH;
-    pageIndex += 1;
-    // Safety: avoid infinite loop on tiny remainders
-    if (pageIndex > 80) break;
+  for (let i = 0; i < pageCount; i++) {
+    if (i > 0) pdf.addPage();
+
+    const srcY = i * pageHpx;
+    const sliceH = Math.min(pageHpx, totalH - srcY);
+    if (sliceH <= 0) break;
+
+    const pageCanvas = document.createElement("canvas");
+    pageCanvas.width = fullCanvas.width;
+    // Always full page height so short last page keeps bottom margin white
+    pageCanvas.height = pageHpx;
+    const ctx = pageCanvas.getContext("2d");
+    if (!ctx) throw new Error("Canvas 2D tidak tersedia.");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+    ctx.drawImage(
+      fullCanvas,
+      0,
+      srcY,
+      fullCanvas.width,
+      sliceH,
+      0,
+      0,
+      fullCanvas.width,
+      sliceH,
+    );
+
+    // PNG = sharp text/borders; quality matters for ASN docs
+    const img = pageCanvas.toDataURL("image/png");
+    pdf.addImage(img, "PNG", 0, 0, pageMm.w, pageMm.h, undefined, "FAST");
   }
 
   const safe =
@@ -146,43 +174,63 @@ export async function downloadElementAsA4Pdf(
   pdf.save(name);
 }
 
+function nextFrame(): Promise<void> {
+  return new Promise((r) => requestAnimationFrame(() => r()));
+}
+
 async function waitForImages(root: HTMLElement): Promise<void> {
   const imgs = Array.from(root.querySelectorAll("img"));
   await Promise.all(
     imgs.map(
       (img) =>
         new Promise<void>((resolve) => {
-          if (img.complete) {
+          if (img.complete && img.naturalWidth > 0) {
             resolve();
             return;
           }
           const done = () => resolve();
           img.addEventListener("load", done, { once: true });
           img.addEventListener("error", done, { once: true });
-          // Don't hang forever
-          window.setTimeout(done, 2500);
+          window.setTimeout(done, 3000);
         }),
     ),
   );
 }
 
-/** Flatten oklch/lab-ish colors to rgb on the clone only. */
-function forcePrintSafeColors(root: HTMLElement) {
-  const nodes: HTMLElement[] = [
-    root,
-    ...Array.from(root.querySelectorAll("*")),
-  ].filter((n): n is HTMLElement => n instanceof HTMLElement);
-
+/** Resolve CSS custom properties (e.g. --print-cell-pad) to concrete values. */
+function expandCssVars(root: HTMLElement) {
+  const nodes = [root, ...Array.from(root.querySelectorAll("*"))].filter(
+    (n): n is HTMLElement => n instanceof HTMLElement,
+  );
   for (const node of nodes) {
-    // Prefer explicit black text / white bg when Tailwind left computed oklch
-    const style = node.getAttribute("style") || "";
-    if (!style.includes("color") && !node.style.color) {
-      // leave as inherited
+    const pad = node.style.getPropertyValue("padding");
+    if (pad && pad.includes("var(")) {
+      const fallback = pad.match(/var\([^,]+,\s*([^)]+)\)/);
+      if (fallback?.[1]) node.style.padding = fallback[1].trim();
     }
-    // Ensure table cells keep black borders if they had any border class
-    if (node.tagName === "TABLE") {
-      node.style.borderCollapse = "collapse";
-      node.style.width = "100%";
+    // Also check individual longhands if set via CSS var in shorthand style attr
+    const styleAttr = node.getAttribute("style") || "";
+    if (styleAttr.includes("--print-cell-pad") || styleAttr.includes("var(")) {
+      const cs = window.getComputedStyle(node);
+      if (cs.padding && cs.padding !== "0px") {
+        node.style.padding = cs.padding;
+      }
     }
   }
+}
+
+function ensureTableBorders(root: HTMLElement) {
+  root.querySelectorAll("table").forEach((t) => {
+    const el = t as HTMLElement;
+    el.style.borderCollapse = "collapse";
+    el.style.width = "100%";
+  });
+  root.querySelectorAll("th, td").forEach((cell) => {
+    const el = cell as HTMLElement;
+    const b = el.style.border || el.getAttribute("style") || "";
+    if (!b.includes("border") && !el.style.borderTop) {
+      el.style.border = "1px solid #000000";
+    }
+    if (!el.style.color) el.style.color = "#000000";
+  });
 }

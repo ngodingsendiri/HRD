@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 import type { Employee, AppSettings } from "../../types";
 import { PrintKop } from "./PrintKop";
 import {
+  cellPadForDensity,
   densityFromRowCount,
   tableDensityStyle,
   type PrintDensity,
@@ -20,22 +21,25 @@ export type PrintListDocumentProps = {
   density?: PrintDensity;
 };
 
-const th: CSSProperties = {
-  border: "1px solid #000",
-  padding: "var(--print-cell-pad, 3px 6px)",
-  textAlign: "center",
-  fontWeight: 700,
-  backgroundColor: "#f3f4f6",
-  color: "#000",
-  verticalAlign: "middle",
-};
-
-const td: CSSProperties = {
-  border: "1px solid #000",
-  padding: "var(--print-cell-pad, 3px 6px)",
-  color: "#000",
-  verticalAlign: "middle",
-};
+function cellStyles(pad: string): { th: CSSProperties; td: CSSProperties } {
+  return {
+    th: {
+      border: "1px solid #000",
+      padding: pad,
+      textAlign: "center",
+      fontWeight: 700,
+      backgroundColor: "#f3f4f6",
+      color: "#000",
+      verticalAlign: "middle",
+    },
+    td: {
+      border: "1px solid #000",
+      padding: pad,
+      color: "#000",
+      verticalAlign: "middle",
+    },
+  };
+}
 
 /** Absensi global/unit + tanda terima (shared attendance-style table). */
 export function PrintListDocument({
@@ -52,6 +56,7 @@ export function PrintListDocument({
 }: PrintListDocumentProps) {
   const density = densityProp ?? densityFromRowCount(sortedEmployees.length);
   const tableStyle = tableDensityStyle(density, false);
+  const { th, td } = cellStyles(cellPadForDensity(density));
   const rowMinH =
     density === "compact" ? 22 : density === "normal" ? 28 : 32;
 

@@ -62,6 +62,13 @@ export function densityFromRowCount(n: number): PrintDensity {
   return "comfortable";
 }
 
+/** Cell padding for density (concrete values — no CSS vars, export-safe). */
+export function cellPadForDensity(density: PrintDensity): string {
+  if (density === "compact") return "1px 3px";
+  if (density === "normal") return "2px 4px";
+  return "3px 6px";
+}
+
 /** Inline styles for print tables — hex only (no Tailwind oklch). */
 export function tableDensityStyle(
   density: PrintDensity,
@@ -79,16 +86,9 @@ export function tableDensityStyle(
         : landscape
           ? 9
           : 11;
-  const cellPad =
-    density === "compact"
-      ? "1px 3px"
-      : density === "normal"
-        ? "2px 4px"
-        : "3px 6px";
   const lineHeight = density === "compact" ? 1.15 : 1.25;
   return {
     fontSize: `${fontPt}pt`,
     lineHeight,
-    ["--print-cell-pad" as string]: cellPad,
   };
 }
