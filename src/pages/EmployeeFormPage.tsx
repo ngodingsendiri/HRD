@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useBlocker, useNavigate, useParams } from "react-router-dom";
+import {
+  Link,
+  useBlocker,
+  useLocation,
+  useNavigate,
+  useParams,
+} from "react-router-dom";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { EmployeeForm } from "../components/EmployeeForm";
 import { PageHeader } from "../components/PageHeader";
@@ -19,9 +25,18 @@ import { useAuth } from "../lib/auth";
 export default function EmployeeFormPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { canWrite } = useAuth();
   const isEdit = Boolean(id);
   useDocumentTitle(isEdit ? "Ubah pegawai" : "Tambah pegawai");
+
+  /** Restore list filters (q/status/bidang/page) after save. */
+  const listReturnPath = (() => {
+    const from = (location.state as { fromSearch?: string } | null)?.fromSearch;
+    if (from && from.startsWith("?")) return `/employees${from}`;
+    if (from) return `/employees?${from.replace(/^\?/, "")}`;
+    return "/employees";
+  })();
 
   // Always wait for settings (kamus) — even create — so jabatan autocomplete works
   const [loading, setLoading] = useState(true);
@@ -71,7 +86,7 @@ export default function EmployeeFormPage() {
             notify.error("Pegawai tidak ditemukan");
             allowLeaveRef.current = true;
             dirtyRef.current = false;
-            navigate("/employees", { replace: true });
+            navigate(listReturnPath, { replace: true });
             return;
           }
           setEmployee(full);
@@ -84,7 +99,7 @@ export default function EmployeeFormPage() {
         );
         allowLeaveRef.current = true;
         dirtyRef.current = false;
-        navigate("/employees", { replace: true });
+        navigate(listReturnPath, { replace: true });
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -92,7 +107,7 @@ export default function EmployeeFormPage() {
     return () => {
       cancelled = true;
     };
-  }, [id, navigate]);
+  }, [id, navigate, listReturnPath]);
 
   // Browser refresh / tab close while dirty
   useEffect(() => {
@@ -108,8 +123,8 @@ export default function EmployeeFormPage() {
   const leaveToList = useCallback(() => {
     allowLeaveRef.current = true;
     dirtyRef.current = false;
-    navigate("/employees");
-  }, [navigate]);
+    navigate(listReturnPath);
+  }, [navigate, listReturnPath]);
 
   if (!canWrite) {
     return (
@@ -148,7 +163,7 @@ export default function EmployeeFormPage() {
             onClick={() => {
               if (dirtyRef.current && !allowLeaveRef.current) {
                 // Let useBlocker show discard dialog
-                navigate("/employees");
+                navigate(listReturnPath);
                 return;
               }
               leaveToList();
@@ -180,7 +195,7 @@ export default function EmployeeFormPage() {
                 await api.createEmployee(data);
                 notify.success("Pegawai ditambahkan");
               }
-              navigate("/employees");
+              navigate(listReturnPath);
             } catch (e) {
               // Stay on form; re-enable dirty guard
               allowLeaveRef.current = false;

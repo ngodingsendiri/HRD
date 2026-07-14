@@ -22,6 +22,20 @@ export class ApiError extends Error {
   }
 }
 
+/** Soft session expiry: clear client auth when API returns 401 (except login/me). */
+function notifySessionExpired(url: string, status: number) {
+  if (status !== 401) return;
+  if (url.startsWith("/api/auth/")) return;
+  if (url.startsWith("/api/health") || url.startsWith("/api/v1/openapi")) return;
+  try {
+    window.dispatchEvent(
+      new CustomEvent("hrcube:session-expired", { detail: { url } }),
+    );
+  } catch {
+    /* ignore */
+  }
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     ...init,
@@ -30,6 +44,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
   });
   if (!res.ok) {
+    notifySessionExpired(url, res.status);
     const err = await res.json().catch(() => ({ error: res.statusText }));
     const message =
       (err as { error?: string }).error || `Request failed: ${res.status}`;
@@ -170,16 +185,21 @@ export const api = {
   },
 
   async updateEmployee(id: string, emp: Partial<Employee>): Promise<Employee> {
-    const updated = await request<Employee>(`/api/employees/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(emp),
-    });
+    const updated = await request<Employee>(
+      `/api/employees/${encodeURIComponent(id)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(emp),
+      },
+    );
     invalidateEmployeeReads();
     return updated;
   },
 
   async deleteEmployee(id: string): Promise<void> {
-    await request<void>(`/api/employees/${id}`, { method: "DELETE" });
+    await request<void>(`/api/employees/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
     invalidateEmployeeReads();
   },
 

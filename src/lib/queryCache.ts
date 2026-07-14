@@ -11,6 +11,13 @@ type Entry = { at: number; data: unknown; inflight?: Promise<unknown> };
 const store = new Map<string, Entry>();
 
 /**
+ * Bumped on every invalidate. In-flight fetchers capture the generation at
+ * start and only cacheSet if it still matches — prevents stale GETs from
+ * re-seeding the cache after a mutation.
+ */
+let generation = 0;
+
+/**
  * Session-length cache: data stays warm until mutation invalidates it.
  * (Previously 45s — caused loading again when hopping menus.)
  */
@@ -42,15 +49,26 @@ export async function cacheGetOrFetch<T>(
   const existing = store.get(key);
   if (existing?.inflight) return existing.inflight as Promise<T>;
 
+  const genAtStart = generation;
+
   const inflight = fetcher()
     .then((data) => {
+      // Mutation happened while we were in flight — do not re-seed stale data
+      if (genAtStart !== generation) {
+        store.delete(key);
+        return data;
+      }
       cacheSet(key, data);
       const e = store.get(key);
       if (e) delete e.inflight;
       return data;
     })
     .catch((err) => {
-      store.delete(key);
+      // Only clear if this inflight is still the one registered
+      if (genAtStart === generation) {
+        const e = store.get(key);
+        if (e?.inflight === inflight) store.delete(key);
+      }
       throw err;
     });
 
@@ -58,8 +76,9 @@ export async function cacheGetOrFetch<T>(
   return inflight;
 }
 
-/** Drop cache entries. No prefix → clear all. */
+/** Drop cache entries. No prefix → clear all. Always bumps generation. */
 export function cacheInvalidate(prefix?: string): void {
+  generation += 1;
   if (!prefix) {
     store.clear();
     return;
@@ -67,4 +86,9 @@ export function cacheInvalidate(prefix?: string): void {
   for (const k of store.keys()) {
     if (k.startsWith(prefix)) store.delete(k);
   }
+}
+
+/** Test helper — current generation (not for UI). */
+export function cacheGeneration(): number {
+  return generation;
 }

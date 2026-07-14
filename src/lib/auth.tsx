@@ -54,6 +54,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     fetchSession();
   }, []);
 
+  // API 401 (session expired / revoked) → clear ghost auth shell
+  useEffect(() => {
+    let lastToast = 0;
+    const onExpired = () => {
+      setUser(null);
+      const now = Date.now();
+      if (now - lastToast > 4000) {
+        lastToast = now;
+        toast.error("Sesi berakhir", {
+          description: "Silakan masuk kembali.",
+        });
+      }
+    };
+    window.addEventListener("hrcube:session-expired", onExpired);
+    return () => window.removeEventListener("hrcube:session-expired", onExpired);
+  }, []);
+
   const signOut = async (opts?: { allDevices?: boolean }) => {
     try {
       await fetch("/api/auth/logout", {

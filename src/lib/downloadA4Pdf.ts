@@ -54,27 +54,49 @@ export async function downloadElementAsA4Pdf(
     throw new Error("Pratinjau dokumen kosong atau belum siap.");
   }
 
-  const canvas = await html2canvas(el, {
-    scale,
-    useCORS: true,
-    logging: false,
-    backgroundColor: "#ffffff",
-    windowWidth: Math.ceil(el.scrollWidth || rect.width),
-    windowHeight: Math.ceil(el.scrollHeight || rect.height),
-    ignoreElements: (node) =>
-      node instanceof HTMLElement && node.classList.contains("print-hidden"),
-    onclone: (_doc, cloned) => {
-      sanitizeCloneColors(cloned);
-      // Capture body only — page margins are applied by jsPDF, not double padding
-      cloned.style.boxShadow = "none";
-      cloned.style.border = "none";
-      cloned.style.margin = "0";
-      // Keep a tiny inner pad so table borders never kiss the content box edge
-      cloned.style.padding = "2mm";
-      cloned.style.boxSizing = "border-box";
-      cloned.style.backgroundColor = "#ffffff";
-    },
-  });
+  // Temporarily unclip overflow ancestors so tall sheets capture fully
+  const restoreOverflow: Array<{ el: HTMLElement; value: string }> = [];
+  let walk: HTMLElement | null = el.parentElement;
+  while (walk && walk !== document.body) {
+    const ov = window.getComputedStyle(walk).overflow;
+    if (ov === "auto" || ov === "scroll" || ov === "hidden") {
+      restoreOverflow.push({ el: walk, value: walk.style.overflow });
+      walk.style.overflow = "visible";
+    }
+    walk = walk.parentElement;
+  }
+
+  let canvas: HTMLCanvasElement;
+  try {
+    canvas = await html2canvas(el, {
+      scale,
+      useCORS: true,
+      logging: false,
+      backgroundColor: "#ffffff",
+      windowWidth: Math.ceil(el.scrollWidth || rect.width),
+      windowHeight: Math.ceil(Math.max(el.scrollHeight, rect.height)),
+      ignoreElements: (node) =>
+        node instanceof HTMLElement && node.classList.contains("print-hidden"),
+      onclone: (_doc, cloned) => {
+        sanitizeCloneColors(cloned);
+        // Capture body only — page margins are applied by jsPDF, not double padding
+        cloned.style.boxShadow = "none";
+        cloned.style.border = "none";
+        cloned.style.margin = "0";
+        // Keep a tiny inner pad so table borders never kiss the content box edge
+        cloned.style.padding = "2mm";
+        cloned.style.boxSizing = "border-box";
+        cloned.style.backgroundColor = "#ffffff";
+        cloned.style.height = "auto";
+        cloned.style.maxHeight = "none";
+        cloned.style.overflow = "visible";
+      },
+    });
+  } finally {
+    for (const { el: node, value } of restoreOverflow) {
+      node.style.overflow = value;
+    }
+  }
 
   const imgData = canvas.toDataURL("image/png", 1.0);
   const pdf = new jsPDF({

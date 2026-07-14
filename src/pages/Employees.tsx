@@ -250,6 +250,8 @@ export default function Employees() {
     const res = await api.getEmployeesPage(listParams);
     setRawEmployees(res.data);
     setTotal(res.total);
+    // Facets can gain new unit names after import/create
+    void api.getEmployeeBidangOptions().then(setBidangOptions).catch(() => undefined);
   };
 
   /** Never edit/detail from lean list rows — would wipe empty fields on save. */
@@ -270,11 +272,13 @@ export default function Employees() {
   };
 
   const openEdit = (id?: string) => {
+    const qs = searchParams.toString();
+    const state = { fromSearch: qs ? `?${qs}` : "" };
     if (!id) {
-      navigate("/employees/new");
+      navigate("/employees/new", { state });
       return;
     }
-    navigate(`/employees/${id}/edit`);
+    navigate(`/employees/${id}/edit`, { state });
   };
 
   useEffect(() => {
@@ -900,6 +904,11 @@ export default function Employees() {
               {canWrite && (
                 <Link
                   to="/employees/new"
+                  state={{
+                    fromSearch: searchParams.toString()
+                      ? `?${searchParams.toString()}`
+                      : "",
+                  }}
                   className={`${btnPrimary} w-full sm:w-auto`}
                 >
                   <Plus className="w-3.5 h-3.5" />
@@ -1088,7 +1097,15 @@ export default function Employees() {
                     onChange={handleImport}
                   />
                 </label>
-                <Link to="/employees/new" className={btnPrimary}>
+                <Link
+                  to="/employees/new"
+                  state={{
+                    fromSearch: searchParams.toString()
+                      ? `?${searchParams.toString()}`
+                      : "",
+                  }}
+                  className={btnPrimary}
+                >
                   <Plus className="w-4 h-4" />
                   Tambah manual
                 </Link>

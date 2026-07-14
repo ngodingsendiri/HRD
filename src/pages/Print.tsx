@@ -930,7 +930,7 @@ export default function Print() {
         );
         return;
       }
-      // Snapshot BEFORE potong — form BKN menampilkan saldo saat pengajuan
+      // Form BKN menampilkan saldo SEBELUM potong
       const prePrint: CutiSisaSnapshot = {
         n: String(sisaN),
         n1: String(sisaN1),
@@ -953,37 +953,53 @@ export default function Print() {
           newN -= toDeduct;
         }
       }
-      await api.updateEmployee(emp.id!, {
-        sisaCutiN: String(newN),
-        sisaCutiN1: String(newN1),
-        sisaCutiN2: String(newN2),
-      });
-      setEmployees((prev) =>
-        prev.map((e) =>
-          e.id === emp.id
-            ? {
-                ...e,
-                sisaCutiN: String(newN),
-                sisaCutiN1: String(newN1),
-                sisaCutiN2: String(newN2),
-              }
-            : e,
-        ),
-      );
+
+      // 1) Paint form with pre-deduction saldo, download first
+      // 2) Only after successful download, persist potong (avoids orphan deductions)
       setCutiSisaPrint(prePrint);
       setCutiConfirmOpen(false);
-      notify.success("Sisa cuti diperbarui");
-      // Let React paint pre-deduction saldo on the form, then download
       await new Promise((r) => setTimeout(r, 120));
       await runDownload(pendingDownloadFormat.current);
+
+      try {
+        await api.updateEmployee(emp.id!, {
+          sisaCutiN: String(newN),
+          sisaCutiN1: String(newN1),
+          sisaCutiN2: String(newN2),
+        });
+        setEmployees((prev) =>
+          prev.map((e) =>
+            e.id === emp.id
+              ? {
+                  ...e,
+                  sisaCutiN: String(newN),
+                  sisaCutiN1: String(newN1),
+                  sisaCutiN2: String(newN2),
+                }
+              : e,
+          ),
+        );
+        notify.success("Sisa cuti diperbarui");
+      } catch (potongErr) {
+        console.error(potongErr);
+        notify.error(
+          "Berkas sudah diunduh, tetapi gagal memotong sisa cuti",
+          "Sesuaikan sisa cuti manual di biodata pegawai.",
+        );
+      }
       setCutiSisaPrint(null);
     } catch (err) {
       console.error(err);
       setCutiSisaPrint(null);
-      notify.error(
-        "Gagal mengurangi sisa cuti",
-        err instanceof Error ? err.message : undefined,
-      );
+      // Download failed — do not potong; toast may already be shown by runDownload
+      if (!(err instanceof Error && /PDF|Word|Pratinjau/i.test(err.message))) {
+        notify.error(
+          "Gagal unduh cuti",
+          err instanceof Error
+            ? err.message
+            : "Saldo cuti tidak diubah.",
+        );
+      }
     } finally {
       setCutiBusy(false);
     }
@@ -1021,11 +1037,12 @@ export default function Print() {
   const printDensity = densityFromRowCount(sortedEmployees.length);
   const downloadBusy = pdfBusy || docBusy || cutiBusy;
 
-  const generatePdfDownload = async () => {
+  /** @returns true if file saved; throws on failure (for cuti: no potong if false). */
+  const generatePdfDownload = async (): Promise<boolean> => {
     const el = printRef.current;
     if (!el) {
       notify.error("Pratinjau belum siap");
-      return;
+      throw new Error("Pratinjau belum siap");
     }
     setPdfBusy(true);
     try {
@@ -1037,22 +1054,24 @@ export default function Print() {
         marginMm: isLandscapeDoc ? 12 : 15,
       });
       notify.success("PDF diunduh", `${downloadBaseName}.pdf`);
+      return true;
     } catch (err) {
       console.error(err);
       notify.error(
         "Gagal membuat PDF",
         err instanceof Error ? err.message : undefined,
       );
+      throw err;
     } finally {
       setPdfBusy(false);
     }
   };
 
-  const generateDocDownload = async () => {
+  const generateDocDownload = async (): Promise<boolean> => {
     const el = printRef.current;
     if (!el) {
       notify.error("Pratinjau belum siap");
-      return;
+      throw new Error("Pratinjau belum siap");
     }
     setDocBusy(true);
     try {
@@ -1062,12 +1081,14 @@ export default function Print() {
         marginMm: isLandscapeDoc ? 12 : 15,
       });
       notify.success("Word diunduh", `${downloadBaseName}.doc`);
+      return true;
     } catch (err) {
       console.error(err);
       notify.error(
         "Gagal membuat Word",
         err instanceof Error ? err.message : undefined,
       );
+      throw err;
     } finally {
       setDocBusy(false);
     }
@@ -1086,14 +1107,22 @@ export default function Print() {
     }
     if (printType === "surat_cuti" && isCutiTahunan(cutiJenis)) {
       if (!canWrite) {
-        await runDownload(format);
+        try {
+          await runDownload(format);
+        } catch {
+          /* toast already shown */
+        }
         return;
       }
       pendingDownloadFormat.current = format;
       setCutiConfirmOpen(true);
       return;
     }
-    await runDownload(format);
+    try {
+      await runDownload(format);
+    } catch {
+      /* toast already shown */
+    }
   };
 
   const contextLine = [
@@ -1890,16 +1919,19 @@ export default function Print() {
               → N-1 → N).
             </p>
             <p className="text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 text-xs">
-              Saldo dipotong <strong>saat Anda menekan konfirmasi</strong>,
-              lalu berkas diunduh. Membatalkan unduhan tidak mengembalikan sisa
-              cuti.
+              Berkas diunduh dulu, lalu sisa cuti dipotong. Jika unduhan gagal,
+              saldo tidak diubah.
             </p>
             <p className="text-xs text-slate-500">
               Formulir menampilkan sisa cuti sebelum potong (sesuai format BKN).
             </p>
           </div>
         }
-        confirmLabel="Ya, potong & unduh PDF"
+        confirmLabel={
+          pendingDownloadFormat.current === "doc"
+            ? "Ya, unduh Word & potong sisa"
+            : "Ya, unduh PDF & potong sisa"
+        }
         cancelLabel="Batal (saldo aman)"
         onConfirm={() => void runCutiDeductionAndPrint()}
       />

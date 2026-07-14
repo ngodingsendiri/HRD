@@ -2,6 +2,9 @@
  * Export print preview HTML as a Word-compatible .doc file (client-side).
  * Uses HTML + Word XML namespace so MS Word / LibreOffice open it cleanly,
  * with @page margins so the paper is not edge-to-edge.
+ *
+ * Inline computed styles from the live DOM so Tailwind-heavy templates
+ * (e.g. surat cuti) still look correct in Word.
  */
 export type DocOrientation = "portrait" | "landscape";
 
@@ -12,6 +15,72 @@ export type DownloadPrintDocOptions = {
 };
 
 const DEFAULT_MARGIN = { portrait: 15, landscape: 12 } as const;
+
+const STYLE_PROPS = [
+  "color",
+  "background-color",
+  "border",
+  "border-top",
+  "border-right",
+  "border-bottom",
+  "border-left",
+  "border-collapse",
+  "font-family",
+  "font-size",
+  "font-weight",
+  "font-style",
+  "line-height",
+  "text-align",
+  "vertical-align",
+  "padding",
+  "margin",
+  "width",
+  "min-width",
+  "max-width",
+  "height",
+  "min-height",
+  "display",
+  "flex-direction",
+  "justify-content",
+  "align-items",
+  "gap",
+  "white-space",
+  "text-decoration",
+  "table-layout",
+  "box-sizing",
+] as const;
+
+/** Copy computed layout styles so Word does not depend on Tailwind CSS. */
+function inlineComputedStyles(sourceRoot: HTMLElement, cloneRoot: HTMLElement) {
+  const sources = [sourceRoot, ...Array.from(sourceRoot.querySelectorAll("*"))];
+  const clones = [cloneRoot, ...Array.from(cloneRoot.querySelectorAll("*"))];
+  const n = Math.min(sources.length, clones.length);
+  for (let i = 0; i < n; i++) {
+    const s = sources[i];
+    const c = clones[i];
+    if (!(s instanceof HTMLElement) || !(c instanceof HTMLElement)) continue;
+    if (c.classList.contains("print-hidden")) continue;
+    const cs = window.getComputedStyle(s);
+    for (const prop of STYLE_PROPS) {
+      const val = cs.getPropertyValue(prop);
+      if (!val || val === "normal" || val === "none" || val === "auto") {
+        // Keep borders / colors even when "none" for tables
+        if (
+          !prop.startsWith("border") &&
+          prop !== "background-color" &&
+          prop !== "color"
+        ) {
+          continue;
+        }
+      }
+      try {
+        c.style.setProperty(prop, val);
+      } catch {
+        /* ignore invalid */
+      }
+    }
+  }
+}
 
 /**
  * Download the print sheet as `.doc` (HTML Word format).
@@ -31,7 +100,8 @@ export function downloadElementAsWordDoc(
 
   const clone = el.cloneNode(true) as HTMLElement;
   clone.querySelectorAll(".print-hidden").forEach((n) => n.remove());
-  // Strip chrome that should not appear in Word
+  inlineComputedStyles(el, clone);
+
   clone.style.boxShadow = "none";
   clone.style.border = "none";
   clone.style.margin = "0";
@@ -68,7 +138,6 @@ export function downloadElementAsWordDoc(
   </o:OfficeDocumentSettings>
 </xml>
 <style>
-  /* Page setup for Word */
   @page {
     size: ${pageSize};
     margin: ${marginMm}mm;
@@ -98,7 +167,6 @@ export function downloadElementAsWordDoc(
     font-size: 11pt;
   }
   body {
-    /* Fallback margin if @page ignored */
     margin: ${marginMm}mm !important;
   }
   table {
@@ -111,11 +179,6 @@ export function downloadElementAsWordDoc(
     border: 1px solid #000;
     color: #000;
     vertical-align: top;
-  }
-  th {
-    background: #f3f4f6;
-    font-weight: 700;
-    text-align: center;
   }
   img {
     max-width: 96px;
@@ -133,7 +196,6 @@ ${clone.outerHTML}
 </body>
 </html>`;
 
-  // BOM helps Word detect UTF-8 (NIP, names with accents)
   const blob = new Blob(["\ufeff", html], {
     type: "application/msword;charset=utf-8",
   });
@@ -151,6 +213,5 @@ ${clone.outerHTML}
   document.body.appendChild(a);
   a.click();
   a.remove();
-  // Revoke after click settles
   window.setTimeout(() => URL.revokeObjectURL(url), 2_000);
 }

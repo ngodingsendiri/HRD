@@ -78,6 +78,7 @@ export default function Settings() {
   const [loading, setLoading] = useState(() => !api.peekSettings("all"));
   const [saving, setSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+  const dirtyRef = React.useRef(false);
   const [activeTab, setActiveTab] = useState<
     "identitas" | "cetak" | "kamus" | "peta" | "api"
   >("identitas");
@@ -103,6 +104,8 @@ export default function Settings() {
       try {
         const data = await api.getSettings("all");
         if (cancelled) return;
+        // Do not clobber in-progress edits if operator typed while network settled
+        if (dirtyRef.current) return;
         setSettings({
           ...EMPTY_SETTINGS,
           ...data,
@@ -111,6 +114,7 @@ export default function Settings() {
           jabatanKamusCsv: data.jabatanKamusCsv ?? "",
           petaJabatanCsv: data.petaJabatanCsv ?? "",
         });
+        dirtyRef.current = false;
         setIsDirty(false);
       } catch (error) {
         console.error("Error fetching settings:", error);
@@ -128,6 +132,7 @@ export default function Settings() {
   }, []);
 
   const patchSettings = useCallback((patch: Partial<AppSettings>) => {
+    dirtyRef.current = true;
     setSettings((prev) => ({ ...prev, ...patch }));
     setIsDirty(true);
   }, []);
@@ -162,6 +167,7 @@ export default function Settings() {
       };
       await api.upsertSettings(payload);
       setSettings(payload);
+      dirtyRef.current = false;
       setIsDirty(false);
       notify.success("Pengaturan disimpan");
     } catch (error) {
