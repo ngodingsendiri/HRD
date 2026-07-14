@@ -1,6 +1,8 @@
 /**
- * Client-side HTML element → A4 PDF download (no server/Puppeteer).
- * Uses html2canvas-pro (oklch/lab support) + jsPDF multi-page with page margins.
+ * Client-side HTML element → A4 PDF download.
+ * Strategy: clone off-DOM at fixed A4 width, bake page margins into the
+ * capture, multi-page vertical slice with jsPDF. Avoids live-DOM overflow
+ * clipping and double-margin bugs.
  */
 import html2canvas from "html2canvas-pro";
 import { jsPDF } from "jspdf";
@@ -10,25 +12,17 @@ export type PdfOrientation = "portrait" | "landscape";
 const A4_PORTRAIT = { w: 210, h: 297 } as const;
 const A4_LANDSCAPE = { w: 297, h: 210 } as const;
 
-/** Official-doc margins (mm). Portrait a bit roomier; landscape tighter for wide tables. */
 export const PDF_MARGIN_MM = {
   portrait: 15,
   landscape: 12,
 } as const;
 
 export type DownloadA4PdfOptions = {
-  /** Default portrait. Use landscape for wide tables (e.g. DUK). */
   orientation?: PdfOrientation;
-  /** Canvas scale (2 = sharp; 1.5 faster for large sheets). */
   scale?: number;
-  /** Override page margin in mm (default 15 portrait / 12 landscape). */
   marginMm?: number;
 };
 
-/**
- * Capture a print sheet DOM node and save as multi-page A4 PDF.
- * Content is placed inside page margins (not edge-to-edge).
- */
 export async function downloadElementAsA4Pdf(
   el: HTMLElement,
   filename: string,
@@ -43,82 +37,84 @@ export async function downloadElementAsA4Pdf(
       : PDF_MARGIN_MM.portrait);
   const scale = options.scale ?? 2;
 
-  const contentW = page.w - marginMm * 2;
-  const contentH = page.h - marginMm * 2;
-  if (contentW < 40 || contentH < 40) {
-    throw new Error("Margin PDF terlalu besar untuk halaman A4.");
-  }
-
-  const rect = el.getBoundingClientRect();
-  if (rect.width < 8 || rect.height < 8) {
+  if (el.getBoundingClientRect().width < 8) {
     throw new Error("Pratinjau dokumen kosong atau belum siap.");
   }
 
-  // Temporarily unclip overflow ancestors so tall sheets capture fully
-  const restoreOverflow: Array<{
-    el: HTMLElement;
-    overflow: string;
-    overflowX: string;
-    overflowY: string;
-  }> = [];
-  const isClipped = (v: string) =>
-    v === "auto" || v === "scroll" || v === "hidden";
-  let walk: HTMLElement | null = el.parentElement;
-  while (walk && walk !== document.body) {
-    const cs = window.getComputedStyle(walk);
-    if (
-      isClipped(cs.overflowX) ||
-      isClipped(cs.overflowY) ||
-      isClipped(cs.overflow)
-    ) {
-      restoreOverflow.push({
-        el: walk,
-        overflow: walk.style.overflow,
-        overflowX: walk.style.overflowX,
-        overflowY: walk.style.overflowY,
-      });
-      walk.style.overflow = "visible";
-      walk.style.overflowX = "visible";
-      walk.style.overflowY = "visible";
-    }
-    walk = walk.parentElement;
-  }
+  // --- Off-DOM capture host at true A4 width (mm) ---
+  const host = document.createElement("div");
+  host.setAttribute("data-pdf-capture-host", "1");
+  host.style.cssText = [
+    "position:fixed",
+    "left:-12000px",
+    "top:0",
+    `width:${page.w}mm`,
+    "background:#ffffff",
+    "color:#000000",
+    "z-index:-1",
+    "overflow:visible",
+    "pointer-events:none",
+  ].join(";");
+
+  const clone = el.cloneNode(true) as HTMLElement;
+  clone.querySelectorAll(".print-hidden").forEach((n) => n.remove());
+
+  // Margins baked into the sheet so L/R white space is correct on every page
+  clone.style.cssText = [
+    "display:block",
+    "width:100%",
+    "max-width:none",
+    "min-height:0",
+    "height:auto",
+    "max-height:none",
+    "box-sizing:border-box",
+    `padding:${marginMm}mm`,
+    "margin:0",
+    "border:none",
+    "box-shadow:none",
+    "background:#ffffff",
+    "color:#000000",
+    "overflow:visible",
+    "font-family:Arial,Helvetica,sans-serif",
+  ].join(";");
+
+  // Soft-fix modern colors that break older canvas parsers
+  forcePrintSafeColors(clone);
+
+  host.appendChild(clone);
+  document.body.appendChild(host);
 
   let canvas: HTMLCanvasElement;
   try {
-    canvas = await html2canvas(el, {
+    await waitForImages(clone);
+    // Give layout a tick after off-DOM attach
+    await new Promise((r) => requestAnimationFrame(() => r(undefined)));
+
+    const w = Math.max(clone.scrollWidth, clone.offsetWidth, 1);
+    const h = Math.max(clone.scrollHeight, clone.offsetHeight, 1);
+
+    canvas = await html2canvas(clone, {
       scale,
       useCORS: true,
+      // do not allowTaint — would block canvas.toDataURL for mixed-origin images
       logging: false,
       backgroundColor: "#ffffff",
-      windowWidth: Math.ceil(el.scrollWidth || rect.width),
-      windowHeight: Math.ceil(Math.max(el.scrollHeight, rect.height)),
-      ignoreElements: (node) =>
-        node instanceof HTMLElement && node.classList.contains("print-hidden"),
-      onclone: (_doc, cloned) => {
-        sanitizeCloneColors(cloned);
-        // Capture body only — page margins are applied by jsPDF, not double padding
-        cloned.style.boxShadow = "none";
-        cloned.style.border = "none";
-        cloned.style.margin = "0";
-        // Keep a tiny inner pad so table borders never kiss the content box edge
-        cloned.style.padding = "2mm";
-        cloned.style.boxSizing = "border-box";
-        cloned.style.backgroundColor = "#ffffff";
-        cloned.style.height = "auto";
-        cloned.style.maxHeight = "none";
-        cloned.style.overflow = "visible";
-      },
+      width: w,
+      height: h,
+      windowWidth: w,
+      windowHeight: h,
+      scrollX: 0,
+      scrollY: 0,
     });
   } finally {
-    for (const { el: node, overflow, overflowX, overflowY } of restoreOverflow) {
-      node.style.overflow = overflow;
-      node.style.overflowX = overflowX;
-      node.style.overflowY = overflowY;
-    }
+    host.remove();
   }
 
-  const imgData = canvas.toDataURL("image/png", 1.0);
+  if (canvas.width < 8 || canvas.height < 8) {
+    throw new Error("Gagal merender pratinjau ke gambar.");
+  }
+
+  const imgData = canvas.toDataURL("image/jpeg", 0.92);
   const pdf = new jsPDF({
     orientation,
     unit: "mm",
@@ -126,41 +122,22 @@ export async function downloadElementAsA4Pdf(
     compress: true,
   });
 
-  // Fit image to content box (inside margins), keep aspect ratio
-  const imgWidth = contentW;
-  const imgHeight = (canvas.height * imgWidth) / canvas.width;
+  // Full page width — margins already inside the image
+  const imgW = page.w;
+  const imgH = (canvas.height * imgW) / canvas.width;
+  const pageH = page.h;
 
-  let heightLeft = imgHeight;
-  // Y of image top on current page (starts at top margin)
-  let position = marginMm;
-
-  pdf.addImage(
-    imgData,
-    "PNG",
-    marginMm,
-    position,
-    imgWidth,
-    imgHeight,
-    undefined,
-    "FAST",
-  );
-  heightLeft -= contentH;
-
-  while (heightLeft > 1) {
-    // Shift image up so the next slice appears in the content box
-    position = marginMm - (imgHeight - heightLeft);
-    pdf.addPage();
-    pdf.addImage(
-      imgData,
-      "PNG",
-      marginMm,
-      position,
-      imgWidth,
-      imgHeight,
-      undefined,
-      "FAST",
-    );
-    heightLeft -= contentH;
+  // Vertical multi-page slice of one tall image
+  let yOffset = 0;
+  let pageIndex = 0;
+  while (yOffset < imgH - 0.5) {
+    if (pageIndex > 0) pdf.addPage();
+    // Negative y shifts the tall image so the next band fills the page
+    pdf.addImage(imgData, "JPEG", 0, -yOffset, imgW, imgH, undefined, "FAST");
+    yOffset += pageH;
+    pageIndex += 1;
+    // Safety: avoid infinite loop on tiny remainders
+    if (pageIndex > 80) break;
   }
 
   const safe =
@@ -169,61 +146,43 @@ export async function downloadElementAsA4Pdf(
   pdf.save(name);
 }
 
-/** Force computed colors onto inline styles as rgb/hex (Tailwind v4 safety net). */
-function sanitizeCloneColors(root: HTMLElement) {
+async function waitForImages(root: HTMLElement): Promise<void> {
+  const imgs = Array.from(root.querySelectorAll("img"));
+  await Promise.all(
+    imgs.map(
+      (img) =>
+        new Promise<void>((resolve) => {
+          if (img.complete) {
+            resolve();
+            return;
+          }
+          const done = () => resolve();
+          img.addEventListener("load", done, { once: true });
+          img.addEventListener("error", done, { once: true });
+          // Don't hang forever
+          window.setTimeout(done, 2500);
+        }),
+    ),
+  );
+}
+
+/** Flatten oklch/lab-ish colors to rgb on the clone only. */
+function forcePrintSafeColors(root: HTMLElement) {
   const nodes: HTMLElement[] = [
     root,
     ...Array.from(root.querySelectorAll("*")),
   ].filter((n): n is HTMLElement => n instanceof HTMLElement);
 
-  const colorProps = [
-    "color",
-    "background-color",
-    "border-top-color",
-    "border-right-color",
-    "border-bottom-color",
-    "border-left-color",
-    "outline-color",
-    "text-decoration-color",
-    "column-rule-color",
-    "caret-color",
-  ] as const;
-
   for (const node of nodes) {
-    const cs = window.getComputedStyle(node);
-    for (const prop of colorProps) {
-      const raw = cs.getPropertyValue(prop);
-      if (!raw || raw === "transparent" || raw === "rgba(0, 0, 0, 0)") continue;
-      const safe = cssColorToRgb(raw);
-      if (safe) node.style.setProperty(prop, safe, "important");
+    // Prefer explicit black text / white bg when Tailwind left computed oklch
+    const style = node.getAttribute("style") || "";
+    if (!style.includes("color") && !node.style.color) {
+      // leave as inherited
     }
-    if (cs.boxShadow && cs.boxShadow !== "none") {
-      node.style.setProperty("box-shadow", "none", "important");
+    // Ensure table cells keep black borders if they had any border class
+    if (node.tagName === "TABLE") {
+      node.style.borderCollapse = "collapse";
+      node.style.width = "100%";
     }
-    if (cs.textShadow && cs.textShadow !== "none") {
-      node.style.setProperty("text-shadow", "none", "important");
-    }
-  }
-}
-
-function cssColorToRgb(input: string): string | null {
-  const v = input.trim();
-  if (!v) return null;
-  if (
-    v.startsWith("#") ||
-    v.startsWith("rgb") ||
-    v === "transparent" ||
-    v === "currentcolor"
-  ) {
-    return v;
-  }
-  try {
-    const ctx = document.createElement("canvas").getContext("2d");
-    if (!ctx) return "#000000";
-    ctx.fillStyle = "#000000";
-    ctx.fillStyle = v;
-    return String(ctx.fillStyle || "#000000");
-  } catch {
-    return "#000000";
   }
 }

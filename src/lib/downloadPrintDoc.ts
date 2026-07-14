@@ -1,90 +1,20 @@
 /**
- * Export print preview HTML as a Word-compatible .doc file (client-side).
- * Uses HTML + Word XML namespace so MS Word / LibreOffice open it cleanly,
- * with @page margins so the paper is not edge-to-edge.
+ * Export print preview as Word-compatible .doc (HTML Word format).
  *
- * Inline computed styles from the live DOM so Tailwind-heavy templates
- * (e.g. surat cuti) still look correct in Word.
+ * Do NOT dump full getComputedStyle (px widths + flex) — Word mangles that.
+ * Prefer existing inline styles from print templates + a small safe stylesheet.
  */
 export type DocOrientation = "portrait" | "landscape";
 
 export type DownloadPrintDocOptions = {
   orientation?: DocOrientation;
-  /** Page margin in mm (default 15 portrait / 12 landscape). */
   marginMm?: number;
 };
 
 const DEFAULT_MARGIN = { portrait: 15, landscape: 12 } as const;
 
-const STYLE_PROPS = [
-  "color",
-  "background-color",
-  "border",
-  "border-top",
-  "border-right",
-  "border-bottom",
-  "border-left",
-  "border-collapse",
-  "font-family",
-  "font-size",
-  "font-weight",
-  "font-style",
-  "line-height",
-  "text-align",
-  "vertical-align",
-  "padding",
-  "margin",
-  "width",
-  "min-width",
-  "max-width",
-  "height",
-  "min-height",
-  "display",
-  "flex-direction",
-  "justify-content",
-  "align-items",
-  "gap",
-  "white-space",
-  "text-decoration",
-  "table-layout",
-  "box-sizing",
-] as const;
-
-/** Copy computed layout styles so Word does not depend on Tailwind CSS. */
-function inlineComputedStyles(sourceRoot: HTMLElement, cloneRoot: HTMLElement) {
-  const sources = [sourceRoot, ...Array.from(sourceRoot.querySelectorAll("*"))];
-  const clones = [cloneRoot, ...Array.from(cloneRoot.querySelectorAll("*"))];
-  const n = Math.min(sources.length, clones.length);
-  for (let i = 0; i < n; i++) {
-    const s = sources[i];
-    const c = clones[i];
-    if (!(s instanceof HTMLElement) || !(c instanceof HTMLElement)) continue;
-    if (c.classList.contains("print-hidden")) continue;
-    const cs = window.getComputedStyle(s);
-    for (const prop of STYLE_PROPS) {
-      const val = cs.getPropertyValue(prop);
-      if (!val || val === "normal" || val === "none" || val === "auto") {
-        // Keep borders / colors even when "none" for tables
-        if (
-          !prop.startsWith("border") &&
-          prop !== "background-color" &&
-          prop !== "color"
-        ) {
-          continue;
-        }
-      }
-      try {
-        c.style.setProperty(prop, val);
-      } catch {
-        /* ignore invalid */
-      }
-    }
-  }
-}
-
 /**
  * Download the print sheet as `.doc` (HTML Word format).
- * Preserves tables, kop, and layout from the preview element.
  */
 export function downloadElementAsWordDoc(
   el: HTMLElement,
@@ -99,31 +29,30 @@ export function downloadElementAsWordDoc(
       : DEFAULT_MARGIN.portrait);
 
   const clone = el.cloneNode(true) as HTMLElement;
-  // Inline while trees still match, then strip UI-only chrome
-  inlineComputedStyles(el, clone);
   clone.querySelectorAll(".print-hidden").forEach((n) => n.remove());
 
-  clone.style.boxShadow = "none";
-  clone.style.border = "none";
-  clone.style.margin = "0";
-  clone.style.padding = "0";
-  clone.style.width = "100%";
-  clone.style.minHeight = "0";
-  clone.style.backgroundColor = "#ffffff";
-  clone.style.color = "#000000";
+  // Strip Tailwind class noise; keep inline styles from print templates
+  stripClassesDeep(clone);
+  normalizeForWord(clone);
+
+  clone.style.cssText =
+    "width:100%;background:#ffffff;color:#000000;font-family:Arial,Helvetica,sans-serif;margin:0;padding:0;border:none;";
 
   const pageSize =
     orientation === "landscape" ? "297mm 210mm" : "210mm 297mm";
   const msoOrient =
     orientation === "landscape" ? "landscape" : "portrait";
 
+  // Embed images as data URLs if they already are; absolute http logos stay as-is
+  promoteImgSrc(clone);
+
   const html = `<!DOCTYPE html>
 <html xmlns:o="urn:schemas-microsoft-com:office:office"
       xmlns:w="urn:schemas-microsoft-com:office:word"
       xmlns="http://www.w3.org/TR/REC-html40">
 <head>
-<meta charset="utf-8" />
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<meta charset="utf-8" />
 <title>Dokumen</title>
 <!--[if gte mso 9]>
 <xml>
@@ -138,27 +67,20 @@ export function downloadElementAsWordDoc(
     <o:AllowPNG/>
   </o:OfficeDocumentSettings>
 </xml>
-<style>
-  @page {
-    size: ${pageSize};
-    margin: ${marginMm}mm;
-    mso-page-orientation: ${msoOrient};
-  }
-  @page Section1 {
-    size: ${pageSize};
-    margin: ${marginMm}mm ${marginMm}mm ${marginMm}mm ${marginMm}mm;
-    mso-header-margin: 0;
-    mso-footer-margin: 0;
-    mso-paper-source: 0;
-  }
-  div.Section1 { page: Section1; }
-</style>
 <![endif]-->
 <style>
+  /* Page */
   @page {
     size: ${orientation === "landscape" ? "A4 landscape" : "A4"};
     margin: ${marginMm}mm;
   }
+  @page Section1 {
+    size: ${pageSize};
+    margin: ${marginMm}mm;
+    mso-page-orientation: ${msoOrient};
+  }
+  div.Section1 { page: Section1; }
+
   html, body {
     margin: 0;
     padding: 0;
@@ -167,9 +89,8 @@ export function downloadElementAsWordDoc(
     font-family: Arial, Helvetica, sans-serif;
     font-size: 11pt;
   }
-  body {
-    margin: ${marginMm}mm !important;
-  }
+  body { margin: ${marginMm}mm; }
+
   table {
     border-collapse: collapse;
     width: 100%;
@@ -180,25 +101,32 @@ export function downloadElementAsWordDoc(
     border: 1px solid #000;
     color: #000;
     vertical-align: top;
+    padding: 2px 4px;
+  }
+  th {
+    background: #f3f4f6;
+    font-weight: bold;
+    text-align: center;
   }
   img {
-    max-width: 96px;
+    max-width: 90px;
     height: auto;
   }
-  * {
-    box-sizing: border-box;
+  h1, h2, h3, p, div, span {
+    color: #000;
   }
 </style>
 </head>
 <body>
-<div class="Section1" style="margin:0;padding:0;">
+<div class="Section1">
 ${clone.outerHTML}
 </div>
 </body>
 </html>`;
 
+  // UTF-8 BOM helps Word open Indonesian text correctly
   const blob = new Blob(["\ufeff", html], {
-    type: "application/msword;charset=utf-8",
+    type: "application/msword",
   });
 
   const safe =
@@ -215,4 +143,77 @@ ${clone.outerHTML}
   a.click();
   a.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 2_000);
+}
+
+function stripClassesDeep(root: HTMLElement) {
+  root.removeAttribute("class");
+  root.querySelectorAll("[class]").forEach((n) => n.removeAttribute("class"));
+}
+
+/**
+ * Word-friendly cleanup: drop screen-only layout props that break tables
+ * (fixed px widths from preview, flex, minHeight A4 stage, etc.).
+ */
+function normalizeForWord(root: HTMLElement) {
+  const all = [root, ...Array.from(root.querySelectorAll("*"))].filter(
+    (n): n is HTMLElement => n instanceof HTMLElement,
+  );
+
+  for (const node of all) {
+    // Kill stage chrome from Print.tsx printRef
+    node.style.removeProperty("min-height");
+    node.style.removeProperty("max-height");
+    node.style.removeProperty("max-width");
+    node.style.removeProperty("box-shadow");
+    node.style.removeProperty("transform");
+    node.style.removeProperty("gap");
+
+    // Flex often collapses badly in Word — demote to block when not a table cell
+    const tag = node.tagName;
+    if (tag !== "TD" && tag !== "TH" && tag !== "TR" && tag !== "TABLE") {
+      const display = node.style.display;
+      if (display === "flex" || display === "inline-flex" || display === "grid") {
+        node.style.display = "block";
+      }
+    }
+
+    // Preview uses w-[210mm]/w-[297mm] via class (stripped) or style width
+    if (node === root) {
+      node.style.width = "100%";
+      node.style.height = "auto";
+      node.style.padding = "0";
+      node.style.margin = "0";
+      node.style.border = "none";
+    }
+
+    if (tag === "TABLE") {
+      node.style.width = "100%";
+      node.style.borderCollapse = "collapse";
+      node.style.tableLayout = "auto";
+    }
+
+    if (tag === "TH" || tag === "TD") {
+      // Ensure visible borders for cells that only had Tailwind border classes
+      if (!node.style.border && !node.getAttribute("style")?.includes("border")) {
+        node.style.border = "1px solid #000";
+      }
+      if (!node.style.padding) node.style.padding = "2px 4px";
+      node.style.color = node.style.color || "#000";
+    }
+
+    if (tag === "IMG") {
+      node.style.maxWidth = "90px";
+      node.style.height = "auto";
+    }
+  }
+}
+
+function promoteImgSrc(root: HTMLElement) {
+  root.querySelectorAll("img").forEach((img) => {
+    const el = img as HTMLImageElement;
+    // Prefer currentSrc if set
+    if (el.currentSrc && el.currentSrc.startsWith("data:")) {
+      el.setAttribute("src", el.currentSrc);
+    }
+  });
 }

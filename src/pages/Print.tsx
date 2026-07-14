@@ -1824,8 +1824,8 @@ export default function Print() {
                   : "bg-white border border-slate-200 print-container print-sheet text-[12pt] w-[210mm] max-w-none shrink-0 print:max-w-full print:w-full mx-auto print:border-none shadow-sm print:shadow-none"
               }
               style={{
+                // Preview stage only — exporters clone off-DOM and set their own padding/margins
                 minHeight: isLandscapeDoc ? "210mm" : "297mm",
-                // Explicit padding = visible margin in preview & capture fallback
                 padding: isLandscapeDoc ? "12mm" : "15mm",
                 boxSizing: "border-box",
                 fontFamily: "Arial, Helvetica, sans-serif",
