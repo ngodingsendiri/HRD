@@ -3,7 +3,7 @@
  * re-download the same JSON every time (session TTL, not localStorage).
  */
 
-/** Consolidated lean roster for Print (filled by bootstrap). */
+/** Consolidated lean roster for Print (filled when Cetak opens, not at login). */
 export const ALL_EMPLOYEES_LEAN_KEY = "employees:all-lean";
 
 type Entry = { at: number; data: unknown; inflight?: Promise<unknown> };

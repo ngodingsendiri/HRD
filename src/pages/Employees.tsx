@@ -26,7 +26,6 @@ import {
   btnPrimary,
   btnSecondary,
   card,
-  chip,
   easeOut,
   pageContainerVariants,
   pageItemVariants,
@@ -37,8 +36,6 @@ import { useDocumentTitle } from "../lib/useDocumentTitle";
 import {
   calculateBUP,
   checkKGBandKP,
-  formatKPLabel,
-  type KPStatus,
 } from "../lib/employeeUtils";
 import {
   buildDerivedReportRows,
@@ -53,8 +50,6 @@ import { ImportResultDialog } from "../components/ImportResultDialog";
 import { TableSkeleton } from "../components/Skeleton";
 import { cn } from "../lib/utils";
 
-type AlertFilter = "all" | "any" | "kp" | "kgb" | "pensiun" | "nonip";
-
 const STATUS_OPTIONS = [
   "all",
   "PNS",
@@ -64,28 +59,6 @@ const STATUS_OPTIONS = [
   "Honorer",
   "Lainnya",
 ] as const;
-
-const ALERT_CHIPS: { value: AlertFilter; label: string }[] = [
-  { value: "all", label: "Semua" },
-  { value: "any", label: "Mendesak" },
-  { value: "kp", label: "KP" },
-  { value: "kgb", label: "KGB" },
-  { value: "pensiun", label: "Pensiun" },
-  { value: "nonip", label: "Tanpa NIP" },
-];
-
-function parseAlertParam(raw: string | null): AlertFilter {
-  if (
-    raw === "any" ||
-    raw === "kp" ||
-    raw === "kgb" ||
-    raw === "pensiun" ||
-    raw === "nonip"
-  ) {
-    return raw;
-  }
-  return "all";
-}
 
 function parseStatusParam(raw: string | null): string {
   if (!raw || raw === "all") return "all";
@@ -106,100 +79,6 @@ function golLabel(emp: Employee): string {
   );
 }
 
-function KPBadge({ kind, status }: { kind: "KP" | "KGB"; status: KPStatus }) {
-  if (!status.due && !status.overdue) return null;
-  return (
-    <span
-      title={status.targetDate || kind}
-      className={cn(
-        "inline-flex items-center gap-1 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded-lg border whitespace-nowrap",
-        status.overdue
-          ? "bg-red-50 text-red-700 border-red-100"
-          : "bg-amber-50 text-amber-700 border-amber-100",
-      )}
-    >
-      <AlertTriangle className="w-2.5 h-2.5" />
-      {formatKPLabel(kind, status)}
-    </span>
-  );
-}
-
-function PensiunBadge({ emp }: { emp: Employee }) {
-  const bup = calculateBUP(
-    emp.tanggalLahir || "",
-    emp.jabatan || "",
-    emp.bupTanggal,
-  );
-  if (!bup) return null;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const d = new Date(bup);
-  if (isNaN(d.getTime())) return null;
-  d.setHours(0, 0, 0, 0);
-  const days = Math.ceil((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-  if (days > 365) return null;
-  const overdue = days < 0;
-  return (
-    <span
-      title={bup}
-      className={cn(
-        "inline-flex items-center gap-1 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded-lg border whitespace-nowrap",
-        overdue
-          ? "bg-red-50 text-red-700 border-red-100"
-          : "bg-amber-50 text-amber-700 border-amber-100",
-      )}
-    >
-      <AlertTriangle className="w-2.5 h-2.5" />
-      {overdue
-        ? "Pensiun lewat*"
-        : days === 0
-          ? "Pensiun hari ini*"
-          : `Pensiun H-${days}*`}
-    </span>
-  );
-}
-
-function isPensiunInWindow(emp: Employee): boolean {
-  const bup = calculateBUP(
-    emp.tanggalLahir || "",
-    emp.jabatan || "",
-    emp.bupTanggal,
-  );
-  if (!bup) return false;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const d = new Date(bup);
-  if (isNaN(d.getTime())) return false;
-  d.setHours(0, 0, 0, 0);
-  const days = Math.ceil((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-  return days <= 365;
-}
-
-function AlertBadges({ emp }: { emp: Employee }) {
-  const { kp, kgb } = checkKGBandKP(
-    emp.tmtGolonganRuang,
-    emp.tanggalBerkalaTerakhir,
-    {
-      tmtKerja: emp.tmtKerja,
-      status: emp.status,
-      gol: emp.gol,
-      pangkatGolongan: emp.pangkatGolongan,
-      tmtKp: emp.tmtKp,
-    },
-  );
-  const hasKp = kp.due || kp.overdue;
-  const hasKgb = kgb.due || kgb.overdue;
-  const hasPens = isPensiunInWindow(emp);
-  if (!hasKp && !hasKgb && !hasPens) return null;
-  return (
-    <div className="flex flex-wrap items-center gap-1" title="* Prediksi indikatif">
-      <KPBadge kind="KP" status={kp} />
-      <KPBadge kind="KGB" status={kgb} />
-      <PensiunBadge emp={emp} />
-    </div>
-  );
-}
-
 export default function Employees() {
   useDocumentTitle("Pegawai");
   const { canWrite } = useAuth();
@@ -212,9 +91,6 @@ export default function Employees() {
   const [searchTerm, setSearchTerm] = useState(searchParams.get("q") || "");
   const [statusFilter, setStatusFilter] = useState(() =>
     parseStatusParam(searchParams.get("status")),
-  );
-  const [alertFilter, setAlertFilter] = useState<AlertFilter>(() =>
-    parseAlertParam(searchParams.get("alert")),
   );
   const [bidangFilter, setBidangFilter] = useState(
     () => searchParams.get("bidang") || "all",
@@ -268,36 +144,28 @@ export default function Employees() {
   /** Ignore our own URL writes when hydrating from searchParams. */
   const suppressUrlHydrate = useRef(false);
 
-  const filterKey = `${debouncedQ}\0${statusFilter}\0${alertFilter}\0${bidangFilter}\0${rowsPerPage}`;
+  const filterKey = `${debouncedQ}\0${statusFilter}\0${bidangFilter}\0${rowsPerPage}`;
 
   const listParams = useMemo(
     () => ({
       q: debouncedQ || undefined,
       status: statusFilter,
       bidang: bidangFilter === "all" ? undefined : bidangFilter,
-      alert: (alertFilter === "all" ? undefined : alertFilter) as
-        | "any"
-        | "kp"
-        | "kgb"
-        | "pensiun"
-        | "nonip"
-        | undefined,
       limit: rowsPerPage,
       offset: page * rowsPerPage,
       lean: true as const,
     }),
-    [debouncedQ, statusFilter, bidangFilter, alertFilter, rowsPerPage, page],
+    [debouncedQ, statusFilter, bidangFilter, rowsPerPage, page],
   );
 
   const desiredSearch = useMemo(() => {
     const sp = new URLSearchParams();
     if (debouncedQ) sp.set("q", debouncedQ);
     if (statusFilter !== "all") sp.set("status", statusFilter);
-    if (alertFilter !== "all") sp.set("alert", alertFilter);
-    if (bidangFilter !== "all") sp.set("bidang", bidangFilter);
+        if (bidangFilter !== "all") sp.set("bidang", bidangFilter);
     if (page > 0) sp.set("page", String(page + 1));
     return sp.toString();
-  }, [debouncedQ, statusFilter, alertFilter, bidangFilter, page]);
+  }, [debouncedQ, statusFilter, bidangFilter, page]);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQ(searchTerm), 250);
@@ -357,14 +225,12 @@ export default function Employees() {
     }
     const q = searchParams.get("q") || "";
     const status = parseStatusParam(searchParams.get("status"));
-    const alert = parseAlertParam(searchParams.get("alert"));
     const bidang = searchParams.get("bidang") || "all";
     const nextPage = parsePageParam(searchParams.get("page"));
 
     const filterChanging =
       q !== debouncedQ ||
       status !== statusFilter ||
-      alert !== alertFilter ||
       bidang !== bidangFilter;
 
     if (filterChanging) {
@@ -375,7 +241,6 @@ export default function Employees() {
     if (q !== searchTerm) setSearchTerm(q);
     if (q !== debouncedQ) setDebouncedQ(q);
     if (status !== statusFilter) setStatusFilter(status);
-    if (alert !== alertFilter) setAlertFilter(alert);
     if (bidang !== bidangFilter) setBidangFilter(bidang);
     if (nextPage !== page) setPage(nextPage);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberate: hydrate from searchParams only
@@ -559,15 +424,6 @@ export default function Employees() {
               q: debouncedQ || undefined,
               status: statusFilter,
               bidang: bidangFilter === "all" ? undefined : bidangFilter,
-              alert:
-                alertFilter === "all"
-                  ? undefined
-                  : (alertFilter as
-                      | "any"
-                      | "kp"
-                      | "kgb"
-                      | "pensiun"
-                      | "nonip"),
             }
           : {};
       for (;;) {
@@ -623,14 +479,12 @@ export default function Employees() {
 
   const resetFilters = () => {
     setStatusFilter("all");
-    setAlertFilter("all");
     setBidangFilter("all");
     setSearchTerm("");
   };
 
   const hasActiveFilters =
     statusFilter !== "all" ||
-    alertFilter !== "all" ||
     bidangFilter !== "all" ||
     !!debouncedQ;
 
@@ -920,7 +774,7 @@ export default function Employees() {
       <motion.div variants={pageItemVariants}>
         <PageHeader
           title="Pegawai"
-          description="Cari, kelola, dan impor data kepegawaian."
+          description="Direktori pegawai — cari, impor, ekspor. Peringatan KP/KGB/pensiun ada di Dashboard."
           actions={
             <>
               <div className="relative" ref={moreRef}>
@@ -1097,25 +951,6 @@ export default function Employees() {
       )}
 
       <motion.div variants={pageItemVariants} className="space-y-3">
-        {/* Alert chips — shareable via URL (Dashboard deep-link) */}
-        <div
-          className="flex flex-wrap gap-1.5"
-          role="group"
-          aria-label="Filter peringatan"
-        >
-          {ALERT_CHIPS.map((c) => (
-            <button
-              key={c.value}
-              type="button"
-              className={chip(alertFilter === c.value)}
-              onClick={() => setAlertFilter(c.value)}
-              aria-pressed={alertFilter === c.value}
-            >
-              {c.label}
-            </button>
-          ))}
-        </div>
-
         {/* Compact toolbar */}
         <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
           <div className="relative flex-1 min-w-0">
@@ -1173,17 +1008,7 @@ export default function Employees() {
           </div>
         </div>
 
-        {alertFilter !== "all" && (
-          <p className="text-[11px] text-slate-400">
-            {alertFilter === "any"
-              ? "Mendesak = KP/KGB ≤90 hari + pensiun ≤365 hari · diurutkan terdekat dulu*."
-              : alertFilter === "kp" ||
-                  alertFilter === "kgb" ||
-                  alertFilter === "pensiun"
-                ? "Diurutkan mendesak dulu (prediksi indikatif)."
-                : "Pegawai tanpa NIP (digit kosong)."}
-          </p>
-        )}
+        
 
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
           <p>
@@ -1317,7 +1142,6 @@ export default function Employees() {
                     <th className="px-3 py-3">Status</th>
                     <th className="px-3 py-3">Jabatan</th>
                     <th className="px-3 py-3">Bidang</th>
-                    <th className="px-3 py-3">Peringatan</th>
                     <th className="px-3 py-3 text-right">Aksi</th>
                   </tr>
                 </thead>
@@ -1377,9 +1201,6 @@ export default function Employees() {
                       <td className="px-3 py-2.5 text-slate-600 max-w-[110px] truncate">
                         {emp.bidang || "—"}
                       </td>
-                      <td className="px-3 py-2.5">
-                        <AlertBadges emp={emp} />
-                      </td>
                       <td
                         className="px-3 py-2.5 text-right"
                         onClick={(e) => e.stopPropagation()}
@@ -1422,10 +1243,10 @@ export default function Employees() {
                   ))}
                   {displayedEmployees.length === 0 && (
                     <tr>
-                      <td colSpan={10} className="py-8">
+                      <td colSpan={9} className="py-8">
                         <EmptyState
                           title="Tidak ada yang cocok"
-                          description="Ubah kata kunci atau filter status/bidang/peringatan."
+                          description="Ubah kata kunci atau filter status/bidang."
                         />
                       </td>
                     </tr>
@@ -1477,9 +1298,6 @@ export default function Employees() {
                           <p className="text-[11px] text-slate-500 mt-0.5 truncate">
                             {golLabel(emp)}
                           </p>
-                          <div className="mt-1">
-                            <AlertBadges emp={emp} />
-                          </div>
                         </div>
                       </div>
                       <span className={`${statusBadge(emp.status)} shrink-0`}>
@@ -1643,7 +1461,6 @@ export default function Employees() {
               <span className={statusBadge(detailEmp.status)}>
                 {detailEmp.status}
               </span>
-              <AlertBadges emp={detailEmp} />
             </div>
             <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {(() => {

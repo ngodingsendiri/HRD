@@ -28,7 +28,7 @@ import { cn } from "../lib/utils";
 
 const SCOPE_LABELS: Record<string, string> = {
   "employees:read": "Baca data pegawai",
-  "stats:read": "Baca ringkasan / statistik",
+  "stats:read": "Baca dashboard / statistik",
   "settings:read": "Baca pengaturan instansi (core/kop)",
 };
 

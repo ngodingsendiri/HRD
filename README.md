@@ -1,6 +1,6 @@
 # HRD ASN
 
-Aplikasi manajemen kepegawaian internal **satu dinas**: direktori pegawai, dasbor KP/KGB/pensiun, cetak, impor/ekspor Excel, pengaturan kop & kamus jabatan, API baca untuk app lain.
+Aplikasi manajemen kepegawaian internal **satu dinas**: direktori pegawai, **Dashboard** (KP/KGB/pensiun & kesehatan data), cetak, impor/ekspor Excel, pengaturan kop & kamus jabatan, API baca untuk app lain.
 
 ## Stack
 
@@ -15,7 +15,8 @@ Aplikasi manajemen kepegawaian internal **satu dinas**: direktori pegawai, dasbo
 
 - Autentikasi admin/viewer (session HttpOnly, rate limit login)
 - CRUD pegawai + impor Excel (mesin normalize + match NIP/NIK)
-- Dasbor agregat lewat `GET /api/stats` (bukan dump full list di browser)
+- **Dashboard** agregat lewat `GET /api/stats` (peringatan KP/KGB/pensiun di sini, bukan di menu Pegawai)
+- Login non-blocking: shell langsung, warm stats/settings di background
 - Cetak dokumen, kamus jabatan, peta jabatan / bezetting
 - **External API** — generate API key di Pengaturan → ambil data lewat `/api/v1/*`
 - Audit log write path

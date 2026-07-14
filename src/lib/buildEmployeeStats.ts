@@ -32,7 +32,7 @@ export function invalidateEmployeeStatsCache(): void {
 /**
  * SQL groupBy for counts + cursor scan for KP/KGB/pensiun timelines.
  * Callers apply auth / rate-limit / Cache-Control headers.
- * @param force skip in-process TTL (e.g. Ringkasan “Muat ulang”)
+ * @param force skip in-process TTL (e.g. Dashboard “Muat ulang”)
  */
 export async function buildEmployeeStatsPayload(opts?: {
   force?: boolean;

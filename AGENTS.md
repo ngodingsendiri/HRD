@@ -13,6 +13,7 @@ Browser (src/)  →  fetch /api/*  →  Vercel catch-all (1 function)  →  hand
 | Layer | Path | Rules |
 |-------|------|--------|
 | UI | `src/` | Never import Prisma / `queries.ts` / `db.ts` |
+| Print templates | `src/pages/print/*` | Sheets + `printPageCss.ts`; orchestrator `Print.tsx` |
 | API client | `src/lib/api.ts` | Only gateway from React to backend |
 | Domain pure | `src/lib/employeeImport.ts`, `dashboardStats.ts`, `employeeUtils.ts`, `schemas.ts` | Shared, unit-tested; no HTTP |
 | Data access | `src/lib/queries.ts` | Only place that calls Prisma (except audit/db helpers) |
@@ -50,12 +51,12 @@ Vite+Vercel: `/api/(.*)` → `/api?path=$1` (`vercel.json`).
 | POST | `/api/auth/login` | public | rate limited |
 | POST | `/api/auth/logout` | public | optional allDevices |
 | GET | `/api/auth/me` | public | returns user or null |
-| GET | `/api/employees` | staff | `{ data, total, limit, offset }` |
+| GET | `/api/employees` | staff | `{ data, total, limit, offset }` — `q`, `status`, `bidang`, `lean` (no list `alert`; use `/api/stats`) |
 | POST/PUT/DELETE | `/api/employees` | admin | create / bulk-upsert / bulk-delete |
 | GET/PUT/DELETE | `/api/employees/:id` | staff / admin | |
 | GET/PUT | `/api/settings?include=` | staff / admin | `core,logo,kamus,peta,all` |
-| GET | `/api/stats` | staff | dashboard aggregates |
-| GET | `/api/health` | public | DB ping |
+| GET | `/api/stats` | staff | dashboard aggregates (mendesak / KP / KGB / pensiun / health) |
+| GET | `/api/health` | public | DB ping (+ optional Vercel cron keep-warm) |
 
 ### External API (API key — for other apps)
 
@@ -118,7 +119,8 @@ Use tokens from **`src/lib/ui.ts`** (`pageShell`, `card`, `btnPrimary`, `input`,
 - Mobile: **bottom nav only** (no hamburger sidebar). Desktop: sidebar.
 
 ### Copy
-- Short operator language (“Pegawai”, “Simpan”, “Ringkasan”), not pejabat jargon.
+- Short operator language (“Pegawai”, “Simpan”, “Dashboard”), not pejabat jargon.
+- **Peringatan KP/KGB/pensiun** only on **Dashboard** — not as filters/badges on Pegawai.
 
 ---
 
@@ -149,10 +151,13 @@ npm run create-admin # ADMIN_EMAIL + ADMIN_PASSWORD (+ ADMIN_ROLE)
 
 - **Lazy-load every page route** (`React.lazy` in `App.tsx`).
 - **Never** static-import `xlsx` / heavy sheets in page modules — `await import("xlsx")` on action.
-- List API default **50** rows; max **500**. Use `q`, `status`, `alert`, `offset`.
+- **Do not block shell after login** — `warmAppInBackground` (stats + settings only); full roster on **Cetak** only.
+- Prefetch route chunks on **idle** (Layout), not as a gate before first paint.
+- List API default **50** rows; max **500**. Use `q`, `status`, `bidang`, `offset` (Pegawai UI does not use alert filters).
 - Read path: fast mapper (`mapRow`), **no Zod per row**. Zod = writes only.
 - Kamus CSV cached 60s in-process (`getKamusCsv`); invalidate on settings save.
-- Stats: SQL `groupBy` for counts; slim select for timelines.
+- Stats: SQL `groupBy` for counts; slim select for timelines — **Dashboard only** for mendesak.
+- After mutation: invalidate caches + soft re-fetch stats (not full roster re-bootstrap).
 - No full-list polling every 60s — manual refresh or refetch on mutation.
 - Vite `manualChunks`: `xlsx`, `motion`, `react-vendor`, `ui-vendor`.
 - Log slow handlers via `x-response-time` header (`withErrorBoundary`).

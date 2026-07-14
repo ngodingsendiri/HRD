@@ -21,7 +21,7 @@ export type TimelineItem = {
   tanggalLahir?: string;
 };
 
-/** Master-data quality counters for Ringkasan “kesehatan data”. */
+/** Master-data quality counters for Dashboard “kesehatan data”. */
 export type DataHealth = {
   withoutNip: number;
   withoutTmtGol: number;
@@ -219,7 +219,7 @@ export function buildPensiunList(
 }
 
 /**
- * Count incomplete / risky master-data rows for Ringkasan.
+ * Count incomplete / risky master-data rows for Dashboard.
  * kamusLookup: (jabatan) => true if found in kamus.
  */
 export function buildDataHealth(

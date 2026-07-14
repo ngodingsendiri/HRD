@@ -20,7 +20,7 @@ import { useDocumentTitle } from "../lib/useDocumentTitle";
 import { prefetchAllRoutes, prefetchRoute } from "../lib/routePrefetch";
 
 const TITLE_BY_PATH: Record<string, string> = {
-  "/": "Ringkasan",
+  "/": "Dashboard",
   "/employees": "Pegawai",
   "/print": "Cetak",
   "/settings": "Pengaturan",
@@ -39,7 +39,7 @@ export default function Layout() {
   useDocumentTitle(pageTitle);
 
   const navigation = [
-    { name: "Ringkasan", href: "/", icon: LayoutDashboard, short: "Ringkas" },
+    { name: "Dashboard", href: "/", icon: LayoutDashboard, short: "Beranda" },
     { name: "Pegawai", href: "/employees", icon: Users, short: "Pegawai" },
     { name: "Cetak", href: "/print", icon: Printer, short: "Cetak" },
     { name: "Pengaturan", href: "/settings", icon: Settings, short: "Setelan" },

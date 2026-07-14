@@ -16,7 +16,8 @@ import {
  * GET /api/v1/employees
  *
  * External read API (API key required, scope employees:read).
- * Query: q, status, alert, limit, offset, lean
+ * Query: q, status, bidang, limit, offset, lean
+ * (alert filters removed — use GET /api/v1/stats for projections)
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   ensureRequestId(req, res);
@@ -61,9 +62,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const q = typeof req.query.q === "string" ? req.query.q : undefined;
     const status = typeof req.query.status === "string" ? req.query.status : undefined;
-    const alertRaw = typeof req.query.alert === "string" ? req.query.alert : undefined;
-    const alert =
-      alertRaw === "kp" || alertRaw === "kgb" || alertRaw === "any" ? alertRaw : undefined;
+    const bidang = typeof req.query.bidang === "string" ? req.query.bidang : undefined;
     const limitRaw = typeof req.query.limit === "string" ? parseInt(req.query.limit, 10) : NaN;
     const offsetRaw = typeof req.query.offset === "string" ? parseInt(req.query.offset, 10) : NaN;
     const lean = !(req.query.lean === "0" || req.query.lean === "false");
@@ -73,7 +72,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       : DEFAULT_EMPLOYEES_PAGE;
     const offset = Number.isFinite(offsetRaw) ? Math.max(offsetRaw, 0) : 0;
 
-    const page = await getEmployeesPage({ q, status, alert, limit, offset, lean });
+    const page = await getEmployeesPage({ q, status, bidang, limit, offset, lean });
 
     res.setHeader("x-total-count", String(page.total));
     res.setHeader("Cache-Control", "private, no-store");

@@ -1,6 +1,8 @@
 /**
- * One-shot app warm-up after login: JS chunks + API data.
- * Goal: first screen waits; later menu clicks are instant (cache hit).
+ * Background warm-up after login — must NOT block the app shell.
+ *
+ * Critical path (fast): dashboard stats + one settings payload.
+ * Heavy paths (print full roster, all route chunks) load on demand / idle.
  */
 import { api } from "./api.js";
 import {
@@ -8,7 +10,6 @@ import {
   cacheSet,
   cacheGet,
 } from "./queryCache.js";
-import { prefetchAllRoutes } from "./routePrefetch.js";
 import type { Employee } from "../types.js";
 
 export { ALL_EMPLOYEES_LEAN_KEY };
@@ -21,19 +22,22 @@ export type BootstrapProgress = {
 
 type ProgressFn = (p: BootstrapProgress) => void;
 
-let bootstrapPromise: Promise<void> | null = null;
-let bootstrapped = false;
+let warmPromise: Promise<void> | null = null;
+let warmed = false;
 
 export function isAppBootstrapped(): boolean {
-  return bootstrapped;
+  return warmed;
 }
 
 export function peekAllEmployeesLean(): Employee[] | undefined {
   return cacheGet<Employee[]>(ALL_EMPLOYEES_LEAN_KEY, Number.POSITIVE_INFINITY);
 }
 
-/** Load every employee page into GET cache + one consolidated list for Print. */
-async function preloadAllEmployeesLean(): Promise<Employee[]> {
+/**
+ * Full lean roster for Print only — not part of login critical path.
+ * Safe to call from Print page; fills page caches along the way.
+ */
+export async function preloadAllEmployeesLean(): Promise<Employee[]> {
   const cached = peekAllEmployeesLean();
   if (cached) return cached;
 
@@ -55,65 +59,74 @@ async function preloadAllEmployeesLean(): Promise<Employee[]> {
 }
 
 /**
- * Run once per session after auth. Concurrent callers share the same promise.
- * Safe to call again after cache invalidation (mutations) — set force=true.
+ * Light warm after auth: stats + settings (single include).
+ * Does not prefetch all routes or full employee roster.
  */
 export function bootstrapApp(
   onProgress?: ProgressFn,
   opts?: { force?: boolean },
 ): Promise<void> {
-  if (bootstrapped && !opts?.force) return Promise.resolve();
-  if (bootstrapPromise && !opts?.force) return bootstrapPromise;
+  if (warmed && !opts?.force) return Promise.resolve();
+  if (warmPromise && !opts?.force) return warmPromise;
 
-  const total = 5;
+  const total = 2;
   const report = (step: number, label: string) => {
     onProgress?.({ step, total, label });
   };
 
-  bootstrapPromise = (async () => {
+  warmPromise = (async () => {
     try {
-      report(1, "Memuat halaman aplikasi…");
-      await prefetchAllRoutes();
-
-      report(2, "Memuat ringkasan…");
-      await api.getDashboardStats();
-
-      report(3, "Memuat pengaturan…");
-      await Promise.all([
-        api.getSettings("all"),
-        api.getSettings(["core", "logo", "kamus"]),
-        api.getSettings(["peta", "kamus"]),
-      ]);
-
-      report(4, "Memuat daftar pegawai…");
-      // Default list view (Pegawai page)
-      await api.getEmployeesPage({
-        limit: 50,
-        offset: 0,
-        lean: true,
+      report(1, "Memuat dashboard…");
+      await api.getDashboardStats().catch((err) => {
+        console.warn("Warm stats failed:", err);
       });
 
-      report(5, "Menyiapkan data cetak…");
-      // Full lean roster (Cetak) + fills page caches along the way
-      await preloadAllEmployeesLean();
+      report(2, "Memuat pengaturan…");
+      // One settings payload — pages can request other includes as needed
+      await api.getSettings("all").catch((err) => {
+        console.warn("Warm settings failed:", err);
+      });
 
-      bootstrapped = true;
-      report(5, "Siap");
+      warmed = true;
+      report(2, "Siap");
     } finally {
-      bootstrapPromise = null;
+      warmPromise = null;
     }
   })();
 
-  return bootstrapPromise;
+  return warmPromise;
 }
 
-/** Call after mutations that wipe employee/settings caches so next nav stays warm. */
-export function rebootstrapInBackground(): void {
-  bootstrapped = false;
-  // Debounce rapid saves (bulk import etc.)
-  window.setTimeout(() => {
-    void bootstrapApp(undefined, { force: true }).catch((err) => {
-      console.warn("Background re-bootstrap failed:", err);
+/**
+ * Fire-and-forget after login. UI must not wait on this.
+ * Optional: warm first employees page for snappier Pegawai open.
+ */
+export function warmAppInBackground(): void {
+  void bootstrapApp(undefined, { force: false })
+    .then(() =>
+      api
+        .getEmployeesPage({ limit: 50, offset: 0, lean: true })
+        .catch(() => undefined),
+    )
+    .catch((err) => {
+      console.warn("Background warm failed:", err);
     });
+}
+
+/**
+ * After mutations: caches already invalidated by api.ts.
+ * Soft re-fetch stats only (not full roster / all routes).
+ */
+export function rebootstrapInBackground(): void {
+  window.setTimeout(() => {
+    // force:1 busts client + server stats cache after mutations
+    void api
+      .getDashboardStats({ force: true })
+      .then(() => {
+        warmed = true;
+      })
+      .catch((err) => {
+        console.warn("Background stats revalidate failed:", err);
+      });
   }, 400);
 }

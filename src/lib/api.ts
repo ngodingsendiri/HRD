@@ -92,7 +92,6 @@ export type EmployeeListParams = {
   lean?: boolean;
   status?: string;
   bidang?: string;
-  alert?: "kp" | "kgb" | "any" | "pensiun" | "nonip";
 };
 
 function employeesQuery(params?: EmployeeListParams): string {
@@ -104,7 +103,6 @@ function employeesQuery(params?: EmployeeListParams): string {
   else if (params?.lean) sp.set("lean", "1");
   if (params?.status && params.status !== "all") sp.set("status", params.status);
   if (params?.bidang && params.bidang !== "all") sp.set("bidang", params.bidang);
-  if (params?.alert) sp.set("alert", params.alert);
   const qs = sp.toString();
   return qs ? `/api/employees?${qs}` : "/api/employees";
 }

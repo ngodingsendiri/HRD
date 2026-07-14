@@ -39,15 +39,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const q = typeof req.query.q === "string" ? req.query.q : undefined;
       const status = typeof req.query.status === "string" ? req.query.status : undefined;
       const bidang = typeof req.query.bidang === "string" ? req.query.bidang : undefined;
-      const alertRaw = typeof req.query.alert === "string" ? req.query.alert : undefined;
-      const alert =
-        alertRaw === "kp" ||
-        alertRaw === "kgb" ||
-        alertRaw === "any" ||
-        alertRaw === "pensiun" ||
-        alertRaw === "nonip"
-          ? alertRaw
-          : undefined;
+      // alert= list filters removed — use GET /api/stats (Dashboard) for KP/KGB/pensiun
       const limitRaw = typeof req.query.limit === "string" ? parseInt(req.query.limit, 10) : NaN;
       const offsetRaw = typeof req.query.offset === "string" ? parseInt(req.query.offset, 10) : NaN;
       // lean defaults true unless lean=0
@@ -68,7 +60,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         q,
         status,
         bidang,
-        alert,
         limit,
         offset,
         lean,

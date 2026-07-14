@@ -7,7 +7,6 @@ import {
   Clock,
   AlertCircle,
   Award,
-  TrendingUp,
   RefreshCw,
   Loader2,
   ArrowRight,
@@ -112,14 +111,11 @@ function isUrgentItem(item: TimelineItem, kind: TimelineTab): boolean {
   return item.isOverdue || item.diffDays <= near;
 }
 
-function employeeLink(
-  item: { nip?: string; nama?: string },
-  alert?: "any" | "kp" | "kgb" | "pensiun",
-) {
+/** Open employee directory focused on one person (no alert filters on Pegawai). */
+function employeeLink(item: { nip?: string; nama?: string }) {
   const sp = new URLSearchParams();
   const q = (item.nip || item.nama || "").trim();
   if (q) sp.set("q", q);
-  if (alert) sp.set("alert", alert);
   const qs = sp.toString();
   return qs ? `/employees?${qs}` : "/employees";
 }
@@ -134,7 +130,7 @@ const UNIT_COLORS = [
 ];
 
 export default function Dashboard() {
-  useDocumentTitle("Ringkasan");
+  useDocumentTitle("Dashboard");
   const { canWrite } = useAuth();
   const [stats, setStats] = useState({
     total: 0,
@@ -341,7 +337,7 @@ export default function Dashboard() {
       >
         <motion.div variants={pageItemVariants}>
           <PageHeader
-            title="Ringkasan"
+            title="Dashboard"
             description="Belum ada data pegawai."
           />
         </motion.div>
@@ -352,7 +348,7 @@ export default function Dashboard() {
           <Users className="w-10 h-10 text-slate-300 mx-auto" />
           <p className="text-sm text-slate-600 max-w-md mx-auto">
             Mulai dengan mengimpor template atau menambah pegawai manual.
-            Ringkasan KP/KGB/pensiun akan muncul setelah data terisi.
+            Proyeksi KP/KGB/pensiun akan muncul di sini setelah data terisi.
           </p>
           <div className="flex flex-wrap justify-center gap-2">
             <Link to="/employees" className={btnPrimary}>
@@ -380,7 +376,7 @@ export default function Dashboard() {
     >
       <motion.div variants={pageItemVariants}>
         <PageHeader
-          title="Ringkasan"
+          title="Dashboard"
           description={
             updatedAt
               ? `Meja kerja Umpeg · prediksi indikatif* · ${new Date(updatedAt).toLocaleString("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`
@@ -430,13 +426,13 @@ export default function Dashboard() {
         variants={pageItemVariants}
         className="flex flex-wrap gap-2"
       >
-        <Link
-          to="/employees?alert=any"
+        <a
+          href="#mendesak"
           className={`${urgentTotal > 0 ? btnPrimary : btnSecondary} text-xs`}
         >
           <AlertCircle className="w-3.5 h-3.5" />
-          Pegawai mendesak
-        </Link>
+          Perlu diurus
+        </a>
         <Link to="/print" className={`${btnSecondary} text-xs`}>
           <Printer className="w-3.5 h-3.5" />
           Cetak
@@ -449,10 +445,11 @@ export default function Dashboard() {
         )}
       </motion.div>
 
-      {/* Hero: satu sumber angka mendesak */}
+      {/* Hero: satu sumber angka mendesak (peringatan hanya di Dashboard) */}
       <motion.div
+        id="mendesak"
         variants={pageItemVariants}
-        className={`${card} p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-l-4 ${
+        className={`${card} p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-l-4 scroll-mt-20 ${
           urgentTotal > 0 ? "border-l-amber-500" : "border-l-emerald-500"
         }`}
       >
@@ -466,20 +463,21 @@ export default function Dashboard() {
               : "Tidak ada item mendesak"}
           </p>
           <p className="text-xs text-slate-500 mt-1">
-            KGB/KP ≤90 hari · pensiun ≤365 hari · prediksi indikatif*
+            KGB/KP ≤90 hari · pensiun ≤365 hari · prediksi indikatif* · cek di
+            dashboard ini (bukan di menu Pegawai)
             {urgentTotal > 12
               ? ` · menampilkan 12 dari ${urgentTotal} di daftar bawah`
               : ""}
             .
           </p>
         </div>
-        <Link
-          to="/employees?alert=any"
+        <a
+          href="#proyeksi"
           className={`${urgentTotal > 0 ? btnPrimary : btnSecondary} shrink-0`}
         >
-          Urus di pegawai
+          Lihat proyeksi
           <ArrowRight className="w-3.5 h-3.5" />
-        </Link>
+        </a>
       </motion.div>
 
       {/* Zone: daftar mendesak + komposisi */}
@@ -511,14 +509,7 @@ export default function Dashboard() {
               {urgentPreview.map((a) => (
                 <li key={`${a.kind}-${a.id}`}>
                   <Link
-                    to={employeeLink(
-                      a,
-                      a.kind === "KGB"
-                        ? "kgb"
-                        : a.kind === "KP"
-                          ? "kp"
-                          : "pensiun",
-                    )}
+                    to={employeeLink(a)}
                     className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors"
                   >
                     <span
@@ -554,13 +545,13 @@ export default function Dashboard() {
           )}
           {urgentTotal > 0 && (
             <div className="px-4 py-2.5 border-t border-slate-100">
-              <Link
-                to="/employees?alert=any"
+              <a
+                href="#proyeksi"
                 className={`${btnGhost} text-[11px] w-full justify-center`}
               >
-                Lihat semua di pegawai
+                Buka tab proyeksi
                 <ArrowRight className="w-3 h-3" />
-              </Link>
+              </a>
             </div>
           )}
         </div>
@@ -681,7 +672,7 @@ export default function Dashboard() {
                 label: "Tanpa NIP",
                 value: health.withoutNip,
                 hint: "Match impor & cetak",
-                to: health.withoutNip > 0 ? "/employees?alert=nonip" : null,
+                to: health.withoutNip > 0 ? "/employees" : null,
               },
               {
                 label: "ASN tanpa TMT gol",
@@ -739,25 +730,22 @@ export default function Dashboard() {
         </div>
         {healthTotal > 0 && (
           <div className="px-4 pb-3">
-            <Link
-              to={
-                health.withoutNip > 0
-                  ? "/employees?alert=nonip"
-                  : "/employees"
-              }
-              className={`${btnGhost} text-[11px]`}
-            >
+            <Link to="/employees" className={`${btnGhost} text-[11px]`}>
               {health.withoutNip > 0
-                ? "Filter tanpa NIP di pegawai"
-                : "Perbaiki di menu Pegawai / impor"}
+                ? "Lengkapi data di Pegawai / impor"
+                : "Buka menu Pegawai"}
               <ArrowRight className="w-3 h-3" />
             </Link>
           </div>
         )}
       </motion.div>
 
-      {/* Proyeksi */}
-      <motion.div variants={pageItemVariants} className="space-y-3">
+      {/* Proyeksi — pusat filter KP/KGB/pensiun (bukan di Pegawai) */}
+      <motion.div
+        id="proyeksi"
+        variants={pageItemVariants}
+        className="space-y-3 scroll-mt-20"
+      >
         <div>
           <h2 className={sectionTitle}>
             <Clock className="w-4 h-4 text-slate-500" />
@@ -871,14 +859,7 @@ export default function Dashboard() {
                     >
                       <td className="px-4 py-3 max-w-[200px]">
                         <Link
-                          to={employeeLink(
-                            row,
-                            timelineTab === "kgb"
-                              ? "kgb"
-                              : timelineTab === "kp"
-                                ? "kp"
-                                : "pensiun",
-                          )}
+                          to={employeeLink(row)}
                           className="block group"
                         >
                           <div className="font-semibold text-slate-900 truncate group-hover:underline">
@@ -909,14 +890,7 @@ export default function Dashboard() {
                       </td>
                       <td className="px-4 py-3 text-center">
                         <Link
-                          to={employeeLink(
-                            row,
-                            timelineTab === "kgb"
-                              ? "kgb"
-                              : timelineTab === "kp"
-                                ? "kp"
-                                : "pensiun",
-                          )}
+                          to={employeeLink(row)}
                           className={cn(
                             "font-semibold tabular-nums text-[13px] hover:underline",
                             row.isOverdue ? "text-red-600" : "text-slate-900",
@@ -975,34 +949,9 @@ export default function Dashboard() {
                   ? ` · mendesak ≤${nearDays}h`
                   : ""}
               </p>
-              <Link
-                to={
-                  timelineTab === "kgb"
-                    ? "/employees?alert=kgb"
-                    : timelineTab === "kp"
-                      ? "/employees?alert=kp"
-                      : "/employees?alert=pensiun"
-                }
-                className={`${btnGhost} text-[11px]`}
-              >
-                {timelineTab === "kgb" && (
-                  <>
-                    <TrendingUp className="w-3.5 h-3.5" />
-                    Filter KGB di pegawai
-                  </>
-                )}
-                {timelineTab === "kp" && (
-                  <>
-                    <Award className="w-3.5 h-3.5" />
-                    Filter KP di pegawai
-                  </>
-                )}
-                {timelineTab === "pensiun" && (
-                  <>
-                    <Users className="w-3.5 h-3.5" />
-                    Filter pensiun di pegawai
-                  </>
-                )}
+              <Link to="/employees" className={`${btnGhost} text-[11px]`}>
+                <Users className="w-3.5 h-3.5" />
+                Buka direktori pegawai
               </Link>
             </div>
           )}

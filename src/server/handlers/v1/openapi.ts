@@ -52,11 +52,7 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
           parameters: [
             { name: "q", in: "query", schema: { type: "string" } },
             { name: "status", in: "query", schema: { type: "string" } },
-            {
-              name: "alert",
-              in: "query",
-              schema: { type: "string", enum: ["kp", "kgb", "any"] },
-            },
+            { name: "bidang", in: "query", schema: { type: "string" } },
             { name: "limit", in: "query", schema: { type: "integer", default: 50 } },
             { name: "offset", in: "query", schema: { type: "integer", default: 0 } },
             { name: "lean", in: "query", schema: { type: "boolean", default: true } },

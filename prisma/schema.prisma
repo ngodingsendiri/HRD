@@ -91,6 +91,8 @@ model Employee {
   @@index([nik])
   @@index([status])
   @@index([bidang])
+  @@index([nama])
+  @@index([status, nama])
   @@map("employees")
 }
 

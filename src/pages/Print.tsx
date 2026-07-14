@@ -36,13 +36,23 @@ import {
   select,
 } from "../lib/ui";
 import { useDocumentTitle } from "../lib/useDocumentTitle";
-import { peekAllEmployeesLean } from "../lib/bootstrap";
+import {
+  peekAllEmployeesLean,
+  preloadAllEmployeesLean,
+} from "../lib/bootstrap";
 import {
   isCutiTahunanJenis,
-  matchesCutiJenisNumber,
   parseDocParam,
   resolveBidangLabel,
 } from "../lib/printParams";
+import { PrintListDocument } from "./print/PrintListDocument";
+import { PrintDukDocument } from "./print/PrintDukDocument";
+import {
+  PrintCutiDocument,
+  type CutiSisaSnapshot,
+} from "./print/PrintCutiDocument";
+import { PrintModelDkDocument } from "./print/PrintModelDkDocument";
+import { PRINT_PAGE_CSS } from "./print/printPageCss";
 
 type PrintType =
   | "absen_global"
@@ -53,8 +63,6 @@ type PrintType =
   | "duk";
 type SortAction = "default_kelas" | "abjad";
 type MobileStep = 1 | 2 | 3;
-/** Snapshot sisa cuti for print (pre-deduction values on BKN form). */
-type CutiSisaSnapshot = { n: string; n1: string; n2: string };
 
 const LS_LAST_UNIT = "hrcube.print.lastUnit";
 const LS_LAST_SORT = "hrcube.print.lastSort";
@@ -164,10 +172,17 @@ export default function Print() {
     () => peekAllEmployeesLean() ?? [],
   );
   const [settings, setSettings] = useState<AppSettings | null>(
-    () => api.peekSettings(["core", "logo", "kamus"]) ?? null,
+    () =>
+      api.peekSettings("all") ??
+      api.peekSettings(["core", "logo", "kamus"]) ??
+      null,
   );
   const [loading, setLoading] = useState(
-    () => !peekAllEmployeesLean() || !api.peekSettings(["core", "logo", "kamus"]),
+    () =>
+      !peekAllEmployeesLean() ||
+      !(
+        api.peekSettings("all") || api.peekSettings(["core", "logo", "kamus"])
+      ),
   );
   const [cutiConfirmOpen, setCutiConfirmOpen] = useState(false);
   const [cutiBusy, setCutiBusy] = useState(false);
@@ -282,42 +297,18 @@ export default function Print() {
   useEffect(() => {
     async function fetchData() {
       try {
-        // Warm path: bootstrap already filled cache — usually instant
-        const warmList = peekAllEmployeesLean();
-        const warmSettings = api.peekSettings(["core", "logo", "kamus"]);
-        if (warmList && warmSettings) {
-          const kamus = warmSettings.jabatanKamusCsv;
-          setSettings(warmSettings);
-          setEmployees(
-            warmList.map((emp) => {
-              if (!emp.jabatan || !kamus) return emp;
-              const { kelas, beban } = lookupKamus(emp.jabatan, kamus);
-              return kelas || beban
-                ? { ...emp, kelasJabatan: kelas, bebanKerja: beban }
-                : emp;
-            }),
-          );
-          setLoading(false);
-          return;
-        }
-
-        const currentSettings = await api.getSettings(["core", "logo", "kamus"]);
+        // Settings: prefer full cache from background warm, else fetch subset
+        const warmSettings =
+          api.peekSettings("all") ??
+          api.peekSettings(["core", "logo", "kamus"]);
+        const currentSettings =
+          warmSettings ??
+          (await api.getSettings(["core", "logo", "kamus"]));
         setSettings(currentSettings);
 
-        const all: Employee[] = [];
-        let offset = 0;
-        const pageSize = 500;
-        for (let page = 0; page < 50; page++) {
-          const res = await api.getEmployeesPage({
-            limit: pageSize,
-            offset,
-            lean: true,
-          });
-          all.push(...res.data);
-          offset += res.data.length;
-          if (offset >= res.total || res.data.length === 0) break;
-        }
-
+        // Roster only when Cetak opens (not at login)
+        const warmList = peekAllEmployeesLean();
+        const all = warmList ?? (await preloadAllEmployeesLean());
         const kamus = currentSettings.jabatanKamusCsv;
         setEmployees(
           all.map((emp) => {
@@ -1729,1115 +1720,61 @@ export default function Print() {
                 fontFamily: "Arial, Helvetica, sans-serif",
               }}
             >
-          {/* MAIN DOCUMENT BODY */}
+          {/* MAIN DOCUMENT BODY — templates in src/pages/print/ */}
           {printType === "absen_global" ||
           printType === "absen_bidang" ||
           printType === "tanda_terima" ? (
-            <>
-              {/* KOP SURAT */}
-              <div
-                className="flex items-center border-b-[3px] border-black pb-2 mb-1"
-                style={{ lineHeight: "1.2" }}
-              >
-                <div className="flex-shrink-0 w-24 h-24 flex items-center justify-center">
-                  {settings?.logoBase64 ? (
-                    <img
-                      src={settings.logoBase64}
-                      alt="Logo"
-                      className="w-full h-full object-contain"
-                    />
-                  ) : (
-                    <div className="w-full h-full border-2 border-dashed border-gray-300 flex items-center justify-center text-xs text-center text-gray-400 print-hidden">
-                      Logo
-                      <br />
-                      (Kosong)
-                    </div>
-                  )}
-                </div>
-                <div className="flex-1 text-center pr-24 flex flex-col justify-center">
-                  {settings?.kopLine1 && (
-                    <div className="text-[14pt] font-bold tracking-widest uppercase">
-                      {settings.kopLine1}
-                    </div>
-                  )}
-                  {settings?.kopLine2 && (
-                    <div className="text-[16pt] font-bold tracking-widest uppercase">
-                      {settings.kopLine2}
-                    </div>
-                  )}
-                  {settings?.kopLine3 && (
-                    <div className="text-[10pt] mt-0.5">
-                      {settings.kopLine3}
-                    </div>
-                  )}
-                  {settings?.kopLine4 && (
-                    <div className="text-[10pt]">{settings.kopLine4}</div>
-                  )}
-                </div>
-              </div>
-              <div className="border-b border-black mb-6"></div>
-
-              {/* DOCUMENT HEADER */}
-              <div className="text-center mb-6 space-y-1">
-                <h2 className="text-[12pt] font-bold uppercase">
-                  {customTitle}
-                </h2>
-                {customSubtitle && (
-                  <p className="text-[12pt] font-bold">{customSubtitle}</p>
-                )}
-              </div>
-
-              <table className="w-full border-collapse mb-10 text-[12pt] leading-tight">
-                <thead>
-                  <tr className="bg-gray-100">
-                    <th className="border border-black px-2 py-1 w-10 text-center font-bold align-middle">
-                      NO
-                    </th>
-                    <th className="border border-black px-2 py-1 text-center font-bold align-middle">
-                      NAMA PEGAWAI
-                    </th>
-                    <th className="border border-black px-2 py-1 w-10 text-center font-bold align-middle">
-                      JK
-                    </th>
-                    <th className="border border-black px-2 py-1 w-44 text-center font-bold align-middle">
-                      NIP
-                    </th>
-                    <th className="border border-black px-2 py-1 w-40 font-bold text-center align-middle">
-                      {printType === "tanda_terima"
-                        ? "TANDA TERIMA"
-                        : "TANDA TANGAN"}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedEmployees.map((emp, idx) => (
-                    <tr key={emp.id || idx} className="h-8">
-                      <td className="border border-black px-2 py-1 text-center align-middle">
-                        {idx + 1}
-                      </td>
-                      <td className="border border-black px-3 py-1 align-middle">
-                        <div className="text-[11pt] leading-none">
-                          {emp.nama}
-                        </div>
-                      </td>
-                      <td className="border border-black px-1 py-1 text-center align-middle text-[11pt]">
-                        {emp.jk || "-"}
-                      </td>
-                      <td className="border border-black px-2 py-1 align-middle text-center">
-                        <div className="text-[11pt] leading-none">
-                          {emp.nip || "-"}
-                        </div>
-                      </td>
-                      <td className="border border-black px-2 py-1 align-middle">
-                        <div
-                          className={`text-[11pt] font-semibold ${idx % 2 === 0 ? "text-left pl-1" : "text-left pl-10"}`}
-                        >
-                          {idx + 1}.
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                  {sortedEmployees.length === 0 && (
-                    <tr>
-                      <td
-                        colSpan={5}
-                        className="border border-black px-4 py-6 text-center italic text-gray-500 text-[12pt]"
-                      >
-                        Tidak ada data pegawai yang sesuai untuk dicetak.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-
-              {/* SIGNATURE SECTION */}
-              <div className="flex justify-end mt-12 pr-8 page-break-inside-avoid">
-                <div className="text-left min-w-[200px] max-w-[350px]">
-                  <p className="text-[12pt] mb-1">
-                    Jember,{" "}
-                    {new Date().toLocaleDateString("id-ID", {
-                      year: "numeric",
-                      month: "long",
-                      day: "numeric",
-                    })}
-                  </p>
-                  <p className="text-[12pt] mb-20 leading-snug">{kadisTitle}</p>
-
-                  <p className="text-[12pt] font-bold underline whitespace-nowrap">
-                    {ttdName}
-                  </p>
-                  <p className="text-[12pt] whitespace-nowrap">{ttdPangkat}</p>
-                  <p className="text-[12pt] mt-0.5 whitespace-nowrap">
-                    NIP. {ttdNip}
-                  </p>
-                </div>
-              </div>
-            </>
+            <PrintListDocument
+              settings={settings}
+              customTitle={customTitle}
+              customSubtitle={customSubtitle}
+              sortedEmployees={sortedEmployees}
+              isTandaTerima={printType === "tanda_terima"}
+              kadisTitle={kadisTitle}
+              ttdName={ttdName}
+              ttdPangkat={ttdPangkat}
+              ttdNip={ttdNip}
+            />
           ) : printType === "duk" ? (
-            <>
-              <div
-                className="flex items-center border-b-[3px] border-black pb-2 mb-1"
-                style={{ lineHeight: "1.2" }}
-              >
-                <div className="flex-shrink-0 w-24 h-24 flex items-center justify-center">
-                  {settings?.logoBase64 ? (
-                    <img
-                      src={settings.logoBase64}
-                      alt="Logo"
-                      className="w-full h-full object-contain"
-                    />
-                  ) : (
-                    <div className="w-full h-full border-2 border-dashed border-gray-300 flex items-center justify-center text-xs text-center text-gray-400 print-hidden">
-                      Logo
-                      <br />
-                      (Kosong)
-                    </div>
-                  )}
-                </div>
-                <div className="flex-1 text-center pr-24 flex flex-col justify-center">
-                  {settings?.kopLine1 && (
-                    <div className="text-[14pt] font-bold tracking-widest uppercase">
-                      {settings.kopLine1}
-                    </div>
-                  )}
-                  {settings?.kopLine2 && (
-                    <div className="text-[16pt] font-bold tracking-widest uppercase">
-                      {settings.kopLine2}
-                    </div>
-                  )}
-                  {settings?.kopLine3 && (
-                    <div className="text-[10pt] mt-0.5">
-                      {settings.kopLine3}
-                    </div>
-                  )}
-                  {settings?.kopLine4 && (
-                    <div className="text-[10pt]">{settings.kopLine4}</div>
-                  )}
-                </div>
-              </div>
-              <div className="border-b border-black mb-6"></div>
-
-              <div className="text-center mb-6 space-y-1">
-                <h2 className="text-[12pt] font-bold uppercase">
-                  {customTitle}
-                </h2>
-                {customSubtitle && (
-                  <p className="text-[11pt] font-bold">{customSubtitle}</p>
-                )}
-              </div>
-
-              <table className="w-full border-collapse mb-10 text-[9pt] leading-tight">
-                <thead>
-                  <tr className="bg-gray-100">
-                    <th className="border border-black px-1 py-1 w-8 text-center font-bold">
-                      NO
-                    </th>
-                    <th className="border border-black px-1 py-1 text-center font-bold">
-                      NAMA
-                    </th>
-                    <th className="border border-black px-1 py-1 w-28 text-center font-bold">
-                      NIP
-                    </th>
-                    <th className="border border-black px-1 py-1 w-20 text-center font-bold">
-                      PANGKAT / GOL
-                    </th>
-                    <th className="border border-black px-1 py-1 w-20 text-center font-bold">
-                      TMT GOL
-                    </th>
-                    <th className="border border-black px-1 py-1 text-center font-bold">
-                      JABATAN
-                    </th>
-                    <th className="border border-black px-1 py-1 w-12 text-center font-bold">
-                      KELAS
-                    </th>
-                    <th className="border border-black px-1 py-1 w-16 text-center font-bold">
-                      MASA KERJA
-                    </th>
-                    <th className="border border-black px-1 py-1 w-24 text-center font-bold">
-                      UNIT KERJA
-                    </th>
-                    <th className="border border-black px-1 py-1 w-14 text-center font-bold">
-                      STATUS
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedEmployees.map((emp, idx) => (
-                    <tr key={emp.id || idx}>
-                      <td className="border border-black px-1 py-0.5 text-center align-top">
-                        {idx + 1}
-                      </td>
-                      <td className="border border-black px-1.5 py-0.5 align-top">
-                        {emp.nama}
-                      </td>
-                      <td className="border border-black px-1 py-0.5 text-center align-top">
-                        {emp.nip || "-"}
-                      </td>
-                      <td className="border border-black px-1 py-0.5 text-center align-top">
-                        {emp.pangkatGolongan ||
-                          [emp.pangkat, emp.gol].filter(Boolean).join(" / ") ||
-                          "-"}
-                      </td>
-                      <td className="border border-black px-1 py-0.5 text-center align-top">
-                        {emp.tmtGolonganRuang
-                          ? formatDateId(emp.tmtGolonganRuang)
-                          : "-"}
-                      </td>
-                      <td className="border border-black px-1.5 py-0.5 align-top">
-                        {emp.jabatan || "-"}
-                      </td>
-                      <td className="border border-black px-1 py-0.5 text-center align-top">
-                        {emp.kelasJabatan || "-"}
-                      </td>
-                      <td className="border border-black px-1 py-0.5 text-center align-top text-[8pt]">
-                        {emp.masaKerja || "-"}
-                      </td>
-                      <td className="border border-black px-1 py-0.5 align-top">
-                        {emp.bidang || "-"}
-                      </td>
-                      <td className="border border-black px-1 py-0.5 text-center align-top">
-                        {emp.status || "-"}
-                      </td>
-                    </tr>
-                  ))}
-                  {sortedEmployees.length === 0 && (
-                    <tr>
-                      <td
-                        colSpan={10}
-                        className="border border-black px-4 py-6 text-center italic text-gray-500"
-                      >
-                        Tidak ada data pegawai untuk DUK.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-
-              <div className="flex justify-end mt-12 pr-8 page-break-inside-avoid">
-                <div className="text-left min-w-[200px] max-w-[350px]">
-                  <p className="text-[11pt] mb-1">
-                    Jember,{" "}
-                    {new Date().toLocaleDateString("id-ID", {
-                      year: "numeric",
-                      month: "long",
-                      day: "numeric",
-                    })}
-                  </p>
-                  <p className="text-[11pt] mb-20 leading-snug">{kadisTitle}</p>
-                  <p className="text-[11pt] font-bold underline whitespace-nowrap">
-                    {ttdName}
-                  </p>
-                  <p className="text-[11pt] whitespace-nowrap">{ttdPangkat}</p>
-                  <p className="text-[11pt] mt-0.5 whitespace-nowrap">
-                    NIP. {ttdNip}
-                  </p>
-                </div>
-              </div>
-            </>
+            <PrintDukDocument
+              settings={settings}
+              customTitle={customTitle}
+              customSubtitle={customSubtitle}
+              sortedEmployees={sortedEmployees}
+              formatDateId={formatDateId}
+              kadisTitle={kadisTitle}
+              ttdName={ttdName}
+              ttdPangkat={ttdPangkat}
+              ttdNip={ttdNip}
+            />
           ) : printType === "surat_cuti" ? (
-            (() => {
-              const emp = employees.find((e) => e.id === cutiEmployeeId);
-              const hierarchy = getHierarchy(emp);
-
-              const listJenis = [
-                "1. Cuti Tahunan",
-                "4. Cuti Melahirkan",
-                "2. Cuti Besar",
-                "5. Cuti Karena Alasan Penting",
-                "3. Cuti Sakit",
-                "6. Cuti di Luar Tanggungan Negara",
-              ];
-
-              return (
-                <div className="text-[11pt] leading-tight text-black relative pt-[40px]">
-                  {/* Top Right Header Context */}
-                  <div className="absolute top-0 right-0 text-[10pt] w-[400px]">
-                    <p>ANAK LAMPIRAN 1.b</p>
-                    <p>PERATURAN BADAN KEPEGAWAIAN NEGARA REPUBLIK INDONESIA</p>
-                    <p>NOMOR 24 TAHUN 2017</p>
-                    <p>TENTANG TATA CARA PEMBERIAN CUTI PEGAWAI NEGERI SIPIL</p>
-                  </div>
-
-                  <div className="mt-28 flex justify-end">
-                    <div className="w-[350px]">
-                      <p>
-                        Jember,{" "}
-                        {new Date().toLocaleDateString("id-ID", {
-                          day: "numeric",
-                          month: "long",
-                          year: "numeric",
-                        })}
-                      </p>
-                      <p>Kepada Yth.</p>
-                      <p>{hierarchy.pejabat}</p>
-                      <p>di</p>
-                      <p className="ml-8 underline">Jember</p>
-                    </div>
-                  </div>
-
-                  <h1 className="text-center font-bold text-[12pt] mt-8 mb-4">
-                    FORMULIR PERMINTAAN DAN PEMBERIAN CUTI
-                  </h1>
-
-                  <div className="border border-black mb-1 p-0 flex font-bold bg-white">
-                    <div className="px-1 w-full">I. DATA PEGAWAI</div>
-                  </div>
-                  <table className="w-full border-collapse border border-black mb-3">
-                    <tbody>
-                      <tr>
-                        <td className="border border-black px-1.5 py-0.5 w-[15%]">
-                          Nama
-                        </td>
-                        <td className="border border-black px-1.5 py-0.5 w-[35%]">
-                          {emp?.nama || "-"}
-                        </td>
-                        <td className="border border-black px-1.5 py-0.5 w-[15%]">
-                          NIP
-                        </td>
-                        <td className="border border-black px-1.5 py-0.5 w-[35%]">
-                          {emp?.nip || "-"}
-                        </td>
-                      </tr>
-                      <tr>
-                        <td className="border border-black px-1.5 py-0.5">
-                          Jabatan
-                        </td>
-                        <td className="border border-black px-1.5 py-0.5">
-                          {emp?.jabatan || "-"}
-                        </td>
-                        <td className="border border-black px-1.5 py-0.5">
-                          Pangkat/Gol.
-                        </td>
-                        <td className="border border-black px-1.5 py-0.5">
-                          {emp?.pangkatGolongan || " - "}
-                        </td>
-                      </tr>
-                      <tr>
-                        <td className="border border-black px-1.5 py-0.5">
-                          Unit Kerja
-                        </td>
-                        <td className="border border-black px-1.5 py-0.5">
-                          {emp?.bidang || "-"}
-                        </td>
-                        <td className="border border-black px-1.5 py-0.5">
-                          Masa Kerja
-                        </td>
-                        <td className="border border-black px-1.5 py-0.5">
-                          {cutiMasaKerja}
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-
-                  <div className="border border-black mb-1 p-0 flex font-bold bg-white">
-                    <div className="px-1 w-full">
-                      II. JENIS CUTI YANG DIAMBIL **
-                    </div>
-                  </div>
-                  <table className="w-full border-collapse border border-black mb-3 text-[10.5pt]">
-                    <tbody>
-                      <tr>
-                        <td className="border border-black px-1.5 py-0.5 w-[40%]">
-                          {listJenis[0]}
-                        </td>
-                        <td className="border border-black px-1.5 py-0.5 w-[10%] text-center">
-                          {matchesCutiJenisNumber(cutiJenis, 1) ? "✓" : ""}
-                        </td>
-                        <td className="border border-black px-1.5 py-0.5 w-[40%]">
-                          {listJenis[1]}
-                        </td>
-                        <td className="border border-black px-1.5 py-0.5 w-[10%] text-center">
-                          {matchesCutiJenisNumber(cutiJenis, 4) ? "✓" : ""}
-                        </td>
-                      </tr>
-                      <tr>
-                        <td className="border border-black px-1.5 py-0.5 w-[40%]">
-                          {listJenis[2]}
-                        </td>
-                        <td className="border border-black px-1.5 py-0.5 w-[10%] text-center">
-                          {matchesCutiJenisNumber(cutiJenis, 2) ? "✓" : ""}
-                        </td>
-                        <td className="border border-black px-1.5 py-0.5 w-[40%]">
-                          {listJenis[3]}
-                        </td>
-                        <td className="border border-black px-1.5 py-0.5 w-[10%] text-center">
-                          {matchesCutiJenisNumber(cutiJenis, 5) ? "✓" : ""}
-                        </td>
-                      </tr>
-                      <tr>
-                        <td className="border border-black px-1.5 py-0.5 w-[40%]">
-                          {listJenis[4]}
-                        </td>
-                        <td className="border border-black px-1.5 py-0.5 w-[10%] text-center">
-                          {matchesCutiJenisNumber(cutiJenis, 3) ? "✓" : ""}
-                        </td>
-                        <td className="border border-black px-1.5 py-0.5 w-[40%]">
-                          {listJenis[5]}
-                        </td>
-                        <td className="border border-black px-1.5 py-0.5 w-[10%] text-center">
-                          {matchesCutiJenisNumber(cutiJenis, 6) ? "✓" : ""}
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-
-                  <div className="border border-black mb-1 p-0 flex font-bold bg-white">
-                    <div className="px-1 w-full">III. ALASAN CUTI</div>
-                  </div>
-                  <table className="w-full border-collapse border border-black mb-3">
-                    <tbody>
-                      <tr>
-                        <td className="px-1.5 py-1.5 min-h-[30px]">
-                          {cutiAlasan || "-"}
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-
-                  <div className="border border-black mb-1 p-0 flex font-bold bg-white">
-                    <div className="px-1 w-full">IV. LAMANYA CUTI</div>
-                  </div>
-                  <table className="w-full border-collapse border border-black mb-3">
-                    <tbody>
-                      <tr>
-                        <td className="border-r border-black px-1.5 py-0.5 w-[30%]">
-                          Selama {cutiLamaHari} Hari
-                          <s>/Bulan/Tahun</s>
-                        </td>
-                        <td className="px-1.5 py-0.5">
-                          Mulai tanggal{" "}
-                          <span className="mx-2">
-                            {cutiMulai ? formatDateId(cutiMulai) : "-"}
-                          </span>{" "}
-                          s/d{" "}
-                          <span className="mx-2">
-                            {cutiAkhir ? formatDateId(cutiAkhir) : "-"}
-                          </span>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-
-                  <div className="border border-black mb-1 p-0 flex font-bold bg-white">
-                    <div className="px-1 w-full">V. CATATAN CUTI ***</div>
-                  </div>
-                  <table className="w-full border-collapse border border-black mb-3 text-[10.5pt]">
-                    <tbody>
-                      <tr>
-                        <td
-                          colSpan={3}
-                          className="border border-black px-1.5 py-0.5 w-[50%]"
-                        >
-                          1. Cuti Tahunan
-                        </td>
-                        <td className="border border-black px-1.5 py-0.5 w-[35%]">
-                          2. Cuti Besar
-                        </td>
-                        <td className="border border-black px-1.5 py-0.5 w-[15%]"></td>
-                      </tr>
-                      <tr>
-                        <td className="border border-black text-center w-[15%]">
-                          Tahun
-                        </td>
-                        <td className="border border-black text-center w-[15%]">
-                          Sisa
-                        </td>
-                        <td className="border border-black text-center w-[20%]">
-                          Keterangan
-                        </td>
-                        <td className="border border-black px-1.5 py-0.5">
-                          3. Cuti Sakit
-                        </td>
-                        <td className="border border-black px-1.5 py-0.5"></td>
-                      </tr>
-                      <tr>
-                        <td className="border border-black text-center">N-2</td>
-                        <td className="border border-black text-center">
-                          {cutiSisaPrint?.n2 ?? emp?.sisaCutiN2 ?? "-"}
-                        </td>
-                        <td className="border border-black text-center"></td>
-                        <td className="border border-black px-1.5 py-0.5">
-                          4. Cuti Melahirkan
-                        </td>
-                        <td className="border border-black px-1.5 py-0.5"></td>
-                      </tr>
-                      <tr>
-                        <td className="border border-black text-center">N-1</td>
-                        <td className="border border-black text-center">
-                          {cutiSisaPrint?.n1 ?? emp?.sisaCutiN1 ?? "-"}
-                        </td>
-                        <td className="border border-black text-center"></td>
-                        <td className="border border-black px-1.5 py-0.5">
-                          5. Cuti Karena Alasan Penting
-                        </td>
-                        <td className="border border-black px-1.5 py-0.5"></td>
-                      </tr>
-                      <tr>
-                        <td className="border border-black text-center">N</td>
-                        <td className="border border-black text-center">
-                          {cutiSisaPrint?.n ?? emp?.sisaCutiN ?? "-"}
-                        </td>
-                        <td className="border border-black text-center"></td>
-                        <td className="border border-black px-1.5 py-0.5">
-                          6. Cuti di Luar Tanggungan Negara
-                        </td>
-                        <td className="border border-black px-1.5 py-0.5"></td>
-                      </tr>
-                    </tbody>
-                  </table>
-
-                  <div className="border border-black mb-1 p-0 flex font-bold bg-white">
-                    <div className="px-1 w-full">
-                      VI. ALAMAT SELAMA MENJALANKAN CUTI
-                    </div>
-                  </div>
-                  <table className="w-full border-collapse border border-black mb-3">
-                    <tbody>
-                      <tr>
-                        <td className="border border-black text-center p-1 font-bold w-[45%]">
-                          Alamat Lengkap
-                        </td>
-                        <td className="border border-black text-center p-1 font-bold w-[25%]">
-                          Nomor HP
-                        </td>
-                        <td
-                          colSpan={2}
-                          className="border border-black text-center p-1.5 font-bold w-[30%]"
-                        >
-                          Hormat Saya,
-                        </td>
-                      </tr>
-                      <tr>
-                        <td
-                          className="border border-black align-top p-1"
-                          rowSpan={3}
-                        >
-                          {cutiAlamat}
-                        </td>
-                        <td
-                          className="border border-black align-top p-1 text-center"
-                          rowSpan={3}
-                        >
-                          {cutiHp}
-                        </td>
-                        <td
-                          colSpan={2}
-                          className="border-r border-black p-1 h-[60px]"
-                        ></td>
-                      </tr>
-                      <tr>
-                        <td
-                          colSpan={2}
-                          className="border-r border-black p-0 h-[10px]"
-                        ></td>
-                      </tr>
-                      <tr>
-                        <td
-                          colSpan={2}
-                          className="border-r border-black p-1 text-center h-[20px]"
-                        >
-                          {emp?.nama || "-"}
-                          <br />
-                          NIP. {emp?.nip || "-"}
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-
-                  <div className="border border-black mb-1 p-0 flex font-bold bg-white">
-                    <div className="px-1 w-full">
-                      VII. PERTIMBANGAN ATASAN LANGSUNG **
-                    </div>
-                  </div>
-                  <table className="w-full border-collapse border border-black mb-3">
-                    <tbody>
-                      <tr>
-                        <td className="border border-black text-center p-0.5">
-                          Disetujui
-                        </td>
-                        <td className="border border-black text-center p-0.5">
-                          Perubahan ****
-                        </td>
-                        <td className="border border-black text-center p-0.5">
-                          Ditangguhkan ****
-                        </td>
-                        <td
-                          colSpan={2}
-                          className="border border-black text-center p-0.5"
-                        >
-                          Tidak Disetujui ****
-                        </td>
-                      </tr>
-                      <tr>
-                        <td className="border border-black h-[20px]"></td>
-                        <td className="border border-black h-[20px]"></td>
-                        <td className="border border-black h-[20px]"></td>
-                        <td
-                          colSpan={2}
-                          className="border border-black h-[20px]"
-                        ></td>
-                      </tr>
-                      <tr>
-                        <td
-                          colSpan={3}
-                          className="border border-black border-r-0"
-                        ></td>
-                        <td
-                          colSpan={2}
-                          className="border border-black border-l-0 text-center py-6 align-bottom"
-                        >
-                          {hierarchy.atasan}
-                          <br />
-                          NIP. {hierarchy.nipAtasan}
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-
-                  <div className="border border-black mb-1 p-0 flex font-bold bg-white">
-                    <div className="px-1 w-full">
-                      VIII. KEPUTUSAN PEJABAT YANG BERWENANG MEMBERIKAN CUTI **
-                    </div>
-                  </div>
-                  <table className="w-full border-collapse border border-black mb-3">
-                    <tbody>
-                      <tr>
-                        <td className="border border-black text-center p-0.5">
-                          Disetujui
-                        </td>
-                        <td className="border border-black text-center p-0.5">
-                          Perubahan ****
-                        </td>
-                        <td className="border border-black text-center p-0.5">
-                          Ditangguhkan ****
-                        </td>
-                        <td
-                          colSpan={2}
-                          className="border border-black text-center p-0.5"
-                        >
-                          Tidak Disetujui ****
-                        </td>
-                      </tr>
-                      <tr>
-                        <td className="border border-black h-[20px]"></td>
-                        <td className="border border-black h-[20px]"></td>
-                        <td className="border border-black h-[20px]"></td>
-                        <td
-                          colSpan={2}
-                          className="border border-black h-[20px]"
-                        ></td>
-                      </tr>
-                      <tr>
-                        <td
-                          colSpan={3}
-                          className="border border-black border-r-0"
-                        ></td>
-                        <td
-                          colSpan={2}
-                          className="border border-black border-l-0 text-center py-6 align-bottom"
-                        >
-                          {hierarchy.pejabat}
-                          <br />
-                          NIP. {hierarchy.nipPejabat}
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-
-                  <div className="text-[10pt] mt-4">
-                    <p className="font-bold">Catatan:</p>
-                    <table className="border-collapse">
-                      <tbody>
-                        <tr>
-                          <td className="w-6 align-top">*</td>
-                          <td>Coret yang tidak perlu</td>
-                        </tr>
-                        <tr>
-                          <td className="w-6 align-top">**</td>
-                          <td>
-                            Pilih salah satu dengan memberi tanda centang (✓)
-                          </td>
-                        </tr>
-                        <tr>
-                          <td className="w-6 align-top">***</td>
-                          <td>
-                            diisi oleh pejabat yang menangani bidang kepegawaian
-                            sebelum PNS mengajukan Cuti
-                          </td>
-                        </tr>
-                        <tr>
-                          <td className="w-6 align-top">****</td>
-                          <td>diberi tanda centang dan alasannya.</td>
-                        </tr>
-                        <tr>
-                          <td className="w-6 align-top">N</td>
-                          <td>Cuti tahun berjalan</td>
-                        </tr>
-                        <tr>
-                          <td className="w-6 align-top">N-1</td>
-                          <td>Sisa cuti 1 tahun sebelumnya</td>
-                        </tr>
-                        <tr>
-                          <td className="w-6 align-top">N-2</td>
-                          <td>Sisa cuti 2 tahun sebelumnya</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              );
-            })()
+            <PrintCutiDocument
+              employees={employees}
+              cutiEmployeeId={cutiEmployeeId}
+              cutiJenis={cutiJenis}
+              cutiAlasan={cutiAlasan}
+              cutiLamaHari={cutiLamaHari}
+              cutiMulai={cutiMulai}
+              cutiAkhir={cutiAkhir}
+              cutiAlamat={cutiAlamat}
+              cutiHp={cutiHp}
+              cutiMasaKerja={cutiMasaKerja}
+              cutiSisaPrint={cutiSisaPrint}
+              getHierarchy={getHierarchy}
+              formatDateId={formatDateId}
+            />
           ) : printType === "model_dk" ? (
-            (() => {
-              const emp = employees.find((e) => e.id === cutiEmployeeId);
-              const gajiDigits = String(emp?.besaranGajiKotor || "0").replace(
-                /[^0-9]/g,
-                "",
-              );
-              const numGaji = parseInt(gajiDigits, 10) || 0;
-              const formatRp = new Intl.NumberFormat("id-ID", {
-                style: "currency",
-                currency: "IDR",
-              }).format(numGaji);
-
-              const keluarga = emp?.dataKeluarga || [];
-              const tglSurat = new Date().toLocaleDateString("id-ID", {
-                day: "numeric",
-                month: "long",
-                year: "numeric",
-              });
-
-              const jkLabel =
-                emp?.jk === "P"
-                  ? "Perempuan"
-                  : emp?.jk === "L"
-                    ? "Laki-laki"
-                    : emp?.jk || "-";
-
-              return (
-                <div className="text-[11pt] leading-tight text-black p-[20px]">
-                  <div className="text-right text-[11pt] mb-8 font-bold">
-                    Model DK
-                  </div>
-
-                  <div className="text-center font-bold text-[12pt] leading-snug mb-8 tracking-widest pb-6">
-                    SURAT KETERANGAN
-                    <br />
-                    UNTUK MENDAPATKAN PEMBAYARAN TUNJANGAN KELUARGA
-                  </div>
-
-                  <table className="w-full text-[11pt] border-none mb-6">
-                    <tbody>
-                      <tr>
-                        <td className="w-64 align-top py-0.5">Nama Instansi</td>
-                        <td className="w-4 align-top py-0.5">:</td>
-                        <td className="align-top py-0.5 uppercase">
-                          {instansiNama}
-                        </td>
-                      </tr>
-                      <tr>
-                        <td className="align-top py-0.5">Alamat</td>
-                        <td className="align-top py-0.5">:</td>
-                        <td className="align-top py-0.5">{instansiAlamat}</td>
-                      </tr>
-                      <tr>
-                        <td className="align-top py-0.5">
-                          Nama Pembuat Daftar Gaji
-                        </td>
-                        <td className="align-top py-0.5">:</td>
-                        <td className="align-top py-0.5">
-                          ..............................................
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-
-                  <div className="font-bold text-[11pt] mb-2 uppercase">
-                    DATA PEGAWAI
-                  </div>
-
-                  <table className="w-full text-[11pt] border-none mb-4">
-                    <tbody>
-                      {/* Fields 1–18 as Model DK spec */}
-                      <tr>
-                        <td className="w-6 align-top py-0.5">1.</td>
-                        <td className="w-60 align-top py-0.5">Nama lengkap</td>
-                        <td className="w-4 align-top py-0.5">:</td>
-                        <td className="align-top py-0.5">{emp?.nama || "-"}</td>
-                      </tr>
-                      <tr>
-                        <td className="align-top py-0.5">2.</td>
-                        <td className="align-top py-0.5">NIP</td>
-                        <td className="align-top py-0.5">:</td>
-                        <td className="align-top py-0.5">{emp?.nip || "-"}</td>
-                      </tr>
-                      <tr>
-                        <td className="align-top py-0.5">3.</td>
-                        <td className="align-top py-0.5">
-                          Pangkat /Golongan Ruang
-                        </td>
-                        <td className="align-top py-0.5">:</td>
-                        <td className="align-top py-0.5">
-                          {emp?.pangkatGolongan ||
-                            [emp?.pangkat, emp?.gol].filter(Boolean).join(" / ") ||
-                            "-"}
-                        </td>
-                      </tr>
-                      <tr>
-                        <td className="align-top py-0.5">4.</td>
-                        <td className="align-top py-0.5">TMT Golongan Ruang</td>
-                        <td className="align-top py-0.5">:</td>
-                        <td className="align-top py-0.5">
-                          {formatDateId(emp?.tmtGolonganRuang)}
-                        </td>
-                      </tr>
-                      <tr>
-                        <td className="align-top py-0.5">5.</td>
-                        <td className="align-top py-0.5">
-                          Tempat/Tanggal Lahir
-                        </td>
-                        <td className="align-top py-0.5">:</td>
-                        <td className="align-top py-0.5">
-                          {emp?.tempatLahir || "-"},{" "}
-                          {formatDateId(emp?.tanggalLahir)}
-                        </td>
-                      </tr>
-                      <tr>
-                        <td className="align-top py-0.5">6.</td>
-                        <td className="align-top py-0.5">Jenis Kelamin</td>
-                        <td className="align-top py-0.5">:</td>
-                        <td className="align-top py-0.5">{jkLabel}</td>
-                      </tr>
-                      <tr>
-                        <td className="align-top py-0.5">7.</td>
-                        <td className="align-top py-0.5">Agama</td>
-                        <td className="align-top py-0.5">:</td>
-                        <td className="align-top py-0.5">
-                          {emp?.agama || "-"}
-                        </td>
-                      </tr>
-                      <tr>
-                        <td className="align-top py-0.5">8.</td>
-                        <td className="align-top py-0.5">Alamat Lengkap</td>
-                        <td className="align-top py-0.5">:</td>
-                        <td className="align-top py-0.5">
-                          {emp?.jalanDusun ||
-                          emp?.rt ||
-                          emp?.rw ||
-                          emp?.desaKelurahan ||
-                          emp?.kecamatan ||
-                          emp?.kabupaten
-                            ? `${emp?.jalanDusun || ""} ${emp?.rt ? `RT.${emp?.rt}` : ""} ${emp?.rw ? `RW.${emp?.rw}` : ""} ${emp?.desaKelurahan || ""}, ${emp?.kecamatan || ""}, ${emp?.kabupaten || ""}`
-                            : "-"}
-                        </td>
-                      </tr>
-                      <tr>
-                        <td className="align-top py-0.5">9.</td>
-                        <td className="align-top py-0.5">TMT Pegawai</td>
-                        <td className="align-top py-0.5">:</td>
-                        <td className="align-top py-0.5">
-                          {formatDateId(emp?.tmtKerja)}
-                        </td>
-                      </tr>
-                      <tr>
-                        <td className="align-top py-0.5">10.</td>
-                        <td className="align-top py-0.5">Status Kepegawaian</td>
-                        <td className="align-top py-0.5">:</td>
-                        <td className="align-top py-0.5">
-                          {emp?.status || "-"}
-                        </td>
-                      </tr>
-                      <tr>
-                        <td className="align-top py-0.5">11.</td>
-                        <td className="align-top py-0.5">
-                          Digaji Menurut PP/SK
-                        </td>
-                        <td className="align-top py-0.5">:</td>
-                        <td className="align-top py-0.5">
-                          {emp?.digajiMenurut ||
-                            "......................................"}
-                        </td>
-                      </tr>
-                      <tr>
-                        <td className="align-top py-0.5">12.</td>
-                        <td className="align-top py-0.5">Besaran Gaji Kotor</td>
-                        <td className="align-top py-0.5">:</td>
-                        <td className="align-top py-0.5">{formatRp}</td>
-                      </tr>
-                      <tr>
-                        <td className="align-top py-0.5">13.</td>
-                        <td className="align-top py-0.5">Jabatan</td>
-                        <td className="align-top py-0.5">:</td>
-                        <td className="align-top py-0.5">
-                          {emp?.jabatan || "-"}
-                        </td>
-                      </tr>
-                      <tr>
-                        <td className="align-top py-0.5">14.</td>
-                        <td className="align-top py-0.5">
-                          Jumlah Keluarga Tertanggung
-                        </td>
-                        <td className="align-top py-0.5">:</td>
-                        <td className="align-top py-0.5">
-                          {emp?.jumlahTertanggung || "0"} Orang
-                        </td>
-                      </tr>
-                      <tr>
-                        <td className="align-top py-0.5">15.</td>
-                        <td className="align-top py-0.5">
-                          SK Terakhir yang dimiliki
-                        </td>
-                        <td className="align-top py-0.5">:</td>
-                        <td className="align-top py-0.5">
-                          {emp?.skTerakhir || "-"}
-                        </td>
-                      </tr>
-                      <tr>
-                        <td className="align-top py-0.5">16.</td>
-                        <td className="align-top py-0.5">
-                          Masa kerja golongan
-                        </td>
-                        <td className="align-top py-0.5">:</td>
-                        <td className="align-top py-0.5">
-                          {emp?.masaKerjaGolonganRuang ||
-                            "....... Tahun ....... Bulan"}
-                        </td>
-                      </tr>
-                      <tr>
-                        <td className="align-top py-0.5">17.</td>
-                        <td className="align-top py-0.5">
-                          Masa kerja Keseluruhan
-                        </td>
-                        <td className="align-top py-0.5">:</td>
-                        <td className="align-top py-0.5">
-                          {emp?.masaKerja || "-"}
-                        </td>
-                      </tr>
-                      <tr>
-                        <td className="align-top py-0.5">18.</td>
-                        <td className="align-top py-0.5">Susunan Keluarga</td>
-                        <td className="align-top py-0.5">:</td>
-                        <td className="align-top py-0.5"></td>
-                      </tr>
-                    </tbody>
-                  </table>
-
-                  <table className="w-full border-collapse border border-black mb-6 text-[11pt]">
-                    <thead>
-                      <tr>
-                        <th className="border border-black p-1">No</th>
-                        <th className="border border-black p-1">
-                          Nama Istri / Suami / Anak
-                          <br />
-                          Tanggungan
-                        </th>
-                        <th className="border border-black p-1">
-                          Tanggal Kelahiran
-                          <br />
-                          (Umur)
-                        </th>
-                        <th className="border border-black p-1">Perkawinan</th>
-                        <th className="border border-black p-1">
-                          Pekerjaan / Sekolah
-                        </th>
-                        <th className="border border-black p-1">Keterangan</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(() => {
-                        const validKeluarga = keluarga.filter((k) => k.name);
-                        const emptyRowContext: {
-                          name: string;
-                          birthDate: string;
-                          marriageDate: string;
-                          occupation?: string;
-                          description?: string;
-                        } = {
-                          name: "",
-                          birthDate: "",
-                          marriageDate: "",
-                          occupation: "",
-                          description: "",
-                        };
-                        const rows =
-                          validKeluarga.length > 0
-                            ? [...validKeluarga, emptyRowContext]
-                            : [emptyRowContext];
-
-                        return rows.map((member, i) => (
-                          <tr key={i} className="h-7 text-center">
-                            <td className="border border-black">
-                              {member?.name ? i + 1 : ""}
-                            </td>
-                            <td className="border border-black text-left px-2">
-                              {member?.name || ""}
-                            </td>
-                            <td className="border border-black">
-                              {member?.name && member.birthDate
-                                ? formatDateId(member.birthDate)
-                                : ""}
-                            </td>
-                            <td className="border border-black">
-                              {member?.name && member.marriageDate
-                                ? formatDateId(member.marriageDate)
-                                : ""}
-                            </td>
-                            <td className="border border-black">
-                              {member?.occupation || ""}
-                            </td>
-                            <td className="border border-black">
-                              {member?.description || ""}
-                            </td>
-                          </tr>
-                        ));
-                      })()}
-                    </tbody>
-                  </table>
-
-                  <p className="text-justify mb-8">
-                    Keterangan ini saya buat dengan sesungguhnya dan apabila
-                    keterangan ini ternyata tidak benar (palsu), saya bersedia
-                    dituntut dimuka pengadilan berdasarkan Undang-undang yang
-                    berlaku, dan bersedia mengembalikan semua penghasilan yang
-                    telah saya terima yang seharusnya bukan menjadi hak saya.
-                  </p>
-
-                  <div className="flex justify-between mt-8 page-break-inside-avoid">
-                    <div className="w-[45%] flex flex-col justify-between">
-                      <div>
-                        <p>Mengetahui,</p>
-                        <p>{kadisTitle}</p>
-                        <p>Kabupaten Jember</p>
-                      </div>
-                      <div className="mt-20">
-                        <p className="font-bold underline whitespace-nowrap">
-                          {ttdName}
-                        </p>
-                        <p className="whitespace-nowrap">NIP. {ttdNip}</p>
-                      </div>
-                    </div>
-                    <div className="w-[45%] flex flex-col justify-between">
-                      <div>
-                        <p>Jember, {tglSurat}</p>
-                        <p>Pegawai yang bersangkutan,</p>
-                        <p>&nbsp;</p>
-                      </div>
-                      <div className="mt-20">
-                        <p className="font-bold underline whitespace-nowrap">
-                          {emp?.nama ||
-                            "..........................................."}
-                        </p>
-                        <p className="whitespace-nowrap">
-                          NIP.{" "}
-                          {emp?.nip ||
-                            "..........................................."}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })()
+            <PrintModelDkDocument
+              employees={employees}
+              cutiEmployeeId={cutiEmployeeId}
+              settings={settings}
+              kadisTitle={kadisTitle}
+              ttdName={ttdName}
+              ttdNip={ttdNip}
+              formatDateId={formatDateId}
+              instansiNama={instansiNama}
+              instansiAlamat={instansiAlamat}
+            />
           ) : (
             <div className="py-20 text-center border-2 border-dashed border-slate-300 rounded-xl mb-10 print-hidden">
               <ClipboardList className="w-12 h-12 text-slate-300 mx-auto mb-3" />
@@ -2885,36 +1822,7 @@ export default function Print() {
         onConfirm={() => void runCutiDeductionAndPrint()}
       />
 
-      <style
-        dangerouslySetInnerHTML={{
-          __html: `
- @page {
- size: A4 portrait;
- margin: 15mm;
- }
- @media print {
- body {
- background-color: white !important;
- }
- .print-hidden {
- display: none !important;
- }
- .page-break-inside-avoid {
- page-break-inside: avoid;
- }
- .print-container {
- width: 100% !important;
- max-width: 100% !important;
- min-height: auto !important;
- margin: 0 !important;
- padding: 0 !important;
- box-shadow: none !important;
- border: none !important;
- }
- }
- `,
-        }}
-      />
+      <style dangerouslySetInnerHTML={{ __html: PRINT_PAGE_CSS }} />
     </motion.div>
   );
 }

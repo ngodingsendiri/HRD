@@ -41,7 +41,8 @@ Migrasi termasuk:
 - partial unique NIP/NIK non-empty  
 - `audit_logs`  
 - `users.role`  
-- `api_keys` (external API)
+- `api_keys` (external API)  
+- index list: `nama`, `(status, nama)` (+ nip/nik/status/bidang)
 
 Seed settings (opsional):
 
@@ -163,7 +164,7 @@ curl -H "Authorization: Bearer hrc_YOUR_KEY" \
 curl -H "X-API-Key: hrc_YOUR_KEY" \
   "https://YOUR_DOMAIN/api/v1/employees/EMPLOYEE_ID"
 
-# Ringkasan dasbor (total, bidang, KP/KGB/pensiun)
+# Dashboard stats (total, bidang, KP/KGB/pensiun)
 curl -H "Authorization: Bearer hrc_YOUR_KEY" \
   "https://YOUR_DOMAIN/api/v1/stats"
 ```
