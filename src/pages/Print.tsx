@@ -6,6 +6,7 @@ import {
   Loader2,
   ClipboardList,
   FileSignature,
+  FileText,
   Search,
   CheckCircle2,
   AlertCircle,
@@ -57,6 +58,9 @@ import {
   densityFromRowCount,
 } from "./print/printPageCss";
 import { downloadElementAsA4Pdf } from "../lib/downloadA4Pdf";
+import { downloadElementAsWordDoc } from "../lib/downloadPrintDoc";
+
+type DownloadFormat = "pdf" | "doc";
 
 type PrintType =
   | "absen_global"
@@ -191,6 +195,9 @@ export default function Print() {
   const [cutiConfirmOpen, setCutiConfirmOpen] = useState(false);
   const [cutiBusy, setCutiBusy] = useState(false);
   const [pdfBusy, setPdfBusy] = useState(false);
+  const [docBusy, setDocBusy] = useState(false);
+  /** Format chosen when admin confirms cuti tahunan deduction. */
+  const pendingDownloadFormat = useRef<DownloadFormat>("pdf");
 
   // Print Configuration States — restore last unit/sort for absensi habit
   const savedUnit = readLs(LS_LAST_UNIT);
@@ -966,9 +973,9 @@ export default function Print() {
       setCutiSisaPrint(prePrint);
       setCutiConfirmOpen(false);
       notify.success("Sisa cuti diperbarui");
-      // Let React paint pre-deduction saldo on the form, then PDF
+      // Let React paint pre-deduction saldo on the form, then download
       await new Promise((r) => setTimeout(r, 120));
-      await generatePdfDownload();
+      await runDownload(pendingDownloadFormat.current);
       setCutiSisaPrint(null);
     } catch (err) {
       console.error(err);
@@ -989,7 +996,7 @@ export default function Print() {
     ? employees.find((e) => e.id === cutiEmployeeId)?.nama || "Pegawai"
     : null;
 
-  const pdfFilename = useMemo(() => {
+  const downloadBaseName = useMemo(() => {
     const label = (activeDoc?.label || printType || "dokumen").replace(
       /\s+/g,
       "_",
@@ -1001,7 +1008,7 @@ export default function Print() {
           ? selectedBidang.replace(/\s+/g, "_")
           : "HRD";
     const day = new Date().toISOString().slice(0, 10);
-    return `${label}_${who}_${day}.pdf`;
+    return `${label}_${who}_${day}`;
   }, [
     activeDoc?.label,
     printType,
@@ -1012,6 +1019,7 @@ export default function Print() {
 
   const isLandscapeDoc = printType === "duk";
   const printDensity = densityFromRowCount(sortedEmployees.length);
+  const downloadBusy = pdfBusy || docBusy || cutiBusy;
 
   const generatePdfDownload = async () => {
     const el = printRef.current;
@@ -1023,12 +1031,12 @@ export default function Print() {
     try {
       const orientLabel = isLandscapeDoc ? "A4 mendatar" : "A4 tegak";
       notify.info(`Menyiapkan PDF ${orientLabel}…`);
-      await downloadElementAsA4Pdf(el, pdfFilename, {
+      await downloadElementAsA4Pdf(el, `${downloadBaseName}.pdf`, {
         orientation: isLandscapeDoc ? "landscape" : "portrait",
-        // Large sheets: slightly lower scale keeps memory sane
         scale: sortedEmployees.length > 60 ? 1.5 : 2,
+        marginMm: isLandscapeDoc ? 12 : 15,
       });
-      notify.success("PDF diunduh", pdfFilename);
+      notify.success("PDF diunduh", `${downloadBaseName}.pdf`);
     } catch (err) {
       console.error(err);
       notify.error(
@@ -1040,7 +1048,37 @@ export default function Print() {
     }
   };
 
-  const handlePrintClick = async () => {
+  const generateDocDownload = async () => {
+    const el = printRef.current;
+    if (!el) {
+      notify.error("Pratinjau belum siap");
+      return;
+    }
+    setDocBusy(true);
+    try {
+      notify.info("Menyiapkan berkas Word…");
+      downloadElementAsWordDoc(el, `${downloadBaseName}.doc`, {
+        orientation: isLandscapeDoc ? "landscape" : "portrait",
+        marginMm: isLandscapeDoc ? 12 : 15,
+      });
+      notify.success("Word diunduh", `${downloadBaseName}.doc`);
+    } catch (err) {
+      console.error(err);
+      notify.error(
+        "Gagal membuat Word",
+        err instanceof Error ? err.message : undefined,
+      );
+    } finally {
+      setDocBusy(false);
+    }
+  };
+
+  const runDownload = async (format: DownloadFormat) => {
+    if (format === "doc") await generateDocDownload();
+    else await generatePdfDownload();
+  };
+
+  const handleDownloadClick = async (format: DownloadFormat) => {
     if (!readiness.ready) {
       notify.error("Belum siap diunduh", readiness.reason || undefined);
       setMobileStep(2);
@@ -1048,13 +1086,14 @@ export default function Print() {
     }
     if (printType === "surat_cuti" && isCutiTahunan(cutiJenis)) {
       if (!canWrite) {
-        await generatePdfDownload();
+        await runDownload(format);
         return;
       }
+      pendingDownloadFormat.current = format;
       setCutiConfirmOpen(true);
       return;
     }
-    await generatePdfDownload();
+    await runDownload(format);
   };
 
   const contextLine = [
@@ -1665,14 +1704,14 @@ export default function Print() {
                 3 · Pratinjau
               </h2>
               <p className="text-[11px] text-slate-500 mt-0.5 truncate">
-                Unduh PDF A4 {isLandscapeDoc ? "mendatar" : "tegak"} ·{" "}
-                {contextLine}
+                A4 {isLandscapeDoc ? "mendatar" : "tegak"} · margin{" "}
+                {isLandscapeDoc ? "12" : "15"} mm · {contextLine}
               </p>
               <p className="text-[10px] text-slate-400 mt-0.5 hidden sm:block truncate">
                 {printSummaryLines.join(" · ")}
               </p>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
               <button
                 type="button"
                 className={`${btnSecondary} lg:hidden`}
@@ -1683,17 +1722,31 @@ export default function Print() {
               </button>
               <button
                 type="button"
-                onClick={() => void handlePrintClick()}
-                disabled={!readiness.ready || loading || pdfBusy || cutiBusy}
+                onClick={() => void handleDownloadClick("doc")}
+                disabled={!readiness.ready || loading || downloadBusy}
+                className={btnSecondary}
+                title={readiness.reason || "Unduh Word (.doc)"}
+              >
+                {docBusy ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <FileText className="w-3.5 h-3.5" />
+                )}
+                Word
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDownloadClick("pdf")}
+                disabled={!readiness.ready || loading || downloadBusy}
                 className={btnPrimary}
                 title={readiness.reason || "Unduh PDF A4"}
               >
-                {loading || pdfBusy || cutiBusy ? (
+                {pdfBusy || cutiBusy ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 ) : (
                   <Download className="w-3.5 h-3.5" />
                 )}
-                Unduh PDF
+                PDF
               </button>
             </div>
           </div>
@@ -1730,11 +1783,14 @@ export default function Print() {
               ref={printRef}
               className={
                 isLandscapeDoc
-                  ? "bg-white border border-slate-200 print-container print-landscape print-sheet text-[11pt] w-[297mm] max-w-none shrink-0 p-[10mm] print:max-w-full print:w-full print:p-0 mx-auto print:border-none shadow-sm print:shadow-none"
-                  : "bg-white border border-slate-200 print-container print-sheet text-[12pt] w-[210mm] max-w-none shrink-0 p-[15mm] print:max-w-full print:w-full print:p-0 mx-auto print:border-none shadow-sm print:shadow-none"
+                  ? "bg-white border border-slate-200 print-container print-landscape print-sheet text-[11pt] w-[297mm] max-w-none shrink-0 print:max-w-full print:w-full mx-auto print:border-none shadow-sm print:shadow-none"
+                  : "bg-white border border-slate-200 print-container print-sheet text-[12pt] w-[210mm] max-w-none shrink-0 print:max-w-full print:w-full mx-auto print:border-none shadow-sm print:shadow-none"
               }
               style={{
                 minHeight: isLandscapeDoc ? "210mm" : "297mm",
+                // Explicit padding = visible margin in preview & capture fallback
+                padding: isLandscapeDoc ? "12mm" : "15mm",
+                boxSizing: "border-box",
                 fontFamily: "Arial, Helvetica, sans-serif",
                 color: "#000000",
                 backgroundColor: "#ffffff",
@@ -1821,7 +1877,11 @@ export default function Print() {
         onClose={() => !cutiBusy && setCutiConfirmOpen(false)}
         loading={cutiBusy}
         variant="danger"
-        title="Potong sisa cuti lalu unduh PDF?"
+        title={
+          pendingDownloadFormat.current === "doc"
+            ? "Potong sisa cuti lalu unduh Word?"
+            : "Potong sisa cuti lalu unduh PDF?"
+        }
         description={
           <div className="space-y-2">
             <p>
@@ -1831,8 +1891,8 @@ export default function Print() {
             </p>
             <p className="text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 text-xs">
               Saldo dipotong <strong>saat Anda menekan konfirmasi</strong>,
-              lalu file PDF A4 diunduh. Membatalkan unduhan tidak mengembalikan
-              sisa cuti.
+              lalu berkas diunduh. Membatalkan unduhan tidak mengembalikan sisa
+              cuti.
             </p>
             <p className="text-xs text-slate-500">
               Formulir menampilkan sisa cuti sebelum potong (sesuai format BKN).
